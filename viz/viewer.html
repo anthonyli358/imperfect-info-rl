@@ -1,0 +1,549 @@
+<title>Tells</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  :root {
+    --ground: #f0f2f6;
+    --surface: #ffffff;
+    --surface-2: #f6f7fa;
+    --ink: #1b2230;
+    --muted: #5c6678;
+    --faint: #8b93a4;
+    --line: #e1e5ee;
+    --accent: #4f6aa8;
+    --accent-soft: #e7ecf7;
+    --shadow: 0 1px 2px rgba(20, 28, 46, .06), 0 8px 24px rgba(20, 28, 46, .06);
+    --pos: #2f7d55;
+    --neg: #b8414c;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f131b;
+      --surface: #191e29;
+      --surface-2: #131822;
+      --ink: #e9edf4;
+      --muted: #97a1b3;
+      --faint: #6b7688;
+      --line: #29303d;
+      --accent: #8099c8;
+      --accent-soft: #232c3d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
+      --pos: #57b483;
+      --neg: #e06b76;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f131b;
+    --surface: #191e29;
+    --surface-2: #131822;
+    --ink: #e9edf4;
+    --muted: #97a1b3;
+    --faint: #6b7688;
+    --line: #29303d;
+    --accent: #8099c8;
+    --accent-soft: #232c3d;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
+    --pos: #57b483;
+    --neg: #e06b76;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Hanken Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding-inline: 20px;
+    padding-block: 22px 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* ---- Top bar ---- */
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px 24px; }
+  .eyebrow {
+    font-family: "Archivo", sans-serif;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: .22em;
+    text-transform: uppercase;
+    color: var(--faint);
+    margin: 0 0 6px;
+  }
+  h1 {
+    font-family: "Archivo", sans-serif;
+    font-weight: 800;
+    font-size: clamp(28px, 5vw, 40px);
+    letter-spacing: -.02em;
+    line-height: .95;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .matchup { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  .matchup b { color: var(--ink); font-weight: 600; }
+  header .spacer { flex: 1; }
+
+  .switch { display: inline-flex; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 3px; gap: 2px; }
+  .switch button {
+    font-family: "Archivo", sans-serif; font-weight: 600; font-size: 13px;
+    border: 0; background: transparent; color: var(--muted); cursor: pointer;
+    padding: 7px 14px; border-radius: 7px;
+  }
+  .switch button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+  .switch button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .result {
+    display: inline-flex; align-items: baseline; gap: 10px;
+    border: 1px solid var(--line); background: var(--surface); border-radius: 12px;
+    padding: 10px 16px; box-shadow: var(--shadow); white-space: nowrap;
+  }
+  .result .label { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+  .result .who { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 15px; }
+  .result .margin { font-size: 13px; color: var(--muted); }
+
+  /* ---- Main grid: stage + log ---- */
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 18px; align-items: start; }
+  .stage {
+    background:
+      radial-gradient(120% 90% at 50% 42%, color-mix(in srgb, var(--accent) 5%, var(--surface)), var(--surface));
+    border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow);
+    padding: 18px; min-height: 420px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* ---- Player panel ---- */
+  .panel { border-radius: 12px; padding: 12px 14px; border: 1px solid transparent; transition: border-color .2s, background .2s; }
+  .panel.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .pname { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 15px; letter-spacing: -.01em; }
+  .turn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); opacity: 0; }
+  .panel.active .turn-dot { opacity: 1; }
+  .pscore { margin-left: auto; font-weight: 700; font-size: 17px; }
+  .pscore.pos { color: var(--pos); } .pscore.neg { color: var(--neg); }
+  .agent-kind { font-size: 11px; color: var(--faint); letter-spacing: .04em; }
+
+  .tableau { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .route { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 6px 5px 5px; display: flex; flex-direction: column; gap: 4px; min-height: 58px; }
+  .route-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .route-name { font-size: 10px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .route-score { font-size: 11px; font-weight: 700; }
+  .route-score.pos { color: var(--pos); } .route-score.neg { color: var(--neg); }
+  .stack { display: flex; flex-direction: column; gap: 3px; }
+
+  /* ---- Card ---- */
+  .card {
+    --suit: var(--muted);
+    position: relative; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--suit) 32%, var(--line));
+    background: color-mix(in srgb, var(--suit) 13%, var(--surface));
+    color: color-mix(in srgb, var(--suit) 72%, var(--ink));
+    display: flex; align-items: center; justify-content: center;
+    font-family: "JetBrains Mono", monospace; font-weight: 700;
+    box-shadow: inset 3px 0 0 var(--suit);
+  }
+  .card.mini { height: 22px; font-size: 12px; padding-left: 3px; }
+  .card.hand { height: 40px; min-width: 30px; font-size: 15px; border-radius: 7px; box-shadow: inset 0 3px 0 var(--suit), var(--shadow); flex-direction: column; gap: 0; }
+  .card.hand .suit-tag { font-family: "Hanken Grotesk", sans-serif; font-weight: 600; font-size: 8px; letter-spacing: .02em; opacity: .8; }
+  .card .back { font-size: .85em; }
+  .card.changed { animation: pop .32s ease; }
+  @keyframes pop { 0% { transform: scale(.7); opacity: 0; } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  .card.dim { opacity: .5; }
+
+  .hand-rail { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+  .hand-label { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); writing-mode: vertical-rl; transform: rotate(180deg); }
+  .hand { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; }
+
+  /* ---- Center strip (deck + discards) ---- */
+  .center { display: flex; align-items: stretch; gap: 10px; padding: 6px 4px; }
+  .deck { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 14px; border-radius: 10px; border: 1px dashed var(--line); background: var(--surface-2); min-width: 78px; }
+  .deck .n { font-size: 22px; font-weight: 700; }
+  .deck .t { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
+  .discards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; flex: 1; }
+  .pile { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .pile .slot { width: 100%; min-height: 30px; border-radius: 7px; border: 1px dashed var(--line); display: flex; align-items: center; justify-content: center; }
+  .pile .slot .card { width: 100%; }
+  .pile .cap { font-size: 9px; color: var(--faint); text-transform: uppercase; letter-spacing: .06em; }
+  .phase-note { text-align: center; font-size: 12px; color: var(--muted); min-height: 16px; }
+  .phase-note b { color: var(--ink); font-weight: 600; }
+
+  /* ---- Toy Showdown ---- */
+  .toy { display: flex; flex-direction: column; gap: 20px; align-items: center; padding: 20px 8px; }
+  .toy-cards { display: flex; gap: 40px; }
+  .toy-seat { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .toy-card { width: 84px; height: 116px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); display: flex; align-items: center; justify-content: center; font-family: "JetBrains Mono", monospace; font-weight: 700; font-size: 40px; }
+  .toy-card.hidden { color: var(--faint); background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 6px, var(--surface) 6px, var(--surface) 12px); }
+  .toy-name { font-family: "Archivo", sans-serif; font-weight: 700; }
+  .toy-hist { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .chip { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; background: var(--surface-2); }
+  .chip b { font-weight: 700; }
+
+  /* ---- Move log ---- */
+  .log { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; max-height: 560px; }
+  .log h2 { font-family: "Archivo", sans-serif; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 0; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  .log-list { overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 1px; }
+  .move { display: grid; grid-template-columns: 30px 1fr; gap: 8px; align-items: baseline; text-align: left; width: 100%; border: 0; background: transparent; color: var(--ink); cursor: pointer; padding: 7px 9px; border-radius: 8px; font: inherit; }
+  .move:hover { background: var(--surface-2); }
+  .move[aria-current="true"] { background: var(--accent-soft); }
+  .move .idx { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--faint); }
+  .move .body { font-size: 13px; line-height: 1.3; }
+  .move .actor { font-weight: 600; }
+  .move.chance .body { color: var(--muted); font-style: italic; }
+  .move[aria-current="true"] .idx { color: var(--accent); }
+
+  /* ---- Transport ---- */
+  .transport {
+    position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+    width: min(1140px, calc(100% - 32px));
+    display: flex; align-items: center; gap: 14px;
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow);
+    padding: 10px 14px;
+  }
+  .btns { display: flex; gap: 4px; }
+  .tbtn { width: 38px; height: 38px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; display: grid; place-items: center; }
+  .tbtn:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .tbtn.play { background: var(--accent); border-color: var(--accent); color: #fff; width: 44px; height: 44px; }
+  .tbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tbtn svg { width: 17px; height: 17px; fill: currentColor; }
+  .scrub-wrap { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+  .scrub-meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+  .scrub-meta .now { font-family: "JetBrains Mono", monospace; }
+  input[type="range"] { width: 100%; accent-color: var(--accent); height: 4px; }
+  input[type="range"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+  .speed { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .speed select { font: inherit; font-family: "JetBrains Mono", monospace; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 5px 6px; }
+
+  footer.credit { color: var(--faint); font-size: 11px; line-height: 1.5; }
+  footer.credit code { font-family: "JetBrains Mono", monospace; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    .log { max-height: 300px; order: 2; }
+    .speed .lbl { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .card.changed { animation: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Self-play replay</p>
+      <h1 id="game-title">Ventures</h1>
+      <div class="matchup" id="matchup"></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="switch" id="switch" role="group" aria-label="Choose a game"></div>
+    <div class="result" id="result" hidden>
+      <span class="label">Result</span>
+      <span class="who" id="result-who"></span>
+      <span class="margin" id="result-margin"></span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <section class="stage" id="stage" aria-label="Game board"></section>
+    <aside class="log" aria-label="Move log">
+      <h2>Moves</h2>
+      <div class="log-list" id="log-list"></div>
+    </aside>
+  </div>
+
+  <footer class="credit" id="credit"></footer>
+</div>
+
+<div class="transport" role="group" aria-label="Playback controls">
+  <div class="btns">
+    <button class="tbtn" id="first" title="Start (Home)" aria-label="Jump to start">
+      <svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14l-11-7z"/></svg>
+    </button>
+    <button class="tbtn" id="prev" title="Step back (←)" aria-label="Step back">
+      <svg viewBox="0 0 24 24"><path d="M15 5v14l-10-7zM17 5h2v14h-2z"/></svg>
+    </button>
+    <button class="tbtn play" id="play" title="Play / pause (Space)" aria-label="Play or pause">
+      <svg viewBox="0 0 24 24" id="play-icon"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <button class="tbtn" id="next" title="Step forward (→)" aria-label="Step forward">
+      <svg viewBox="0 0 24 24"><path d="M9 5v14l10-7zM5 5h2v14H5z"/></svg>
+    </button>
+    <button class="tbtn" id="last" title="End (End)" aria-label="Jump to end">
+      <svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5l11 7-11 7z"/></svg>
+    </button>
+  </div>
+  <div class="scrub-wrap">
+    <input type="range" id="scrub" min="0" max="1" value="0" step="1" aria-label="Timeline">
+    <div class="scrub-meta"><span id="ply-label">start</span><span class="now"><span id="ply-now">0</span> / <span id="ply-total">0</span></span></div>
+  </div>
+  <div class="speed">
+    <span class="lbl">Speed</span>
+    <select id="speed" aria-label="Playback speed">
+      <option value="1200">0.5×</option>
+      <option value="600" selected>1×</option>
+      <option value="300">2×</option>
+      <option value="120">5×</option>
+    </select>
+  </div>
+</div>
+
+<script src="replays.js"></script>
+<script>
+(function () {
+  "use strict";
+  var REPLAYS = window.REPLAYS || {};
+  var order = Object.keys(REPLAYS);
+  var el = function (id) { return document.getElementById(id); };
+
+  var state = { key: order[0], ply: 0, playing: false, timer: null, speed: 600 };
+
+  // ---------- helpers ----------
+  function esc(s) { return String(s).replace(/[&<>]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]; }); }
+  function replay() { return REPLAYS[state.key]; }
+  function ranksPerSuit(meta) { return meta.ranks.length; }
+  function decode(meta, id) {
+    var rps = ranksPerSuit(meta);
+    var suit = Math.floor(id / rps);
+    var rank = meta.ranks[id % rps];
+    return { suit: suit, rank: rank, backing: rank === meta.ranks[0] };
+  }
+  function suitColor(meta, suit) { return (meta.suit_colors && meta.suit_colors[suit]) || "var(--muted)"; }
+
+  function venturesCard(meta, id, cls, changed) {
+    var d = decode(meta, id);
+    var label = d.backing ? '<span class="back">◆</span>' : d.rank;
+    var extra = (cls.indexOf("hand") >= 0)
+      ? '<span class="suit-tag">' + esc(meta.suit_names[d.suit].slice(0, 3)) + '</span>' : "";
+    return '<div class="card ' + cls + (changed ? " changed" : "") +
+      '" style="--suit:' + suitColor(meta, d.suit) + '">' + label + extra + '</div>';
+  }
+
+  function routeScore(meta, cards) {
+    // (sum of numbers − 20) × (1 + backings) + 20 bonus if ≥8 cards; 0 if empty.
+    if (!cards.length) return null;
+    var backing = 0, sum = 0;
+    cards.forEach(function (id) { var d = decode(meta, id); if (d.backing) backing++; else sum += d.rank; });
+    var v = (sum - meta.start_cost) * (1 + backing);
+    if (cards.length >= 8) v += 20;
+    return v;
+  }
+  function signClass(v) { return v > 0 ? "pos" : v < 0 ? "neg" : ""; }
+  function signed(v) { return (v > 0 ? "+" : "") + v; }
+
+  // ---------- Ventures board ----------
+  function renderVentures(r, cur, prev) {
+    var meta = r.meta, d = cur.display;
+    var stage = el("stage");
+    function newCards(list, prevList) {
+      // returns a Set of indices that are new vs prevList (by value multiset diff, positional-ish)
+      var s = {};
+      if (!prevList) return s;
+      var counts = {};
+      prevList.forEach(function (id) { counts[id] = (counts[id] || 0) + 1; });
+      list.forEach(function (id, i) { if (counts[id]) counts[id]--; else s[i] = true; });
+      return s;
+    }
+
+    function panel(p) {
+      var active = d.to_move === p && !d.terminal;
+      var score = d.scores[p];
+      var routesHtml = d.routes[p].map(function (cards, s) {
+        var prevCards = prev ? prev.display.routes[p][s] : null;
+        var isNew = newCards(cards, prevCards);
+        var sc = routeScore(meta, cards);
+        var stack = cards.map(function (id, i) {
+          return venturesCard(meta, id, "mini", isNew[i]);
+        }).join("");
+        return '<div class="route">' +
+          '<div class="route-head"><span class="route-name" style="color:' + suitColor(meta, s) + '">' +
+          esc(meta.suit_names[s]) + '</span>' +
+          (sc === null ? "" : '<span class="route-score ' + signClass(sc) + '">' + signed(sc) + '</span>') +
+          '</div><div class="stack">' + stack + '</div></div>';
+      }).join("");
+      var hand = d.hands[p].slice().sort(function (a, b) { return a - b; })
+        .map(function (id) { return venturesCard(meta, id, "hand", false); }).join("");
+      return '<div class="panel' + (active ? " active" : "") + '">' +
+        '<div class="panel-head"><span class="turn-dot"></span>' +
+        '<span class="pname">' + esc(r.players[p]) + '</span>' +
+        '<span class="agent-kind">P' + p + '</span>' +
+        '<span class="pscore ' + signClass(score) + '">' + signed(score) + '</span></div>' +
+        '<div class="tableau">' + routesHtml + '</div>' +
+        '<div class="hand-rail"><span class="hand-label">hand</span><div class="hand">' + hand + '</div></div>' +
+        '</div>';
+    }
+
+    function centerStrip() {
+      var piles = d.discards.map(function (pile, s) {
+        var top = pile.length ? venturesCard(meta, pile[pile.length - 1], "mini",
+          prev && d.just_discarded_suit === s) : '<span class="cap">—</span>';
+        return '<div class="pile"><div class="slot">' + top + '</div>' +
+          '<span class="cap">' + esc(meta.suit_names[s].slice(0, 3)) + (pile.length > 1 ? " ·" + pile.length : "") + '</span></div>';
+      }).join("");
+      return '<div class="center"><div class="deck"><span class="n mono">' + d.deck_size +
+        '</span><span class="t">in deck</span></div><div class="discards">' + piles + '</div></div>';
+    }
+
+    var phaseText = d.terminal ? "<b>Game over</b>"
+      : "<b>" + esc(r.players[d.to_move]) + "</b> to " +
+        (d.phase === "PLAY" ? "play or discard" : d.phase === "DRAW" ? "draw a card" : "act");
+    stage.innerHTML = panel(0) + centerStrip() +
+      '<div class="phase-note">' + phaseText + '</div>' + panel(1);
+  }
+
+  // ---------- Toy Showdown board ----------
+  function renderToy(r, cur) {
+    var meta = r.meta, d = cur.display;
+    var names = meta.card_names || ["0", "1", "2"];
+    function seat(p) {
+      var dealt = d.cards.length > p;
+      var face = dealt
+        ? '<div class="toy-card">' + esc(names[d.cards[p]].split(" ")[0]) + '</div>'
+        : '<div class="toy-card hidden">?</div>';
+      return '<div class="toy-seat">' + face + '<span class="toy-name">' + esc(r.players[p]) + '</span></div>';
+    }
+    var acts = ["check", "bet"], resp = ["fold", "call"];
+    var hist = d.history.map(function (a, i) {
+      var actor = (i === 0) ? 0 : (i === 1 ? 1 : 0);
+      var word = (i === 0 || (i === 1 && d.history[0] === 0)) ? acts[a] : resp[a];
+      return '<span class="chip"><b>' + esc(r.players[actor]) + '</b> ' + word + '</span>';
+    }).join("");
+    el("stage").innerHTML = '<div class="toy"><div class="toy-cards">' + seat(0) + seat(1) + '</div>' +
+      (hist ? '<div class="toy-hist">' + hist + '</div>' : '<div class="phase-note">Cards dealt face-down; betting to come.</div>') +
+      '<div class="phase-note">' + (d.terminal ? "<b>Showdown complete</b>" : "Higher card wins at showdown.") + '</div></div>';
+  }
+
+  // ---------- shared chrome ----------
+  function renderBoard() {
+    var r = replay(), cur = r.plies[state.ply], prev = state.ply > 0 ? r.plies[state.ply - 1] : null;
+    if (r.game === "ventures") renderVentures(r, cur, prev); else renderToy(r, cur);
+  }
+
+  function buildLog() {
+    var r = replay(), list = el("log-list");
+    list.innerHTML = r.plies.map(function (pl) {
+      var chance = pl.actor < 0 && pl.i > 0;
+      var who = pl.i === 0 ? "" : (pl.actor < 0 ? "" : '<span class="actor">' + esc(r.players[pl.actor]) + '</span> ');
+      return '<button class="move' + (chance ? " chance" : "") + '" data-i="' + pl.i + '">' +
+        '<span class="idx">' + pl.i + '</span><span class="body">' + who + esc(pl.label) + '</span></button>';
+    }).join("");
+    list.querySelectorAll(".move").forEach(function (b) {
+      b.addEventListener("click", function () { pause(); setPly(+b.dataset.i); });
+    });
+  }
+
+  function highlightLog() {
+    var list = el("log-list");
+    list.querySelectorAll(".move").forEach(function (b) {
+      var on = +b.dataset.i === state.ply;
+      b.setAttribute("aria-current", on ? "true" : "false");
+      if (on) b.scrollIntoView({ block: "nearest" });
+    });
+  }
+
+  function render() {
+    var r = replay();
+    el("game-title").textContent = r.long_name;
+    el("matchup").innerHTML = "<b>" + esc(r.players[0]) + "</b> vs <b>" + esc(r.players[1]) +
+      "</b> · " + (r.plies.length - 1) + " moves";
+    // result
+    var ret = r.result.returns, w = ret[0] === ret[1] ? -1 : (ret[0] > ret[1] ? 0 : 1);
+    var res = el("result");
+    if (w < 0) { el("result-who").textContent = "Draw"; el("result-margin").textContent = ""; }
+    else {
+      el("result-who").textContent = r.players[w];
+      var m = Math.abs(ret[0]);
+      el("result-margin").textContent = r.game === "ventures" ? "by " + m : "wins " + m;
+    }
+    res.hidden = false;
+
+    var cur = r.plies[state.ply];
+    el("ply-label").textContent = cur.i === 0 ? "start" : cur.label;
+    el("ply-now").textContent = state.ply;
+    el("ply-total").textContent = r.plies.length - 1;
+    var scrub = el("scrub"); scrub.max = r.plies.length - 1; scrub.value = state.ply;
+
+    renderBoard();
+    highlightLog();
+  }
+
+  function setPly(i) {
+    var n = replay().plies.length;
+    state.ply = Math.max(0, Math.min(n - 1, i));
+    if (state.ply === n - 1) pause();
+    render();
+  }
+  function step(d) { setPly(state.ply + d); }
+
+  // ---------- playback ----------
+  function play() {
+    if (state.ply >= replay().plies.length - 1) state.ply = 0;
+    state.playing = true; el("play-icon").innerHTML = '<path d="M7 5h4v14H7zM13 5h4v14h-4z"/>';
+    clearInterval(state.timer);
+    state.timer = setInterval(function () {
+      if (state.ply >= replay().plies.length - 1) { pause(); return; }
+      setPly(state.ply + 1);
+    }, state.speed);
+  }
+  function pause() {
+    state.playing = false; clearInterval(state.timer);
+    el("play-icon").innerHTML = '<path d="M8 5v14l11-7z"/>';
+  }
+  function toggle() { state.playing ? pause() : play(); }
+
+  // ---------- switch games ----------
+  function buildSwitch() {
+    var sw = el("switch");
+    sw.innerHTML = order.map(function (k) {
+      return '<button data-k="' + k + '">' + esc(REPLAYS[k].long_name) + '</button>';
+    }).join("");
+    sw.querySelectorAll("button").forEach(function (b) {
+      b.addEventListener("click", function () { selectGame(b.dataset.k); });
+    });
+  }
+  function selectGame(k) {
+    pause(); state.key = k; state.ply = 0;
+    el("switch").querySelectorAll("button").forEach(function (b) {
+      b.setAttribute("aria-pressed", b.dataset.k === k ? "true" : "false");
+    });
+    buildLog(); render();
+    var r = replay();
+    el("credit").innerHTML = r.game === "ventures"
+      ? "Replay view shows both hands (normally hidden). Ventures is an original game on a classic mechanical skeleton — an independent implementation, no assets. Recorded from the <code>iirl</code> engine."
+      : "Toy Showdown is a mini Kuhn-poker fixture used to exercise the engine. Recorded from the <code>iirl</code> engine.";
+  }
+
+  // ---------- wire up ----------
+  el("first").onclick = function () { pause(); setPly(0); };
+  el("prev").onclick = function () { pause(); step(-1); };
+  el("next").onclick = function () { pause(); step(1); };
+  el("last").onclick = function () { pause(); setPly(replay().plies.length - 1); };
+  el("play").onclick = toggle;
+  el("scrub").addEventListener("input", function (e) { pause(); setPly(+e.target.value); });
+  el("speed").addEventListener("change", function (e) {
+    state.speed = +e.target.value; if (state.playing) play();
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "SELECT") return;
+    if (e.key === " ") { e.preventDefault(); toggle(); }
+    else if (e.key === "ArrowRight") { pause(); step(1); }
+    else if (e.key === "ArrowLeft") { pause(); step(-1); }
+    else if (e.key === "Home") { pause(); setPly(0); }
+    else if (e.key === "End") { pause(); setPly(replay().plies.length - 1); }
+  });
+
+  if (!order.length) {
+    el("stage").innerHTML = '<div class="phase-note">No replays loaded.</div>';
+  } else {
+    buildSwitch(); buildLog(); selectGame(state.key);
+  }
+})();
+</script>
