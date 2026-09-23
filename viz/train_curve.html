@@ -1,0 +1,222 @@
+<title>Ventures Training Curve</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  :root {
+    --ground: #f0f2f6;
+    --surface: #ffffff;
+    --ink: #1b2230;
+    --muted: #5c6678;
+    --faint: #8b93a4;
+    --line: #e1e5ee;
+    --grid: #eceff5;
+    --series: #2a78d6;
+    --series-soft: rgba(42, 120, 214, .14);
+    --shadow: 0 1px 2px rgba(20, 28, 46, .06), 0 10px 30px rgba(20, 28, 46, .07);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f131b; --surface: #191e29; --ink: #e9edf4; --muted: #97a1b3;
+      --faint: #6b7688; --line: #29303d; --grid: #222836; --series: #3987e5;
+      --series-soft: rgba(57, 135, 229, .18);
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.4);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f131b; --surface: #191e29; --ink: #e9edf4; --muted: #97a1b3;
+    --faint: #6b7688; --line: #29303d; --grid: #222836; --series: #3987e5;
+    --series-soft: rgba(57, 135, 229, .18);
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 12px 34px rgba(0,0,0,.4);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink);
+    font-family: "Hanken Grotesk", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  .wrap { max-width: 860px; margin: 0 auto; padding-inline: 20px; padding-block: 34px 40px; }
+
+  .eyebrow { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 11px;
+    letter-spacing: .22em; text-transform: uppercase; color: var(--faint); margin: 0 0 8px; }
+  h1 { font-family: "Archivo", sans-serif; font-weight: 800; font-size: clamp(26px, 4.5vw, 36px);
+    letter-spacing: -.02em; line-height: 1.02; margin: 0; text-wrap: balance; }
+  .lede { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 12px 0 0; max-width: 62ch; }
+
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 22px 0 18px; }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 16px; box-shadow: var(--shadow); min-width: 128px; }
+  .tile .k { font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
+  .tile .v { font-size: 24px; font-weight: 700; margin-top: 3px; }
+  .tile .v small { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .tile .v.up { color: var(--series); }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: var(--shadow); padding: 18px 18px 10px; }
+  figure { margin: 0; }
+  figcaption { color: var(--muted); font-size: 13px; line-height: 1.5; padding: 6px 4px 8px; }
+  svg { width: 100%; height: auto; display: block; }
+  .axis-label { fill: var(--muted); font-size: 12px; font-family: "Hanken Grotesk", sans-serif; }
+  .tick { fill: var(--faint); font-size: 11px; font-family: "JetBrains Mono", monospace; }
+  .ref-label { fill: var(--muted); font-size: 11px; font-family: "JetBrains Mono", monospace; }
+  .dot-hit { fill: transparent; cursor: pointer; }
+
+  .tip { position: fixed; pointer-events: none; opacity: 0; transition: opacity .12s;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 9px 11px; font-size: 12px; z-index: 5; min-width: 150px; }
+  .tip .t-hd { font-family: "Archivo", sans-serif; font-weight: 700; margin-bottom: 5px; }
+  .tip .row { display: flex; justify-content: space-between; gap: 16px; color: var(--muted); }
+  .tip .row b { color: var(--ink); font-weight: 600; }
+
+  footer { color: var(--faint); font-size: 12px; line-height: 1.5; margin-top: 18px; }
+  footer code { font-family: "JetBrains Mono", monospace; }
+  @media (prefers-reduced-motion: reduce) { .tip { transition: none; } }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Self-play · policy gradient</p>
+  <h1>Learning Ventures from scratch</h1>
+  <p class="lede">A linear softmax policy trained by REINFORCE self-play, rated every few updates on
+    an Elo scale anchored to two fixed opponents. With no prior knowledge it climbs to decisively
+    beat the random baseline — and plateaus below the hand-tuned deck-clock heuristic, about where a
+    purely linear policy should land.</p>
+
+  <div class="stats" id="stats"></div>
+
+  <div class="card">
+    <figure>
+      <div id="chart"></div>
+      <figcaption>Elo of the learned policy vs training updates (each update = 48 self-play games).
+        Dashed lines are the fixed anchors. Hover a point for its win rates.</figcaption>
+    </figure>
+  </div>
+
+  <footer>Anchors: random = 1000 Elo by definition; heuristic pinned by its score vs random.
+    Reproduce with <code>uv run python -m experiments.train_ventures</code>.</footer>
+</div>
+
+<div class="tip" id="tip" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  "use strict";
+  var pts = [
+    { u: 0, g: 0, elo: 931.5, wr: 0.30, wh: 0.00 },
+    { u: 5, g: 240, elo: 1123.8, wr: 0.80, wh: 0.00 },
+    { u: 10, g: 480, elo: 1318.2, wr: 0.97, wh: 0.00 },
+    { u: 15, g: 720, elo: 1338.0, wr: 1.00, wh: 0.01 },
+    { u: 20, g: 960, elo: 1357.9, wr: 1.00, wh: 0.03 },
+    { u: 25, g: 1200, elo: 1338.0, wr: 0.99, wh: 0.01 },
+    { u: 30, g: 1440, elo: 1281.9, wr: 0.96, wh: 0.01 },
+    { u: 35, g: 1680, elo: 1338.0, wr: 0.96, wh: 0.04 },
+    { u: 40, g: 1920, elo: 1479.0, wr: 1.00, wh: 0.09 },
+    { u: 45, g: 2160, elo: 1420.3, wr: 1.00, wh: 0.05 },
+    { u: 50, g: 2400, elo: 1377.8, wr: 0.99, wh: 0.03 },
+    { u: 55, g: 2640, elo: 1338.0, wr: 0.99, wh: 0.01 },
+    { u: 60, g: 2880, elo: 1420.3, wr: 1.00, wh: 0.05 }
+  ];
+  var ANCHOR_RANDOM = 1000, ANCHOR_HEUR = 1676;
+
+  // ----- stat tiles -----
+  var first = pts[0], last = pts[pts.length - 1];
+  var stats = [
+    { k: "Start Elo", v: Math.round(first.elo), cls: "" },
+    { k: "Final Elo", v: Math.round(last.elo), cls: "up" },
+    { k: "Gain", v: "+" + Math.round(last.elo - first.elo), cls: "up" },
+    { k: "Win vs random", v: Math.round(last.wr * 100) + "<small>%</small>", cls: "" },
+    { k: "Games played", v: last.g.toLocaleString(), cls: "" }
+  ];
+  document.getElementById("stats").innerHTML = stats.map(function (s) {
+    return '<div class="tile"><div class="k">' + s.k + '</div>' +
+      '<div class="v ' + s.cls + ' mono">' + s.v + '</div></div>';
+  }).join("");
+
+  // ----- chart geometry -----
+  var W = 820, H = 420, padL = 54, padR = 78, padT = 20, padB = 46;
+  var xmin = 0, xmax = 60, ymin = 880, ymax = 1720;
+  var X = function (u) { return padL + (u - xmin) / (xmax - xmin) * (W - padL - padR); };
+  var Y = function (e) { return padT + (ymax - e) / (ymax - ymin) * (H - padT - padB); };
+
+  var svg = [];
+  svg.push('<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" ' +
+    'aria-label="Line chart of the learned policy Elo rising from 931 to about 1420 over 60 training updates.">');
+
+  // y gridlines + ticks
+  [1000, 1200, 1400, 1600].forEach(function (e) {
+    svg.push('<line x1="' + padL + '" y1="' + Y(e) + '" x2="' + (W - padR) + '" y2="' + Y(e) +
+      '" stroke="var(--grid)" stroke-width="1"/>');
+    svg.push('<text class="tick" x="' + (padL - 10) + '" y="' + (Y(e) + 4) +
+      '" text-anchor="end">' + e + '</text>');
+  });
+  // x ticks
+  [0, 10, 20, 30, 40, 50, 60].forEach(function (u) {
+    svg.push('<text class="tick" x="' + X(u) + '" y="' + (H - padB + 20) +
+      '" text-anchor="middle">' + u + '</text>');
+  });
+  // baseline
+  svg.push('<line x1="' + padL + '" y1="' + Y(ymin) + '" x2="' + (W - padR) + '" y2="' + Y(ymin) +
+    '" stroke="var(--line)" stroke-width="1.5"/>');
+
+  // anchor reference lines
+  function ref(e, label) {
+    svg.push('<line x1="' + padL + '" y1="' + Y(e) + '" x2="' + (W - padR) + '" y2="' + Y(e) +
+      '" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4" opacity="0.7"/>');
+    svg.push('<text class="ref-label" x="' + (W - padR + 8) + '" y="' + (Y(e) + 4) + '">' + label + '</text>');
+  }
+  ref(ANCHOR_HEUR, "heuristic");
+  ref(ANCHOR_RANDOM, "random");
+
+  // area under the learner line
+  var area = "M " + X(pts[0].u) + " " + Y(ymin);
+  pts.forEach(function (p) { area += " L " + X(p.u) + " " + Y(p.elo); });
+  area += " L " + X(last.u) + " " + Y(ymin) + " Z";
+  svg.push('<path d="' + area + '" fill="var(--series-soft)"/>');
+
+  // the learner line
+  var line = pts.map(function (p, i) { return (i ? "L" : "M") + " " + X(p.u) + " " + Y(p.elo); }).join(" ");
+  svg.push('<path d="' + line + '" fill="none" stroke="var(--series)" stroke-width="2.5" ' +
+    'stroke-linejoin="round" stroke-linecap="round"/>');
+
+  // dots + hit targets
+  pts.forEach(function (p, i) {
+    svg.push('<circle cx="' + X(p.u) + '" cy="' + Y(p.elo) + '" r="3.6" fill="var(--series)" ' +
+      'stroke="var(--surface)" stroke-width="1.5"/>');
+    svg.push('<circle class="dot-hit" cx="' + X(p.u) + '" cy="' + Y(p.elo) + '" r="14" data-i="' + i + '"/>');
+  });
+
+  // direct label on the final point
+  svg.push('<text class="mono" x="' + (X(last.u) - 6) + '" y="' + (Y(last.elo) - 12) +
+    '" text-anchor="end" fill="var(--series)" font-size="13" font-weight="700">' +
+    Math.round(last.elo) + '</text>');
+
+  // axis labels
+  svg.push('<text class="axis-label" x="' + ((padL + W - padR) / 2) + '" y="' + (H - 6) +
+    '" text-anchor="middle">training updates</text>');
+  svg.push('<text class="axis-label" transform="translate(15,' + ((padT + H - padB) / 2) +
+    ') rotate(-90)" text-anchor="middle">Elo rating</text>');
+  svg.push('</svg>');
+  document.getElementById("chart").innerHTML = svg.join("");
+
+  // ----- hover tooltip -----
+  var tip = document.getElementById("tip");
+  function show(evt, p) {
+    tip.innerHTML = '<div class="t-hd">Update ' + p.u + '</div>' +
+      '<div class="row"><span>Elo</span><b>' + Math.round(p.elo) + '</b></div>' +
+      '<div class="row"><span>Games</span><b class="mono">' + p.g.toLocaleString() + '</b></div>' +
+      '<div class="row"><span>Win vs random</span><b>' + Math.round(p.wr * 100) + '%</b></div>' +
+      '<div class="row"><span>Win vs heuristic</span><b>' + Math.round(p.wh * 100) + '%</b></div>';
+    tip.style.opacity = "1";
+    var x = evt.clientX + 14, y = evt.clientY + 14;
+    if (x + 180 > window.innerWidth) x = evt.clientX - 180;
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  var chart = document.getElementById("chart");
+  chart.querySelectorAll(".dot-hit").forEach(function (h) {
+    var p = pts[+h.dataset.i];
+    h.addEventListener("mousemove", function (e) { show(e, p); });
+    h.addEventListener("mouseenter", function (e) { show(e, p); });
+    h.addEventListener("mouseleave", function () { tip.style.opacity = "0"; });
+  });
+})();
+</script>
