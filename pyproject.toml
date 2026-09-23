@@ -1,0 +1,66 @@
+[project]
+name = "imperfect-info-rl"
+version = "0.0.0"
+description = "Self-play reinforcement-learning agents for imperfect-information games — from Lost Cities to poker."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Anthony Li" }]
+keywords = [
+    "reinforcement-learning",
+    "self-play",
+    "imperfect-information",
+    "mcts",
+    "cfr",
+    "poker",
+    "game-ai",
+]
+dependencies = [
+    "numpy>=1.26",
+    "torch>=2.14.0",
+]
+
+[project.optional-dependencies]
+# OpenSpiel is an optional extra, never a hard top-level dep (see plan.md). Declared
+# here for the poker/Hanabi wing (Stage 5+); not installed or exercised in Stage 0.
+openspiel = ["open_spiel>=1.5"]
+
+[project.urls]
+Homepage = "https://github.com/anthonyli358/imperfect-info-rl"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/iirl"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "D"]
+# D203/D213 conflict with the Google convention Ruff enforces via D211/D212.
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Tests and example scripts don't need module/package docstrings on everything.
+"tests/**" = ["D100", "D103", "D104"]
+"experiments/**" = ["D100", "D103"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.uv]
+package = true

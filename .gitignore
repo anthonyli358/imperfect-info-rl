@@ -3,6 +3,13 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Generated replay bundle for the viewer (produced by experiments/make_replays.py)
+replays.js
+viz/replays.js
+
+# Training run outputs (checkpoints, Elo curves)
+runs/
+
 # C extensions
 *.so
 
