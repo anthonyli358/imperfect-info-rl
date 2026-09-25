@@ -110,6 +110,83 @@ Goal: first full game. Deck-weighted hidden info + the −20 delayed-reward stru
 
 ---
 
+## Stage 1b — Ventures: toward an unexploitable agent *(the reference recipe before other games)*
+
+Goal: the strongest Ventures agent we can build **and prove**, as the recipe the later games reuse.
+"Unbeatable" here means *unexploitable*: in a two-player zero-sum game a Nash-equilibrium strategy
+cannot lose in expectation to anyone. Luck still decides single games, so the headline metric is
+**exploitability** (how much a best-response exploiter trained against the frozen agent can win),
+alongside Elo. Objective throughout: win, then margin (`outcome_value` — win/loss blended with margin).
+
+**What we learned getting here** (2026-09-25; see `writeup.md`):
+
+- PPO v2 (~1800 Elo, 0.695 vs the heuristic) is the strongest single policy. Self-play PPO does not
+  target Nash, though: it can cycle, and the matchups are visibly non-transitive (PIMC ≈ heuristic,
+  yet PPO crushes PIMC; bigger search gains vs PPO but not vs the heuristic).
+- Determinized search on top of PPO adds ~+30 Elo at 64 sims × 4 worlds, ~+75 at 128 × 8, and
+  saturates by 256 × 8. The leaf value is not the limit: heuristic, info-state and privileged
+  (both-hands) leaves all give the same gain. The limits are uniform determinization (ignores what
+  the opponent's moves reveal) and strategy fusion.
+- Distilling that search back into the policy (expert iteration) is fragile: raw visit targets
+  collapsed the policy; the Gumbel completed-Q target was stable at 64 × 4 but gave no gain; a
+  pooled-visit scaling bug collapsed it at 128 × 8 (fixed: per-world scaling).
+- Throughput is the binding constraint for any search-based learner: ~14k searched positions per
+  16 min, vs PPO's ~150k games/hour. The Python engine is the bottleneck; the GPU is idle.
+- Evaluation is cheap and trustworthy: duplicate deals (`eval/duplicate.py`) halve the error
+  bars; a raw-policy check (500 deals, ~12 s) catches a bad update immediately.
+
+**Why not "just AlphaZero":** AlphaZero is the perfect-information recipe. AlphaStar (StarCraft)
+was *not* AlphaZero — it used no tree search; it was imitation learning plus **league training**
+(a population of main agents and dedicated *exploiters* that hunt their weaknesses), which is what
+made it robust. The imperfect-information analogues of AlphaZero are **ReBeL** and **Student of
+Games** (search over *public belief states* with CFR at the search step; provably converge to Nash
+in two-player zero-sum), and for long-horizon games where search is hard, **DeepNash / R-NaD**
+(Stratego: model-free, Nash-seeking regularized self-play, no search at all).
+
+**Plan** (each phase is useful on its own; stop wherever the exploitability curve flattens):
+
+- [x] **A. The yardstick — exploitability.** ✅ `experiments/exploit_ventures.py`. Lesson: with
+  PPO's default entropy bonus and step size the warm-started exploiter drifts *below* a strong
+  target and falsely reports it unexploitable; `entropy_coef=0`, `lr=3e-5`, critic warm-up and
+  checkpoint screening fix it. Always validate a "found nothing" against a known-weak target.
+  Heuristic: 0.781 (+56.6). PPO v2: **0.628 (+12.6)**. Still to do: PIMC calibration and a
+  fixed evaluation panel (heuristic, PIMC, PPO v2, search agent) so non-transitivity stays visible.
+- [x] **B (first result).** ✅ `experiments/train_ventures_nash.py`, 51k games each from PPO v2:
+  plain PPO control 0.597 vs v2, exploiter **0.584 (+8.5)**; magnet + league ("nash") 0.590 vs v2,
+  exploiter **0.537 (+4.4)**; the two tie head-to-head. Same strength, about half the
+  exploitability. Next: a longer nash run, dedicated exploiters in the league.
+- [ ] **B. Nash-seeking learner.** Turn PPO self-play into a method that converges to equilibrium:
+  **MMD / R-NaD-style** regularization toward a slowly updated reference ("magnet") policy — close
+  to a drop-in change to `selfplay/ppo.py` — plus **league play** (AlphaStar / PSRO-lite): keep a
+  pool of past agents and train exploiters against the current main agent, and mix them into the
+  main agent's opponents. Keeps PPO's throughput. Success = exploiter gain falling over time.
+  Start from PPO v2 (it already beats every scripted agent, so imitating one would start lower).
+  Keep scripted and style-diverse agents (heuristic, PIMC, a tight "few routes" bot, an aggressive
+  bot) in the league permanently as fixed opponents, as AlphaStar kept its imitation agents: they
+  stop the main agent forgetting how to beat conventional play. Heuristic knowledge otherwise
+  enters as potential-based reward shaping (already in place), which cannot change the optimum.
+- [ ] **Recipe note for new games** (Jaipur onward): with no RL base yet, write the heuristic,
+  behaviour-clone its replays, then fine-tune with PPO — skips the random-init phase.
+- [ ] **C. Belief-aware test-time search.** Replace uniform determinization with **Bayesian
+  determinization**: weight each sampled opponent hand by the likelihood of the opponent's observed
+  actions under the policy (their discards and plays reveal their hand). Small change to
+  `resample_from_infostate` / the search; likely the cheapest large gain. Then Gumbel root search
+  (sequential halving) on top of the B policy.
+- [ ] **D. Throughput.** Fast engine core (Rust via pyo3, cross-checked against the Python engine),
+  batched search over hundreds of games with GPU leaf inference (CUDA torch in the venv), kept
+  game-agnostic. Target: 50–100× more searched positions per hour. Prerequisite for E and for
+  search-based learning on bigger games.
+- [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
+  (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
+  step, value net over belief states, trained by self-play. Only if B + C plateau above zero
+  exploitability.
+
+**Done when:** a best-response exploiter can no longer beat the agent by a statistically
+meaningful margin, and the agent beats every panel opponent — with the recipe documented as the
+template for Jaipur and the later rungs.
+
+---
+
 ## Stage 2 — Jaipur *(second imperfect-info; then harden the spine)*
 
 Goal: a second game to reveal which abstractions are real vs incidental — then refactor. The IS-MCTS agent should port **unchanged**; if it doesn't, the interface is wrong.

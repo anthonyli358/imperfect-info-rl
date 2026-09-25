@@ -38,6 +38,19 @@ class PPOAgent(Agent):
         self.name = name
         self.greedy = greedy
 
+    @classmethod
+    def from_checkpoint(cls, path: str, name: str = "ppo", greedy: bool = True) -> PPOAgent:
+        """Load an agent from a checkpoint saved by ``experiments/train_ventures_ppo.py``.
+
+        The checkpoint holds ``state_dict``, ``input_dim``, ``num_actions`` and ``hidden``.
+        """
+        ck = torch.load(path, map_location="cpu")
+        net = PolicyValueNet(
+            ck["input_dim"], ck["num_actions"], tuple(ck["hidden"]), value_activation="linear"
+        )
+        net.load_state_dict(ck["state_dict"])
+        return cls(net, name, greedy)
+
     def step(self, game: Game, state: State, rng: np.random.Generator) -> Action:
         """Return the greedy or sampled action from the policy head."""
         probs = masked_policy(self.net, game, state)

@@ -117,3 +117,76 @@ class NetEvaluator:
             priors[legal] = exp / exp.sum()
             priors_list.append(priors)
         return priors_list, values
+
+
+def privileged_features(game: Game, state: State, player: int) -> np.ndarray:
+    """Full-state features for ``player``: their own view followed by the opponent's view.
+
+    The opponent's view includes their hidden hand, so this is only legitimate where the state is
+    fully known — a determinized world inside search, or training targets built after the fact.
+    """
+    return np.concatenate(
+        [
+            game.information_state_tensor(state, player),
+            game.information_state_tensor(state, 1 - player),
+        ]
+    )
+
+
+class SplitEvaluator:
+    """Serves the search priors from one network and the leaf value from another.
+
+    This is how a model-free policy and a separately trained value combine into AlphaZero-style
+    search: e.g. a PPO policy supplies the priors (where to look) while a value net, trained on
+    self-play outcomes, evaluates the leaves (who is winning).
+
+    With ``privileged=True`` the value net reads :func:`privileged_features` — both players' views.
+    Inside a determinized world every card in hand is known, so a leaf can be valued as the full
+    position it is, which removes most of the deal's luck from the value target. The priors always
+    read the mover's information state only.
+    """
+
+    def __init__(
+        self, prior_net: PolicyValueNet, value_net: PolicyValueNet, privileged: bool = False
+    ) -> None:
+        """Wrap the prior network and the value network for inference."""
+        self.priors = NetEvaluator(prior_net)
+        self.values = NetEvaluator(value_net)
+        self.net = prior_net
+        self.privileged = privileged
+
+    def evaluate(self, game: Game, state: State) -> tuple[np.ndarray, float]:
+        """Return ``(priors from the prior net, value from the value net)`` for one state."""
+        priors, values = self.evaluate_batch(game, [state])
+        return priors[0], float(values[0])
+
+    def evaluate_batch(
+        self, game: Game, states: list[State]
+    ) -> tuple[list[np.ndarray], np.ndarray]:
+        """Batched :meth:`evaluate`: per-state priors and a value array."""
+        movers = [game.current_player(s) for s in states]
+        own = np.stack(
+            [game.information_state_tensor(s, p) for s, p in zip(states, movers, strict=True)]
+        )
+        if self.privileged:
+            opp = np.stack(
+                [
+                    game.information_state_tensor(s, 1 - p)
+                    for s, p in zip(states, movers, strict=True)
+                ]
+            )
+            vfeat = np.concatenate([own, opp], axis=1)
+        else:
+            vfeat = own
+        with torch.no_grad():
+            logits = self.priors.net(torch.as_tensor(own, dtype=torch.float32))[0].numpy()
+            values = self.values.net(torch.as_tensor(vfeat, dtype=torch.float32))[1].numpy()
+        priors_list = []
+        for i, state in enumerate(states):
+            legal = game.legal_actions(state)
+            priors = np.zeros(self.net.num_actions)
+            masked = logits[i][legal] - logits[i][legal].max()
+            exp = np.exp(masked)
+            priors[legal] = exp / exp.sum()
+            priors_list.append(priors)
+        return priors_list, values

@@ -6,6 +6,10 @@ needs a short horizon), PPO handles a long, high-variance imperfect-info game be
 samples episodes and uses the value net as a baseline. Elo is anchored to random (1000) and the
 heuristic (measured once). Outputs a checkpoint (``.pt``) and the curve (``.json``) into ``runs/``.
 
+The recipe (see :mod:`iirl.selfplay.ppo`): card-relative features, potential-shaped rewards with
+GAE, a privileged (train-only) critic, a small win bonus, and ~150k self-play games over 10 rollout
+processes (~65 min on a 12-core CPU). It beats the heuristic ~67% of the time.
+
 Run with::
 
     uv run python -m experiments.train_ventures_ppo
@@ -36,14 +40,18 @@ class Config:
     anchor_games: int = 200
     ppo: PPOConfig = field(
         default_factory=lambda: PPOConfig(
-            iterations=40,
-            games_per_iter=32,
+            iterations=600,
+            games_per_iter=256,
+            num_envs=32,
+            num_workers=10,
             epochs=4,
-            minibatch_size=256,
+            minibatch_size=1024,
             lr=3e-4,
-            hidden=(256, 256),
-            eval_interval=4,
-            eval_games=80,
+            hidden=(512, 512),
+            privileged_critic=True,
+            win_bonus=20.0,
+            eval_interval=10,
+            eval_games=400,
             feature_sample_games=40,
             seed=0,
         )
@@ -63,12 +71,14 @@ def main(config: Config) -> None:
         **{**config.ppo.__dict__, "anchor_elos": {"random": 1000.0, "heuristic": heuristic_elo}}
     )
     anchors = {"random": random_agent, "heuristic": heuristic}
-    print(f"{'iter':>4} {'games':>6} {'Elo':>8}  vs rand  vs heur  {'p_loss':>7} {'v_loss':>7}")
+    header = f"{'iter':>4} {'games':>6} {'Elo':>8}  vs rand  vs heur  margin"
+    print(f"{header}  {'p_loss':>7} {'v_loss':>7}")
 
     def report(p) -> None:  # noqa: ANN001 - PPOEvalPoint
         print(
             f"{p.iteration:>4} {p.games:>6} {p.elo:>8.1f}   {p.win_rate_vs['random']:.2f}"
-            f"     {p.win_rate_vs['heuristic']:.2f}   {p.policy_loss:>7.3f} {p.value_loss:>7.3f}"
+            f"     {p.win_rate_vs['heuristic']:.2f}  {p.margin_vs['heuristic']:+6.1f}"
+            f"  {p.policy_loss:>7.3f} {p.value_loss:>7.3f}"
         )
 
     net, history = train_ppo(game, anchors, ppo, on_eval=report)
@@ -80,6 +90,7 @@ def main(config: Config) -> None:
             "state_dict": net.state_dict(),
             "input_dim": net.input_dim,
             "num_actions": net.num_actions,
+            "hidden": list(ppo.hidden),
         },
         out / "ppo_ventures.pt",
     )
@@ -94,6 +105,7 @@ def main(config: Config) -> None:
                 "elo": p.elo,
                 "win_vs_random": p.win_rate_vs["random"],
                 "win_vs_heuristic": p.win_rate_vs["heuristic"],
+                "margin_vs_heuristic": p.margin_vs["heuristic"],
             }
             for p in history
         ],

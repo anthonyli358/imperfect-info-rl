@@ -114,3 +114,12 @@ def test_tiny_training_runs_and_reduces_policy_loss() -> None:
     net, history = train_alphazero(game, {"random": RandomAgent("random")}, config)
     assert len(history) == 2  # eval at iter 0 and iter 1
     assert np.isfinite(history[-1].policy_loss) and np.isfinite(history[-1].value_loss)
+
+
+def test_outcome_value_blends_win_sign_with_margin() -> None:
+    from iirl.agents.alphazero.mcts import outcome_value
+
+    assert outcome_value(3.0) == 1.0 and outcome_value(-40.0) == -1.0 and outcome_value(0.0) == 0.0
+    narrow, big = outcome_value(2.0, 0.5, 40.0), outcome_value(60.0, 0.5, 40.0)
+    assert 0.5 < narrow < big < 1.0  # still a win, but winning by more is worth more
+    assert outcome_value(-60.0, 0.5, 40.0) == -big  # symmetric for the loser

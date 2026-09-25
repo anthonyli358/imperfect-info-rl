@@ -11,6 +11,8 @@ multiset of card counts, so each deck draw is a first-class chance node rather t
 
 from __future__ import annotations
 
+from functools import cache
+
 import numpy as np
 
 from iirl.core.game import Game, State
@@ -21,6 +23,7 @@ from iirl.games.ventures.cards import (
     BONUS_POINTS,
     DECK_SIZE,
     HAND_SIZE,
+    MAX_TURNS,
     NUM_CARD_TYPES,
     NUM_SUITS,
     RANKS,
@@ -43,19 +46,23 @@ DISCARD_OFFSET = NUM_CARD_TYPES
 DRAW_DECK_ACTION = 2 * NUM_CARD_TYPES
 TAKE_DISCARD_OFFSET = DRAW_DECK_ACTION + 1
 NUM_ACTIONS = TAKE_DISCARD_OFFSET + NUM_SUITS
+_NUMBER_RANKS = np.asarray(RANKS[1:], dtype=np.float32)  # rank per in-suit index 1.. (numbers)
 
 
 # --- Route helpers (a route is a tuple of card-type ids, sorted backing-first then ascending) ----
+@cache
 def route_backing_count(route: Route) -> int:
     """Return how many backing cards are on a route."""
     return sum(1 for c in route if is_backing(c))
 
 
+@cache
 def route_max_number(route: Route) -> int:
     """Return the highest number on a route, or 0 if it has none."""
     return max((rank_of(c) for c in route if not is_backing(c)), default=0)
 
 
+@cache
 def route_number_sum(route: Route) -> int:
     """Return the sum of the numbers on a route."""
     return sum(rank_of(c) for c in route if not is_backing(c))
@@ -81,6 +88,15 @@ def _hand_bump(
     new = list(hands)
     new[player] = _bump(hands[player], card, delta)
     return (new[0], new[1])
+
+
+def _forget(
+    known: tuple[tuple[int, ...], tuple[int, ...]], player: int, card: int
+) -> tuple[tuple[int, ...], tuple[int, ...]]:
+    """Drop one known copy of ``card`` from ``player``'s hand (if any was known)."""
+    if known[player][card] == 0:
+        return known
+    return _hand_bump(known, player, card, -1)
 
 
 def _route_play(
@@ -215,7 +231,12 @@ class Ventures(Game):
             hands = _hand_bump(state.hands, p, card, -1)
             routes = _route_play(state.routes, p, card)
             return _replace(
-                state, hands=hands, routes=routes, phase=Phase.DRAW, just_discarded_suit=-1
+                state,
+                hands=hands,
+                routes=routes,
+                phase=Phase.DRAW,
+                just_discarded_suit=-1,
+                known=_forget(state.known, p, card),
             )
         if action < DRAW_DECK_ACTION:  # discard
             card = action - DISCARD_OFFSET
@@ -227,6 +248,7 @@ class Ventures(Game):
                 discards=discards,
                 phase=Phase.DRAW,
                 just_discarded_suit=suit_of(card),
+                known=_forget(state.known, p, card),
             )
         raise ValueError(f"Illegal play-phase action {action}")
 
@@ -241,20 +263,30 @@ class Ventures(Game):
         return _replace(
             state,
             hands=hands,
+            known=_hand_bump(state.known, state.to_move, top, +1),
             discards=discards,
             phase=Phase.PLAY,
             to_move=1 - state.to_move,
             just_discarded_suit=-1,
+            turn=state.turn + 1,
+            terminal=state.turn + 1 >= MAX_TURNS,
         )
 
     def _apply_deck_draw(self, state: VenturesState, card: int) -> VenturesState:
         p = state.to_move
         deck = _bump(state.deck, card, -1)
         hands = _hand_bump(state.hands, p, card, +1)
-        if sum(deck) == 0:  # last card drawn ends the game immediately
+        if sum(deck) == 0:  # last card drawn ends the game immediately (as does the turn cap)
             return _replace(state, deck=deck, hands=hands, terminal=True)
         return _replace(
-            state, deck=deck, hands=hands, phase=Phase.PLAY, to_move=1 - p, just_discarded_suit=-1
+            state,
+            deck=deck,
+            hands=hands,
+            phase=Phase.PLAY,
+            to_move=1 - p,
+            just_discarded_suit=-1,
+            turn=state.turn + 1,
+            terminal=state.turn + 1 >= MAX_TURNS,
         )
 
     # --- Terminal payoffs -----------------------------------------------------------------------
@@ -293,11 +325,10 @@ class Ventures(Game):
         )  # this player's own remaining turns before the deck empties
         # All playable hand cards (each strictly above its route's current max), best first.
         candidates: list[tuple[int, int]] = []  # (value, suit)
-        for s in range(NUM_SUITS):
-            max_num = route_max_number(state.routes[player][s])
-            for c in range(NUM_CARD_TYPES):
-                if suit_of(c) == s and not is_backing(c) and rank_of(c) > max_num:
-                    candidates.extend([(rank_of(c), s)] * state.hands[player][c])
+        route_max = [route_max_number(r) for r in state.routes[player]]
+        for c, n in enumerate(state.hands[player]):
+            if n and not is_backing(c) and rank_of(c) > route_max[suit_of(c)]:
+                candidates.extend([(rank_of(c), suit_of(c))] * n)
         candidates.sort(reverse=True)
         add_sum = [0] * NUM_SUITS
         add_count = [0] * NUM_SUITS
@@ -327,43 +358,116 @@ class Ventures(Game):
 
     # --- Encoders / determinization -------------------------------------------------------------
     def information_state_tensor(self, state: State, player: Player) -> np.ndarray:
-        """Encode ``player``'s view: own hand + all public routes/discards + deck size + phase.
+        """Encode ``player``'s view as card-relative features a learner can use directly.
 
         The opponent's hand and the deck's contents are never encoded — that is the hidden
-        information. Shape is a constant regardless of game progress.
+        information. Beyond the raw hand and public routes/discards, the encoding spells out the
+        relations a policy actually needs, aligned with the card-type ids the actions use: which
+        card types each player can still legally play, which cards are still unseen (deck or
+        opponent's hand), which opponent cards are known (seen taken from a discard pile), each
+        discard pile's top card, and per-suit projections (playable hand total, unseen cards above
+        the route's max, realized route value). Shape is constant.
         """
         assert isinstance(state, VenturesState)
         opp = 1 - player
-        parts: list[np.ndarray] = []
-        # Own hand counts (private).
-        parts.append(np.asarray(state.hands[player], dtype=np.float32))
-        # Both players' routes (public), own first: (backing, count, sum, max) per suit.
-        for pp in (player, opp):
-            feats = []
+        hand = state.hands[player]
+        full = initial_deck_counts()
+
+        seen = list(hand)
+        for pp in (0, 1):
             for s in range(NUM_SUITS):
-                r = state.routes[pp][s]
-                feats += [route_backing_count(r), len(r), route_number_sum(r), route_max_number(r)]
-            parts.append(np.asarray(feats, dtype=np.float32))
-        # Discards (public): counts per card-type across all piles, plus each pile's top rank.
+                for c in state.routes[pp][s]:
+                    seen[c] += 1
         disc_counts = np.zeros(NUM_CARD_TYPES, dtype=np.float32)
-        tops = np.zeros(NUM_SUITS, dtype=np.float32)
+        tops = np.zeros(NUM_CARD_TYPES, dtype=np.float32)
         for s in range(NUM_SUITS):
             for c in state.discards[s]:
                 disc_counts[c] += 1.0
+                seen[c] += 1
             if state.discards[s]:
-                tops[s] = rank_of(state.discards[s][-1])
-        parts.append(disc_counts)
-        parts.append(tops)
-        # Public scalars / flags.
-        parts.append(np.asarray([sum(state.deck) / DECK_SIZE], dtype=np.float32))
-        phase_onehot = np.zeros(2, dtype=np.float32)
-        phase_onehot[0 if state.phase == Phase.PLAY else 1] = 1.0
-        parts.append(phase_onehot)
+                tops[state.discards[s][-1]] = 1.0
+        opp_known = np.asarray(state.known[opp], dtype=np.float32)  # seen entering their hand
+        my_known = np.asarray(state.known[player], dtype=np.float32)  # what they know of mine
+        unseen = (
+            np.asarray([full[c] - seen[c] for c in range(NUM_CARD_TYPES)], dtype=np.float32)
+            - opp_known
+        )
+
+        playable = np.zeros((2, NUM_CARD_TYPES), dtype=np.float32)  # [me, opp] legal-to-play masks
+        for i, pp in enumerate((player, opp)):
+            for s in range(NUM_SUITS):
+                max_num = route_max_number(state.routes[pp][s])
+                base = s * len(RANKS)
+                playable[i, base] = float(max_num == 0)  # backing
+                playable[i, base + 1 : base + len(RANKS)] = _NUMBER_RANKS > max_num
+        hand_arr = np.asarray(hand, dtype=np.float32)
+
+        suit_feats: list[float] = []
+        for pp in (player, opp):
+            for s in range(NUM_SUITS):
+                r = state.routes[pp][s]
+                started = len(r) > 0
+                value = (route_number_sum(r) - START_COST) * (1 + route_backing_count(r))
+                suit_feats += [
+                    float(started),
+                    route_backing_count(r),
+                    len(r),
+                    route_number_sum(r),
+                    route_max_number(r),
+                    value if started else 0.0,
+                ]
+        for s in range(NUM_SUITS):
+            r = state.routes[player][s]
+            max_num = route_max_number(r)
+            cards = range(s * len(RANKS), (s + 1) * len(RANKS))
+            live_hand = [c for c in cards if not is_backing(c) and rank_of(c) > max_num]
+            hand_sum = sum(rank_of(c) * hand[c] for c in live_hand)
+            hand_cnt = sum(hand[c] for c in live_hand)
+            unseen_sum = sum(rank_of(c) * unseen[c] for c in live_hand)
+            unseen_cnt = sum(unseen[c] for c in live_hand)
+            proj = (route_number_sum(r) + hand_sum - START_COST) * (1 + route_backing_count(r))
+            top = state.discards[s][-1] if state.discards[s] else -1
+            suit_feats += [
+                hand_cnt,
+                hand_sum,
+                proj,
+                unseen_cnt,
+                unseen_sum,
+                len(state.discards[s]),
+                rank_of(top) if top >= 0 else -1.0,
+                playable[0, top] if top >= 0 else 0.0,
+                playable[1, top] if top >= 0 else 0.0,
+            ]
+
+        deck_left = sum(state.deck)
+        scalars = [
+            deck_left / DECK_SIZE,
+            deck_left // 2,
+            self._score(state, player),
+            self._score(state, opp),
+            self._potential_score(state, player),
+            float(state.phase == Phase.PLAY),
+            float(state.phase != Phase.PLAY),
+        ]
         jd = np.zeros(NUM_SUITS, dtype=np.float32)
         if state.just_discarded_suit >= 0:
             jd[state.just_discarded_suit] = 1.0
-        parts.append(jd)
-        return np.concatenate(parts)
+        return np.concatenate(
+            [
+                hand_arr,
+                hand_arr * playable[0],
+                playable[0],
+                playable[1],
+                unseen,
+                opp_known,
+                my_known,
+                disc_counts,
+                tops,
+                np.asarray(suit_feats, dtype=np.float32),
+                np.asarray(scalars, dtype=np.float32),
+                jd,
+            ]
+        )
 
     def information_state_string(self, state: State, player: Player) -> str:
         """Return a hashable infoset key from exactly what ``player`` observes."""
@@ -373,6 +477,7 @@ class Ventures(Game):
         return (
             f"P{player}|h{hand}|r{state.routes[player]}|o{state.routes[opp]}"
             f"|d{state.discards}|k{sum(state.deck)}|ph{int(state.phase)}|jd{state.just_discarded_suit}"
+            f"|t{state.turn}|kn{state.known}"
         )
 
     def resample_from_infostate(
@@ -396,13 +501,14 @@ class Ventures(Game):
             for c in state.discards[s]:
                 accounted[c] += 1
         full = initial_deck_counts()
+        known = state.known[opp]  # cards ``player`` saw the opponent take and still hold
         unseen: list[int] = []
         for c in range(NUM_CARD_TYPES):
-            unseen.extend([c] * (full[c] - accounted[c]))
+            unseen.extend([c] * (full[c] - accounted[c] - known[c]))
         rng.shuffle(unseen)
-        opp_size = sum(state.hands[opp])
+        opp_size = sum(state.hands[opp]) - sum(known)
         opp_cards, deck_cards = unseen[:opp_size], unseen[opp_size:]
-        opp_hand = [0] * NUM_CARD_TYPES
+        opp_hand = list(known)
         deck = [0] * NUM_CARD_TYPES
         for c in opp_cards:
             opp_hand[c] += 1

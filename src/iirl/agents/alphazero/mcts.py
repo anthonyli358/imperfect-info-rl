@@ -40,6 +40,11 @@ class PUCTConfig:
             supplies only the priors and the honest hand-crafted estimate evaluates leaves).
         heuristic_scale: Divisor inside ``tanh`` that maps ``heuristic_value`` into ``[-1, 1]`` to
             match the terminal value scale (used only when ``leaf_value == "heuristic"``).
+        margin_weight: How much of a terminal state's value comes from its score margin rather than
+            its win/loss sign: ``(1 - w) * sign(m) + w * tanh(m / margin_scale)``. 0 is pure
+            win/loss (AlphaZero). Match it to the value net's training target so leaf and terminal
+            values share one scale.
+        margin_scale: Points scale of the margin term.
     """
 
     simulations: int = 60
@@ -51,6 +56,8 @@ class PUCTConfig:
     virtual_loss: float = 1.0
     leaf_value: str = "net"
     heuristic_scale: float = 50.0
+    margin_weight: float = 0.0
+    margin_scale: float = 40.0
 
 
 class _Node:
@@ -84,9 +91,26 @@ class _Node:
         self.netval = 0.0  # net value for the mover, cached at batched expansion
 
 
-def _terminal_value(game: Game, state: State, perspective: Player) -> float:
-    """Return the terminal outcome for ``perspective`` as a sign in {-1, 0, 1}."""
-    return float(np.sign(game.returns(state)[perspective]))
+def outcome_value(margin: float, margin_weight: float = 0.0, margin_scale: float = 40.0) -> float:
+    """Map a final score margin to a value in ``[-1, 1]``: win/loss sign blended with the margin.
+
+    ``margin_weight = 0`` is the pure win/loss sign; larger weights credit winning *by more*.
+    """
+    sign = float(np.sign(margin))
+    if margin_weight == 0.0:
+        return sign
+    return (1.0 - margin_weight) * sign + margin_weight * float(np.tanh(margin / margin_scale))
+
+
+def _terminal_value(
+    game: Game,
+    state: State,
+    perspective: Player,
+    margin_weight: float = 0.0,
+    margin_scale: float = 40.0,
+) -> float:
+    """Return the terminal outcome for ``perspective`` on the value scale (``outcome_value``)."""
+    return outcome_value(game.returns(state)[perspective], margin_weight, margin_scale)
 
 
 def _expand(game: Game, node: _Node, evaluator: NetEvaluator) -> float:
@@ -125,7 +149,14 @@ def _child(game: Game, node: _Node, action: int) -> _Node:
 
 
 def _descend(
-    game: Game, root: _Node, perspective: Player, c_puct: float, rng, vloss: float
+    game: Game,
+    root: _Node,
+    perspective: Player,
+    c_puct: float,
+    rng,
+    vloss: float,
+    margin_weight: float = 0.0,
+    margin_scale: float = 40.0,
 ) -> tuple[_Node, list[tuple[_Node, int, float]], float | None]:
     """Descend from ``root`` to a leaf, applying virtual loss to the edges taken.
 
@@ -136,7 +167,11 @@ def _descend(
     path: list[tuple[_Node, int, float]] = []
     while True:
         if node.is_terminal:
-            return node, path, _terminal_value(game, node.state, perspective)
+            return (
+                node,
+                path,
+                _terminal_value(game, node.state, perspective, margin_weight, margin_scale),
+            )
         if node.is_chance:
             node = _child(game, node, _sample_chance(game, node.state, rng))
             continue
@@ -165,7 +200,16 @@ def _run_world(
     while done < config.simulations:
         batch = min(config.leaf_batch, config.simulations - done)
         leaves = [
-            _descend(game, root, perspective, config.c_puct, rng, config.virtual_loss)
+            _descend(
+                game,
+                root,
+                perspective,
+                config.c_puct,
+                rng,
+                config.virtual_loss,
+                config.margin_weight,
+                config.margin_scale,
+            )
             for _ in range(batch)
         ]
         done += batch
@@ -234,13 +278,80 @@ def az_search(
     Returns:
         A length-``num_distinct_actions`` array of visit counts summed across determinizations.
     """
-    counts = np.zeros(game.num_distinct_actions())
+    return az_search_stats(game, state, perspective, evaluator, config, rng, add_noise).counts
+
+
+@dataclass(frozen=True)
+class RootStats:
+    """What a search learned at the root, pooled over its determinized worlds.
+
+    Attributes:
+        counts: Visit counts per action (length ``num_distinct_actions``; 0 on illegal actions).
+        value: Visit-weighted mean backed-up value for the searcher, in ``[-1, 1]``.
+        q: Mean backed-up value per action for the searcher (``nan`` where unvisited).
+        prior: The network's root prior before any exploration noise, averaged over worlds.
+        worlds: Determinized worlds pooled into ``counts``.
+    """
+
+    counts: np.ndarray
+    value: float
+    q: np.ndarray
+    prior: np.ndarray
+    worlds: int = 1
+
+
+def az_search_stats(
+    game: Game,
+    state: State,
+    perspective: Player,
+    evaluator: NetEvaluator,
+    config: PUCTConfig,
+    rng: np.random.Generator,
+    add_noise: bool = False,
+) -> RootStats:
+    """Like :func:`az_search`, also returning the root's values and clean prior.
+
+    The per-action values and the noise-free prior are what a policy-improvement target needs
+    (see :func:`completed_q_policy`); the root value is a lower-variance value target than the
+    game's final outcome.
+    """
+    num_actions = game.num_distinct_actions()
+    counts, w, prior = np.zeros(num_actions), np.zeros(num_actions), np.zeros(num_actions)
     for _ in range(config.determinizations):
         world = game.resample_from_infostate(state, perspective, rng)
         root = _new_root(game, world, evaluator)
+        for a in root.legal:
+            prior[a] += root.p[a] / config.determinizations
         if add_noise:
             _add_root_noise(root, config, rng)
         _run_world(game, root, perspective, evaluator, config, rng)
         for a in root.legal:
             counts[a] += root.n[a]
-    return counts
+            w[a] += root.w[a]
+    total = counts.sum()
+    with np.errstate(invalid="ignore", divide="ignore"):
+        q = np.where(counts > 0, w / counts, np.nan)
+    value = float(w.sum() / total) if total > 0 else 0.0
+    return RootStats(counts, value, q, prior, config.determinizations)
+
+
+def completed_q_policy(
+    stats: RootStats, legal: list[int], c_visit: float = 50.0, c_scale: float = 0.1
+) -> np.ndarray:
+    """Return the Gumbel-MuZero policy-improvement target ``softmax(log prior + sigma(q))``.
+
+    Unvisited actions take the root value ("completed" Q), and ``sigma(q) = (c_visit + max N) *
+    c_scale * q`` grows with the search budget, so more search moves the target further from the
+    prior. ``max N`` is per world (pooled visits / ``worlds``): pooling more determinizations
+    sharpens the Q estimates, not the confidence scale.
+
+    Unlike raw visit counts, this target does not flatten a sharp prior at small budgets — it only
+    reweights the prior by what the search found (Danihelka et al., 2022).
+    """
+    q = np.where(np.isnan(stats.q[legal]), stats.value, stats.q[legal])
+    sigma = (c_visit + stats.counts[legal].max() / stats.worlds) * c_scale * q
+    logits = np.log(np.maximum(stats.prior[legal], 1e-12)) + sigma
+    logits -= logits.max()
+    target = np.zeros(len(stats.counts))
+    target[legal] = np.exp(logits) / np.exp(logits).sum()
+    return target

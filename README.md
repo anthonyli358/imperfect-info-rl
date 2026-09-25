@@ -11,23 +11,27 @@ and [`writeup.md`](writeup.md) for findings.
 ## Headline result
 
 On **Ventures** (an original ~150-move, high-variance, imperfect-information card game), the full agent
-ladder was pitted against a strong hand-tuned heuristic. Each method wins or fails for its own reason —
-and **net-guided PIMC** (learn the search priors, keep an honest leaf value) is the only *learned*
-agent to beat the heuristic. Elo anchored to random = 1000:
+ladder was pitted against a strong hand-tuned heuristic. Each method wins or fails for its own reason.
+Two *learned* agents beat the heuristic: **net-guided PIMC** (learn the search priors, keep an honest
+leaf value) and **PPO self-play** — a pure reactive policy, no search — which also beats plain PIMC
+search 88% of the time. Elo anchored to random = 1000:
 
 | Agent | Elo | vs heuristic |
 |------:|:---:|:---:|
 | **Net-guided PIMC** | **~1855** | **74% — beats it** |
+| **PPO self-play** (no search) | **~1800** | **67% — beats it** |
 | PIMC (search) | ~1700 | +10 |
 | Heuristic | 1676 | — |
 | REINFORCE | ~1420 | ~0% |
-| PPO | ~1340 | 0–5% |
+| PPO v1 | ~1340 | 0–5% |
 | AlphaZero | ~1140 | 0% |
 | Random | 1000 | — |
 
-The why — in one line each: search beats reactive learning; AlphaZero's learned value is poisoned by
-the deal's variance; CFR is horizon-intractable here; but learning the search *priors* on top of an
-honest leaf value beats everything. Full analysis in [`writeup.md`](writeup.md).
+The why — in one line each: AlphaZero's learned value is poisoned by the deal's variance; CFR is
+horizon-intractable here; learning the search *priors* on top of an honest leaf value beats the
+heuristic; and model-free self-play does too once it gets card-relative features, potential-shaped
+rewards, a privileged critic and enough games (v1 PPO's plateau was an engineering artifact). Full
+analysis in [`writeup.md`](writeup.md).
 
 ## Quickstart
 
@@ -36,9 +40,10 @@ importable only once installed, so the install step is not optional.
 
 ```bash
 uv sync                 # create the venv, install iirl (editable) + deps (numpy, torch)
-uv run pytest           # conformance suite + unit tests (48)
+uv run pytest           # conformance suite + unit tests (51)
 uv run python -m experiments.ventures_tournament    # random < heuristic < PIMC
 uv run python -m experiments.train_ventures_guided  # net-guided PIMC — beats the heuristic
+uv run python -m experiments.train_ventures_ppo     # PPO self-play — beats the heuristic (~65 min)
 ```
 
 Lint / format (also enforced in CI):
@@ -53,7 +58,7 @@ uv run ruff check . && uv run ruff format --check .
 - `mcts` — **PIMC**: determinized UCT for imperfect information (via `Game.resample_from_infostate`).
 - `heuristic` — a wager-discipline + deck-clock Ventures baseline (the one game-specific agent).
 - `reinforce` — linear self-play policy gradient (numpy; exact, finite-difference-tested gradient).
-- `ppo` — MLP actor-critic self-play (PyTorch).
+- `ppo` — MLP actor-critic self-play (PyTorch): shaped rewards + GAE, privileged critic, parallel rollouts.
 - `alphazero` — policy/value net + determinized PUCT; also **net-guided PIMC** (`leaf_value="heuristic"`).
 - `cfr` — tabular Counterfactual Regret Minimization (+ exact exploitability in `eval/`).
 

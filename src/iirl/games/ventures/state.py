@@ -18,6 +18,7 @@ from iirl.games.ventures.cards import NUM_SUITS, initial_deck_counts
 # derived quantities (backing count, max number, number sum) come from helpers in game.py.
 Route = tuple[int, ...]
 EMPTY_ROUTE: Route = ()
+_NO_CARDS: tuple[int, ...] = (0,) * len(initial_deck_counts())
 
 
 class Phase(IntEnum):
@@ -42,6 +43,9 @@ class VenturesState(State):
         phase: The current :class:`Phase`.
         just_discarded_suit: Suit discarded to this turn (-1 if none), so it cannot be drawn back.
         terminal: Whether the game is over.
+        turn: Completed turns so far (the game also ends at ``MAX_TURNS``).
+        known: Per-player counts per card-type of hand cards the *other* player knows about —
+            cards seen taken from a discard pile and not yet seen leaving the hand. Public.
     """
 
     deck: tuple[int, ...]
@@ -52,6 +56,8 @@ class VenturesState(State):
     phase: Phase
     just_discarded_suit: int
     terminal: bool
+    turn: int = 0
+    known: tuple[tuple[int, ...], tuple[int, ...]] = (_NO_CARDS, _NO_CARDS)
 
 
 def initial_state() -> VenturesState:

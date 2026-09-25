@@ -25,6 +25,9 @@ HAND_SIZE = 8
 START_COST = 20  # subtracted from every started route
 BONUS_CARDS = 8  # a route with this many cards earns...
 BONUS_POINTS = 20  # ...this bonus
+# The game also ends after this many turns. Taking from discard piles does not shrink the deck,
+# so without a cap two players could trade discards forever; a normal game takes ~75 turns.
+MAX_TURNS = 200
 
 # Rank ids per suit: BACKING plus the numbers 2..10.
 RANKS: tuple[int, ...] = (BACKING, *range(MIN_NUMBER, MAX_NUMBER + 1))
@@ -32,6 +35,10 @@ RANKS_PER_SUIT = len(RANKS)  # 10
 NUM_CARD_TYPES = NUM_SUITS * RANKS_PER_SUIT  # 50
 
 _RANK_INDEX = {rank: i for i, rank in enumerate(RANKS)}
+# Per-card-type lookup tables: these sit on every hot path (legal moves, scoring, encoders).
+_SUIT_OF: tuple[int, ...] = tuple(c // RANKS_PER_SUIT for c in range(NUM_CARD_TYPES))
+_RANK_OF: tuple[int, ...] = tuple(RANKS[c % RANKS_PER_SUIT] for c in range(NUM_CARD_TYPES))
+_IS_BACKING: tuple[bool, ...] = tuple(r == BACKING for r in _RANK_OF)
 
 # Theme (for display only — the engine treats suits as opaque integers). Five ventures, each with a
 # distinct, reasonably color-blind-safe hue used consistently by the replay viewer.
@@ -52,17 +59,17 @@ def card_id(suit: int, rank: int) -> int:
 
 def suit_of(card: int) -> int:
     """Return the suit of a card-type id."""
-    return card // RANKS_PER_SUIT
+    return _SUIT_OF[card]
 
 
 def rank_of(card: int) -> int:
     """Return the rank of a card-type id (``BACKING`` or a number ``2..10``)."""
-    return RANKS[card % RANKS_PER_SUIT]
+    return _RANK_OF[card]
 
 
 def is_backing(card: int) -> bool:
     """Return whether a card-type id is a backing card."""
-    return rank_of(card) == BACKING
+    return _IS_BACKING[card]
 
 
 def initial_deck_counts() -> tuple[int, ...]:
