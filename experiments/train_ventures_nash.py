@@ -8,6 +8,9 @@ losing strength, beyond what the same amount of plain training does.
 * ``control``: plain PPO self-play with the usual snapshot pool.
 * ``nash``: magnetic KL regularization toward a slowly refreshed copy of the policy (MMD / R-NaD
   style), plus a league: past snapshots and the heuristic as a permanent member.
+* ``nash_long``: the ``nash`` recipe continued from ``runs/nash_nash.pt`` for 600 more
+  iterations, saving ``runs/nash_long_<iteration>.pt`` every 100, so exploitability can be
+  tracked as training goes on (the success test for a Nash-seeking learner).
 
 Run with::
 
@@ -36,6 +39,9 @@ class Config:
 
     base: str = "runs/ppo_ventures_best.pt"
     runs: tuple[str, ...] = ("control", "nash")
+    # per-run warm start overriding ``base``
+    bases: dict[str, str] = field(default_factory=lambda: {"nash_long": "runs/nash_nash.pt"})
+    save_every: int = 100  # also save a numbered checkpoint every this many iterations (0: off)
     exploit: bool = True
     ppo: PPOConfig = field(
         default_factory=lambda: PPOConfig(
@@ -62,15 +68,34 @@ def variant(name: str, ppo: PPOConfig) -> PPOConfig:
     """Return the PPO settings for run ``name``."""
     if name == "control":
         return ppo
-    if name == "nash":
+    if name in ("nash", "nash_long"):
         return replace(
             ppo,
             magnet_coef=0.1,
             magnet_interval=20,
             scripted_opponents=(VenturesHeuristic("heuristic"),),
             scripted_frac=0.1,
+            **({"iterations": 600, "seed": 2} if name == "nash_long" else {}),
         )
     raise ValueError(f"unknown run {name!r}")
+
+
+def save(net, path: Path) -> None:  # noqa: ANN001 - PolicyValueNet
+    """Save ``net`` as a PPO-style checkpoint."""
+    torch.save(
+        {
+            "state_dict": net.state_dict(),
+            "input_dim": net.input_dim,
+            "num_actions": net.num_actions,
+            "hidden": [layer.out_features for layer in net.trunk if hasattr(layer, "out_features")],
+        },
+        path,
+    )
+
+
+def run_tag(name: str) -> str:
+    """Return the file tag for run ``name`` (``nash_long`` is already prefixed)."""
+    return name if name.startswith("nash") and name != "nash" else f"nash_{name}"
 
 
 def main(config: Config) -> None:
@@ -79,7 +104,7 @@ def main(config: Config) -> None:
     heuristic = VenturesHeuristic("heuristic")
     for name in config.runs:
         ppo = replace(variant(name, config.ppo), anchor_elos={"heuristic": 1676.0})
-        init = PPOAgent.from_checkpoint(config.base).net
+        init = PPOAgent.from_checkpoint(config.bases.get(name, config.base)).net
         print(f"\n=== {name} ===", flush=True)
 
         def report(p) -> None:  # noqa: ANN001 - PPOEvalPoint
@@ -89,24 +114,22 @@ def main(config: Config) -> None:
                 flush=True,
             )
 
-        net, history = train_ppo(game, {"heuristic": heuristic}, ppo, report, init_net=init)
-        path = Path(f"runs/nash_{name}.pt")
-        torch.save(
-            {
-                "state_dict": net.state_dict(),
-                "input_dim": net.input_dim,
-                "num_actions": net.num_actions,
-                "hidden": list(ppo.hidden),
-            },
-            path,
+        def checkpoint(net, p, tag: str = run_tag(name)) -> None:  # noqa: ANN001
+            if config.save_every and p.iteration and p.iteration % config.save_every == 0:
+                save(net, Path(f"runs/{tag}_{p.iteration}.pt"))
+
+        net, history = train_ppo(
+            game, {"heuristic": heuristic}, ppo, report, checkpoint, init_net=init
         )
+        path = Path(f"runs/{run_tag(name)}.pt")
+        save(net, path)
         curve = [
             {"iteration": p.iteration, "games": p.games, "margin": p.margin_vs["heuristic"]}
             for p in history
         ]
-        Path(f"runs/nash_{name}_curve.json").write_text(json.dumps(curve, indent=2), "utf-8")
+        Path(f"runs/{run_tag(name)}_curve.json").write_text(json.dumps(curve, indent=2), "utf-8")
         if config.exploit:
-            exploit_ventures.main(exploit_ventures.Config(target=str(path), name=f"nash_{name}"))
+            exploit_ventures.main(exploit_ventures.Config(target=str(path), name=run_tag(name)))
 
 
 if __name__ == "__main__":

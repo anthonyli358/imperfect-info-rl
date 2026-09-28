@@ -489,6 +489,26 @@ class Ventures(Game):
         pointers. The unseen multiset (deck minus all visible cards) is split uniformly into a fresh
         opponent hand of the correct size and a remainder deck.
         """
+        return self._redeal(state, player, rng)
+
+    def repair_world(
+        self, state: State, player: Player, world: State, rng: np.random.Generator
+    ) -> VenturesState:
+        """Re-deal like :meth:`resample_from_infostate`, but start from ``world``'s opponent hand.
+
+        The opponent cards ``world`` holds that are still unseen are kept (a random subset if there
+        are too many); only the shortfall is dealt at random.
+        """
+        assert isinstance(world, VenturesState)
+        return self._redeal(state, player, rng, prefer=world.hands[1 - player])
+
+    def _redeal(
+        self,
+        state: State,
+        player: Player,
+        rng: np.random.Generator,
+        prefer: tuple[int, ...] | None = None,
+    ) -> VenturesState:
         assert isinstance(state, VenturesState)
         opp = 1 - player
         # Account for every card the player can see or hold.
@@ -505,9 +525,24 @@ class Ventures(Game):
         unseen: list[int] = []
         for c in range(NUM_CARD_TYPES):
             unseen.extend([c] * (full[c] - accounted[c] - known[c]))
-        rng.shuffle(unseen)
         opp_size = sum(state.hands[opp]) - sum(known)
-        opp_cards, deck_cards = unseen[:opp_size], unseen[opp_size:]
+        if prefer is None:
+            rng.shuffle(unseen)
+            opp_cards, deck_cards = unseen[:opp_size], unseen[opp_size:]
+        else:
+            # Keep the preferred hand's unseen cards (a random subset if too many), fill the rest.
+            pool = list(unseen)
+            kept: list[int] = []
+            for c in range(NUM_CARD_TYPES):
+                take = min(max(prefer[c] - known[c], 0), pool.count(c))
+                kept.extend([c] * take)
+            rng.shuffle(kept)
+            kept = kept[:opp_size]
+            for c in kept:
+                pool.remove(c)
+            rng.shuffle(pool)
+            fill = opp_size - len(kept)
+            opp_cards, deck_cards = kept + pool[:fill], pool[fill:]
         opp_hand = list(known)
         deck = [0] * NUM_CARD_TYPES
         for c in opp_cards:

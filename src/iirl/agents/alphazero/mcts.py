@@ -12,6 +12,7 @@ the net's tanh value at leaves — so the network's value scale and the search's
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
@@ -263,6 +264,7 @@ def az_search(
     config: PUCTConfig,
     rng: np.random.Generator,
     add_noise: bool = False,
+    sample_world: Callable[[np.random.Generator], State] | None = None,
 ) -> np.ndarray:
     """Return pooled root visit counts over all actions (0 on illegal actions).
 
@@ -274,11 +276,14 @@ def az_search(
         config: Search budget / exploration.
         rng: Seeded generator (determinization, chance, and root noise).
         add_noise: Add Dirichlet root noise (use during self-play, not evaluation).
+        sample_world: Draws a determinized world; ``None`` resamples uniformly from the view.
 
     Returns:
         A length-``num_distinct_actions`` array of visit counts summed across determinizations.
     """
-    return az_search_stats(game, state, perspective, evaluator, config, rng, add_noise).counts
+    return az_search_stats(
+        game, state, perspective, evaluator, config, rng, add_noise, sample_world
+    ).counts
 
 
 @dataclass(frozen=True)
@@ -308,17 +313,24 @@ def az_search_stats(
     config: PUCTConfig,
     rng: np.random.Generator,
     add_noise: bool = False,
+    sample_world: Callable[[np.random.Generator], State] | None = None,
 ) -> RootStats:
     """Like :func:`az_search`, also returning the root's values and clean prior.
 
     The per-action values and the noise-free prior are what a policy-improvement target needs
     (see :func:`completed_q_policy`); the root value is a lower-variance value target than the
     game's final outcome.
+
+    ``sample_world`` draws the determinized worlds (e.g. from a :class:`ParticleBelief`); by
+    default they come from uniform ``game.resample_from_infostate``.
     """
     num_actions = game.num_distinct_actions()
     counts, w, prior = np.zeros(num_actions), np.zeros(num_actions), np.zeros(num_actions)
     for _ in range(config.determinizations):
-        world = game.resample_from_infostate(state, perspective, rng)
+        if sample_world is None:
+            world = game.resample_from_infostate(state, perspective, rng)
+        else:
+            world = sample_world(rng)
         root = _new_root(game, world, evaluator)
         for a in root.legal:
             prior[a] += root.p[a] / config.determinizations

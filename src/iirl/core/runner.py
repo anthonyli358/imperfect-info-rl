@@ -71,11 +71,15 @@ def run_episode(
         raise ValueError(f"Expected {game.num_players} agents, got {len(agents)}")
 
     state = game.new_initial_state()
+    for player, agent in enumerate(agents):
+        agent.reset(game, player)
     for step in range(max_steps):
         if game.is_terminal(state):
             return EpisodeResult(returns=game.returns(state), num_steps=step)
         if game.is_chance_node(state):
             state = game.apply_action(state, _sample_chance(game, state, rng))
+            for agent in agents:
+                agent.observe(game, state, None)
             continue
         player = game.current_player(state)
         action = agents[player].step(game, state, rng)
@@ -84,5 +88,7 @@ def run_episode(
                 f"Agent {agents[player].name!r} chose illegal action {action} for player {player}"
             )
         state = game.apply_action(state, action)
+        for agent in agents:
+            agent.observe(game, state, action)
 
     raise RuntimeError(f"Episode did not terminate within {max_steps} steps")

@@ -48,6 +48,8 @@ class DuplicateResult:
 def _play(game: Game, seats: tuple[Agent, Agent], deal_seed: int, agent_rng) -> float:
     """Play one game; the ``k``-th chance event uses a stream seeded by ``(deal_seed, k)``."""
     state = game.new_initial_state()
+    for player, agent in enumerate(seats):
+        agent.reset(game, player)
     k = 0
     while not game.is_terminal(state):
         if game.is_chance_node(state):
@@ -56,9 +58,14 @@ def _play(game: Game, seats: tuple[Agent, Agent], deal_seed: int, agent_rng) -> 
             i = np.random.default_rng((deal_seed, k)).choice(len(outcomes), p=probs)
             state = game.apply_action(state, outcomes[i][0])
             k += 1
+            for agent in seats:
+                agent.observe(game, state, None)
             continue
         player = game.current_player(state)
-        state = game.apply_action(state, seats[player].step(game, state, agent_rng))
+        action = seats[player].step(game, state, agent_rng)
+        state = game.apply_action(state, action)
+        for agent in seats:
+            agent.observe(game, state, action)
     return float(game.returns(state)[0])
 
 

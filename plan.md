@@ -154,7 +154,20 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
 - [x] **B (first result).** ✅ `experiments/train_ventures_nash.py`, 51k games each from PPO v2:
   plain PPO control 0.597 vs v2, exploiter **0.584 (+8.5)**; magnet + league ("nash") 0.590 vs v2,
   exploiter **0.537 (+4.4)**; the two tie head-to-head. Same strength, about half the
-  exploitability. Next: a longer nash run, dedicated exploiters in the league.
+  exploitability.
+- [x] **B (longer run).** ✅ `nash_long`: 600 more iterations of the same recipe from `nash_nash`
+  (153k games). Exploiter **0.522 (+2.5)**, still falling. It is also stronger: 0.532 vs
+  `nash_nash`, **0.815 (+52.2) vs the heuristic**, 0.640 vs PPO v2 (1000 duplicate deals each).
+  Next: dedicated exploiters in the league; periodic checkpoints (`nash_long_<iter>.pt`) allow an
+  exploitability-vs-training curve.
+- [x] **C (first result).** ✅ `agents/belief.py` particle filter (`Agent.reset`/`observe` hooks,
+  `Game.repair_world`), `experiments/belief_ventures.py`. Lessons: a plain filter collapses (each
+  opponent reveal kills ~80% of particles); rejuvenating with uniform resamples is worse than
+  none; *repairing* dead particles works; a sharpened likelihood (temperature 4) fits a greedy
+  opponent. Belief worlds share 0.453 of the opponent's hidden hand vs 0.386 uniform. But at 64
+  sims × 4 worlds, belief search beats uniform search only 0.512 ± 0.011, and uniform search is
+  level with the raw `nash_nash` policy (0.502): the value net (trained on PPO v2) no longer
+  helps. Retrain the value net on the current policy before judging belief search.
 - [ ] **B. Nash-seeking learner.** Turn PPO self-play into a method that converges to equilibrium:
   **MMD / R-NaD-style** regularization toward a slowly updated reference ("magnet") policy — close
   to a drop-in change to `selfplay/ppo.py` — plus **league play** (AlphaStar / PSRO-lite): keep a

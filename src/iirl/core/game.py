@@ -140,6 +140,18 @@ class Game(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not provide resample_from_infostate")
 
+    def repair_world(
+        self, state: State, player: Player, world: State, rng: np.random.Generator
+    ) -> State:
+        """Return a world consistent with ``player``'s view of ``state``, close to ``world``.
+
+        ``world`` is a guess at the hidden information that a new observation contradicts (e.g. a
+        particle in a belief filter that did not deal the opponent the card they just played). A
+        game may keep as much of its hidden part as is still possible and re-deal only the rest;
+        the default ignores ``world`` and resamples uniformly.
+        """
+        return self.resample_from_infostate(state, player, rng)
+
     # --- Optional debug / display helpers -------------------------------------------------------
 
     def action_to_string(self, state: State, action: Action) -> str:
