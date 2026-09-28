@@ -17,6 +17,7 @@ characteristic reason** — which is the point of the exercise.
 
 | Agent | Elo | vs heuristic | One-line why |
 |------:|:---:|:---:|:---|
+| **Nash-seeking PPO** (`nash_long`, no search) | **~1940** | **82% — beats it** | PPO v2 + magnet KL toward a slow copy + league, 250k more games; least exploitable too |
 | **Net-guided PIMC** (learned priors + honest leaf) | **~1855** | **74% — beats it** | learn the *search priors*, keep an honest leaf value |
 | **PPO self-play** (v2 recipe, no search) | **~1800** | **67% — beats it** | card-relative features, shaped rewards, privileged critic, 150k games |
 | PIMC (determinized search, no learning) | ~1700 | +10 / ~52% | explicit lookahead with an honest leaf estimate |
@@ -36,6 +37,14 @@ horizon-intractable here. The search-side route to beating the heuristic with le
 **net-guided PIMC**: learn only the search **priors** (AlphaZero's policy-improvement idea) while
 keeping the honest, hand-crafted leaf value that made plain search strong. (The AlphaZero and
 net-guided numbers predate the v2 information-state encoding; they have not been re-run on it.)
+
+**Since then (Stage 1b):** the goal moved from "beat the heuristic" to *unexploitable*, measured
+by how much a best-response exploiter trained against the frozen agent can win. Nash-seeking
+training (a KL "magnet" toward a slowly refreshed copy of the policy, plus a league) gave the
+strongest agent so far, **~1940 Elo with no search**, and the least exploitable: its best
+exploiter scores 0.522 (+2.5 points/game), down from 0.628 (+12.6) against PPO v2. With a policy
+this strong, determinized search at 64 sims × 4 worlds no longer helps, with or without a
+Bayesian belief over the opponent's hand.
 
 ---
 
@@ -84,6 +93,80 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Stage 1b: toward an unexploitable agent (2026-09-25 → 09-28)
+
+**The yardstick: exploitability.** A two-player zero-sum Nash strategy cannot lose in expectation
+to anyone, so the target is an agent that a best response cannot beat. The measure: warm-start a
+PPO exploiter from the frozen target, train it only against the target, and rate the best of its
+checkpoints on 1000 fresh duplicate deals (each deal played both ways round, which halves the error
+bars). 0.500 would be unexploitable. Getting this right took three tries. With PPO's default
+entropy bonus and step size the exploiter drifted *below* a strong target and falsely reported it
+unexploitable. `entropy_coef = 0`, `lr = 3e-5`, a critic warm-up and screening the top
+checkpoints (greedy and sampled) fixed it. Lesson: always validate "found nothing" against a
+known-weak target.
+
+**Nash-seeking beats plain training at equal cost.** Both runs warm-start from PPO v2 and play 51k
+more games (`experiments/train_ventures_nash.py`):
+
+| Agent | Exploiter score | vs heuristic | Elo (ladder) |
+|---|:---:|:---:|:---:|
+| PPO v2 | 0.628 (+12.6) | 0.698 | 1822 |
+| Plain PPO, same budget (control) | 0.584 (+8.5) | 0.789 | 1905 |
+| Magnet KL + league (`nash`) | 0.537 (+4.4) | 0.774 | 1890 |
+| `nash`, 600 more iterations (`nash_long`) | **0.522 (+2.5)** | **0.822** | **1941** |
+
+`nash` and the control are equally strong (they tie 0.502 head to head), but `nash` is about half
+as exploitable. `nash_long` is better on every axis: it beats `nash` 0.532 and PPO v2 0.640. Much
+of the gain over v2 is simply more training: v2 was never converged, and noisy 400-game evals hid
+the climb.
+
+**The Elo ladder.** `experiments/elo_ladder.py` rates every checkpoint in the lineage against the
+heuristic on the *same* 1000 duplicate deals (about ±10 Elo, vs ±35 for in-training evals), saved
+in `runs/elo_ladder.json`:
+
+| Checkpoint | PPO v2 | nash | nash_long 100 | 200 | 300 | 400 | 500 | 600 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Elo | 1822 | 1890 | 1899 | 1917 | 1920 | 1946 | 1918 | 1941 |
+
+The climb flattens around 1940 after ~400 iterations.
+
+**Belief search: a better belief, no stronger play.** Phase C replaced uniform determinization
+with a particle filter over the opponent's hand (`agents/belief.py`): each opponent move reweights
+every hypothesised hand by how likely the policy makes that move from it. Lessons from building it:
+- A plain filter collapses. Each card the opponent plays out of hand kills the ~80% of particles
+  that did not deal it to them, and the opening hand is never re-drawn.
+- Replacing dead particles with fresh uniform ones is *worse* than doing nothing (the fresh ones
+  swamp the evidence). **Repairing** them works: keep the cards still possible, re-deal the gap
+  (`Game.repair_world`).
+- A sharpened likelihood (temperature 4) fits a greedy opponent best.
+
+The belief's sampled worlds share **0.453** of the opponent's hidden cards vs **0.386** for uniform
+sampling, rising to 0.69 vs 0.60 late in the game. But in play it does not matter: at 64 sims ×
+4 worlds, belief search vs uniform search scores 0.500 ± 0.012, and uniform search only ties the
+raw `nash_long` policy (0.502 ± 0.013), even with a value net retrained on `nash_long`'s own games
+(Brier 0.138 vs the heuristic leaf's 0.166). A Nash-trained policy leaves this much search nothing
+to add. Earlier, the same search gave about +30 Elo over PPO v2.
+
+**Dedicated exploiters in the league: so far worse.** AlphaStar-style: each round trains the main
+agent with every exploiter found so far as a fixed league opponent, then trains a fresh exploiter
+against it (`experiments/train_ventures_league.py`). Two rounds from `nash_long`:
+
+| Agent | Exploiter score | Old exploiter's score vs it |
+|---|:---:|:---:|
+| nash_long | 0.522 (+2.5) | — |
+| league round 1 | 0.556 (+4.6) | 0.550 |
+| league round 2 | 0.573 (+8.4) | 0.547 |
+
+Exploitability *rose*, and round 1 did not even close `nash_long`'s own hole (that exploiter does
+better against it, 0.550 vs 0.522). Strength is flat (round 1: 1942 Elo). The likely reason:
+training against a few fixed best responses overfits to them rather than moving toward
+equilibrium. *(Pending: a same-budget control with plain Nash training, to confirm the exploiters
+are the cause.)*
+
+**Also found:** the endgame stall. With one card left in the deck, drawing it ends the game, so the
+trailing player never draws it, and a weak policy in the lead also stalls. The 200-turn cap then ends
+the game with the same result. `nash` did this in 3 of 200 self-play games, `nash_long` in none.
 
 ### PPO self-play beats the heuristic — and PIMC — without search
 The reactive-RL plateau was an engineering artifact. PPO v2 (pure self-play + snapshot pool, no
@@ -158,11 +241,16 @@ REINFORCE ~1420, PPO ~1340 (peak 1431); both ~0.97–1.00 vs random, 0–5% vs t
 
 ```bash
 uv sync
-uv run pytest                                   # 51 tests
+uv run pytest                                   # 65 tests
 uv run python -m experiments.ventures_tournament   # random < heuristic < PIMC
 uv run python -m experiments.train_ventures        # REINFORCE Elo curve
 uv run python -m experiments.train_ventures_az     # AlphaZero (negative result)
 uv run python -m experiments.train_ventures_guided # net-guided PIMC (beats heuristic)
 uv run python -m experiments.train_ventures_ppo    # PPO self-play (~65 min, beats heuristic)
 uv run python -m experiments.cfr_toy               # CFR -> Kuhn equilibrium
+uv run python -m experiments.train_ventures_nash   # Nash-seeking PPO vs plain control (+ exploiters)
+uv run python -m experiments.exploit_ventures      # best-response exploiter vs a checkpoint
+uv run python -m experiments.elo_ladder            # rate the lineage vs the heuristic (resumable)
+uv run python -m experiments.belief_ventures       # belief quality + belief-search matches
+uv run python -m experiments.train_ventures_league # exploiter league (resumable)
 ```
