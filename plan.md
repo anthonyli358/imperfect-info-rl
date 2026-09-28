@@ -167,7 +167,11 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   opponent. Belief worlds share 0.453 of the opponent's hidden hand vs 0.386 uniform. But at 64
   sims × 4 worlds, belief search beats uniform search only 0.512 ± 0.011, and uniform search is
   level with the raw `nash_nash` policy (0.502): the value net (trained on PPO v2) no longer
-  helps. Retrain the value net on the current policy before judging belief search.
+  helps. Retrained on `nash_long` self-play (`value_nash_long_priv.pt`, Brier 0.138 vs the
+  heuristic leaf's 0.166), it changes nothing: uniform search vs `nash_long` 0.502 ± 0.013,
+  belief vs uniform 0.500 ± 0.012. At 64 × 4, determinized search no longer improves on the
+  Nash-trained policy, with or without the belief. Belief search is shelved; it may matter again
+  at much larger search budgets (Phase D) or on games where hands say more.
 - [ ] **B. Nash-seeking learner.** Turn PPO self-play into a method that converges to equilibrium:
   **MMD / R-NaD-style** regularization toward a slowly updated reference ("magnet") policy — close
   to a drop-in change to `selfplay/ppo.py` — plus **league play** (AlphaStar / PSRO-lite): keep a

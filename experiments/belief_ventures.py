@@ -156,7 +156,8 @@ def search_strength(config: Config) -> None:
 
 def main(config: Config) -> None:
     """Run the belief-quality diagnostic, then the search matches."""
-    belief_quality(config)
+    if config.quality_games:
+        belief_quality(config)
     if config.matches:
         search_strength(config)
 
