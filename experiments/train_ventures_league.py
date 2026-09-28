@@ -14,10 +14,11 @@ same start and is exploited the same way, so any gain can be credited to the exp
 to extra training.
 
 **Resumable.** Every step leaves a file behind and is skipped when its file exists: a finished
-training phase ``runs/<tag>.pt``, the hole check (``runs/league_state.json``), and an exploiter
-``runs/exploit_<tag>.json``. A training phase also saves ``runs/<tag>_partial.pt`` at every eval,
-and a rerun continues from it for the remaining iterations. The optimizer, snapshot pool and
-magnet restart at that point, a small perturbation. Stop at any time and rerun the same command.
+training phase ``runs/<tag>.pt``, the hole check (``runs/league_state.json``), an exploiter
+``runs/exploit_<tag>.json`` (which also marks its whole round done). A training phase also saves
+``runs/<tag>_partial.pt`` at every eval, and a rerun continues from it for the remaining
+iterations. The optimizer, snapshot pool and magnet restart at that point, a small perturbation.
+Stop at any time and rerun the same command.
 
 **Elo log.** Every in-training eval (Elo anchored on the heuristic at 1676, 400 games, about ±35
 Elo noise) is appended to ``runs/league_elo.json``, per phase.
@@ -166,6 +167,15 @@ def main(config: Config) -> None:
     summary = []
     for r in range(1, config.rounds + 1):
         print(f"\n=== league round {r}: {len(exploiters)} exploiter(s) ===", flush=True)
+        done = Path(f"runs/exploit_league_r{r}.json")
+        if done.exists():  # the round's last step is done; its checkpoint is not needed again
+            main_path = f"runs/league_r{r}.pt"
+            check = _load(STATE).get(f"check_r{r}", {}).get("score", float("nan"))
+            score = float(json.loads(done.read_text("utf-8"))["final"]["score"])
+            exploiters.append(f"runs/exploit_league_r{r}.pt")
+            summary.append((f"league_r{r}", check, score))
+            print(f"round {r}: done already (exploiter {score:.3f})", flush=True)
+            continue
         league = (VenturesHeuristic("heuristic"),) + tuple(
             PPOAgent.from_checkpoint(e, name=f"exploiter{i}", greedy=_greedy(e))
             for i, e in enumerate(exploiters)

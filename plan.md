@@ -158,8 +158,16 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
 - [x] **B (longer run).** ✅ `nash_long`: 600 more iterations of the same recipe from `nash_nash`
   (153k games). Exploiter **0.522 (+2.5)**, still falling. It is also stronger: 0.532 vs
   `nash_nash`, **0.815 (+52.2) vs the heuristic**, 0.640 vs PPO v2 (1000 duplicate deals each).
-  Next: dedicated exploiters in the league; periodic checkpoints (`nash_long_<iter>.pt`) allow an
-  exploitability-vs-training curve.
+  Periodic checkpoints (`nash_long_<iter>.pt`) are rated in `runs/elo_ladder.json`
+  (`experiments/elo_ladder.py`): PPO v2 1822, nash 1890, nash_long 1917 → 1946 → 1941.
+- [ ] **B (exploiter league, in progress).** `experiments/train_ventures_league.py` (resumable).
+  Two rounds of 200 iterations from `nash_long`, each exploiter added to the league. So far it
+  **makes things worse**: the exploiter score rises 0.522 → **0.556** (r1) → **0.573** (r2), and
+  the r1 agent did not even close `nash_long`'s own hole (that exploiter scores 0.550 vs r1).
+  Strength is flat (r1 1942 Elo). The same-budget plain-Nash control (`league_control`) still
+  has to run; rerun the script to finish it. If the control stays near 0.52, dedicated
+  exploiters as fixed league members hurt: training vs a few fixed best responses overfits to
+  them instead of moving toward Nash.
 - [x] **C (first result).** ✅ `agents/belief.py` particle filter (`Agent.reset`/`observe` hooks,
   `Game.repair_world`), `experiments/belief_ventures.py`. Lessons: a plain filter collapses (each
   opponent reveal kills ~80% of particles); rejuvenating with uniform resamples is worse than
