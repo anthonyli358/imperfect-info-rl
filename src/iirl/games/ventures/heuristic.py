@@ -10,6 +10,17 @@ play from random flailing:
    draw from it — so you get only about half of the remaining deck draws as your own turns. The aim
    is to bank as much score as possible before then: don't open a route you can't finish in the
    turns that remain, and once the clock is short, stop starting new ventures.
+
+**Styles.** A few knobs turn it into distinct opponents for a style-diverse training league (one
+opponent with one habit taught the agent a habit-specific exploit; see ``writeup.md``). The
+defaults reproduce the original heuristic exactly. Registered styles:
+
+* ``ventures``: the original.
+* ``ventures_careful``: never hands the opponent a playable card when a safe discard exists.
+* ``ventures_tight``: careful; opens at most 3 routes, each only with a clearly winning hand, and
+  never wagers.
+* ``ventures_aggressive``: careful; opens routes on weaker hands and wagers readily.
+* ``ventures_hoarder``: careful; also takes discards the opponent could play, to deny them.
 """
 
 from __future__ import annotations
@@ -38,13 +49,29 @@ _BACKING_MARGIN = 10  # only back a route projected comfortably past the start c
 class VenturesHeuristic(Agent):
     """Greedy Ventures policy with wager discipline and deck-clock awareness."""
 
-    def __init__(self, name: str = "heuristic") -> None:
+    def __init__(
+        self,
+        name: str = "heuristic",
+        open_margin: int = 0,
+        max_routes: int = NUM_SUITS,
+        backing_margin: int | None = _BACKING_MARGIN,
+        careful: bool = False,
+        deny: bool = False,
+    ) -> None:
         """Create the heuristic agent.
 
         Args:
             name: Label used in standings and error messages.
+            open_margin: Points past the start cost a hand must project to open a route.
+            max_routes: Never open more routes than this.
+            backing_margin: Wager only on a route projected this far past the start cost
+                (``None``: never wager).
+            careful: Never discard a card the opponent can play if a safe discard exists.
+            deny: With no useful discard to take, take one the opponent could play.
         """
         self.name = name
+        self.open_margin, self.max_routes = open_margin, max_routes
+        self.backing_margin, self.careful, self.deny = backing_margin, careful, deny
 
     def step(self, game: Game, state: State, rng: np.random.Generator) -> Action:
         """Return a legal action following the wager-discipline and deck-clock rules."""
@@ -86,11 +113,14 @@ class VenturesHeuristic(Agent):
             if route:  # already started: stay committed
                 pursued.append(True)
                 continue
+            if sum(1 for r in state.routes[me] if r) >= self.max_routes:
+                pursued.append(False)  # enough routes open already
+                continue
             # Unstarted: how many of our best cards clear the start cost, and is there time?
             cumulative, needed = on_route, None
             for i, v in enumerate(suit_numbers, start=1):
                 cumulative += v
-                if cumulative > START_COST:
+                if cumulative > START_COST + self.open_margin:
                     needed = i
                     break
             pursued.append(needed is not None and needed <= my_turns_left)
@@ -112,9 +142,10 @@ class VenturesHeuristic(Agent):
             s = suit_of(a)
             if is_backing(a):
                 good = (
-                    pursued[s]
+                    self.backing_margin is not None
+                    and pursued[s]
                     and route_max[s] == 0
-                    and potential[s] >= START_COST + _BACKING_MARGIN
+                    and potential[s] >= START_COST + self.backing_margin
                 )
                 priority = 90 if good else 0
             else:
@@ -130,8 +161,15 @@ class VenturesHeuristic(Agent):
         return min(discards, key=lambda a: self._discard_key(state, a - DISCARD_OFFSET, pursued))
 
     def _discard_key(self, state: VenturesState, card: int, pursued: list[bool]) -> tuple:
-        """Sort key for choosing a discard (lowest first): unwanted suits, then low ranks."""
-        return (pursued[suit_of(card)], rank_of(card))
+        """Sort key for choosing a discard, lowest first.
+
+        Gifts to the opponent go last if careful, then cards from unwanted suits, then low ranks.
+        """
+        return (
+            self.careful and _playable_by_opponent(state, card),
+            pursued[suit_of(card)],
+            rank_of(card),
+        )
 
     def _draw_phase(
         self,
@@ -158,27 +196,57 @@ class VenturesHeuristic(Agent):
                 best_value, best_take = value, a
         if best_take is not None:
             return best_take
+        if self.deny:  # take the discard the opponent wants most, if any
+            wanted = [
+                (rank_of(state.discards[a - TAKE_DISCARD_OFFSET][-1]), a)
+                for a in legal
+                if a >= TAKE_DISCARD_OFFSET
+                and _playable_by_opponent(state, state.discards[a - TAKE_DISCARD_OFFSET][-1])
+            ]
+            if wanted:
+                return max(wanted)[1]
         if DRAW_DECK_ACTION in legal:
             return DRAW_DECK_ACTION
         return int(rng.choice(list(legal)))  # forced: only discards left to draw
 
 
-@register_heuristic("ventures_careful")
-class CarefulVenturesHeuristic(VenturesHeuristic):
-    """The heuristic, but it never hands the opponent a card they can play if it can avoid it.
+def _playable_by_opponent(state: VenturesState, card: int) -> bool:
+    """Whether the opponent of the player to move could play ``card`` on a route they started."""
+    route = state.routes[1 - state.to_move][suit_of(card)]
+    return bool(route) and _can_play(route, card)
 
-    A careful human's discard discipline: before anything else, prefer a discard the opponent
-    cannot put on a route they have started; if every option is such a gift, give the least
-    valuable one (the lowest card). The plain heuristic ignores the opponent entirely and gifts a
-    playable card 25% of the time even when a safe discard exists, which is income the agent
-    learned to live on.
+
+class CarefulVenturesHeuristic(VenturesHeuristic):
+    """The heuristic with a careful human's discard discipline (``careful=True``).
+
+    The plain heuristic ignores the opponent and gifts a playable card 25% of the time even when a
+    safe discard exists, which is income the trained agent learned to live on.
     """
 
-    def __init__(self, name: str = "careful") -> None:
-        """Create the careful heuristic."""
-        super().__init__(name)
+    def __init__(self, name: str = "careful", **styles: object) -> None:
+        """Create the careful heuristic (other style knobs as in :class:`VenturesHeuristic`)."""
+        super().__init__(name, careful=True, **styles)  # type: ignore[arg-type]
 
-    def _discard_key(self, state: VenturesState, card: int, pursued: list[bool]) -> tuple:
-        opp_route = state.routes[1 - state.to_move][suit_of(card)]
-        gift = bool(opp_route) and _can_play(opp_route, card)
-        return (gift, *super()._discard_key(state, card, pursued))
+
+register_heuristic("ventures_careful")(CarefulVenturesHeuristic)
+
+
+@register_heuristic("ventures_tight")
+def tight_heuristic() -> VenturesHeuristic:
+    """Careful; at most 3 routes, each only on a clearly winning hand; never wagers."""
+    return CarefulVenturesHeuristic("tight", open_margin=8, max_routes=3, backing_margin=None)
+
+
+@register_heuristic("ventures_aggressive")
+def aggressive_heuristic() -> VenturesHeuristic:
+    """Careful; opens routes on weaker hands and wagers readily."""
+    return CarefulVenturesHeuristic("aggressive", open_margin=-8, backing_margin=0)
+
+
+@register_heuristic("ventures_hoarder")
+def hoarder_heuristic() -> VenturesHeuristic:
+    """Careful; also takes discards the opponent could play, to deny them."""
+    return CarefulVenturesHeuristic("hoarder", deny=True)
+
+
+LEAGUE_STYLES = ("ventures_careful", "ventures_tight", "ventures_aggressive", "ventures_hoarder")

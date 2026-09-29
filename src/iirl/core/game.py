@@ -140,6 +140,16 @@ class Game(ABC):
         """
         raise NotImplementedError(f"{type(self).__name__} does not provide resample_from_infostate")
 
+    def symmetries(self) -> list[tuple[np.ndarray, np.ndarray]]:
+        """Return the game's relabelling symmetries, as ``(feature_index, action_map)`` pairs.
+
+        For each symmetry (e.g. permuting interchangeable suits), relabelling a state gives
+        ``information_state_tensor(relabelled) == information_state_tensor(state)[feature_index]``,
+        and action ``a`` becomes ``action_map[a]``. Learners use them to share what they learn
+        across equivalent positions. Optional; the default (no symmetries) is always correct.
+        """
+        return []
+
     def repair_world(
         self, state: State, player: Player, world: State, rng: np.random.Generator
     ) -> State:

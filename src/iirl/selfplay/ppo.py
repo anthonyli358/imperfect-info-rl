@@ -82,6 +82,12 @@ class PPOConfig:
     # unused). This tracks an *average* of recent policies rather than jumping to the current one,
     # closer to R-NaD, whose fixed-point argument regularizes toward a slowly moving reference.
     magnet_ema: float = 0.0
+    # Symmetry regularization (DrAC-style; Raileanu et al. 2021): for games with relabelling
+    # symmetries (``Game.symmetries``), add ``symmetry_coef * (KL(pi(x) || pi(sigma x)) + value
+    # gap)`` for a random symmetry sigma per minibatch, pulling the policy on a relabelled
+    # position toward the (fixed) policy on the original, actions mapped across. Unlike adding
+    # relabelled samples to the batch, it leaves PPO's importance ratios untouched. 0 is off.
+    symmetry_coef: float = 0.0
     # Iterations at the start that train only the value baseline (no policy update). A warm-started
     # policy with a fresh critic would otherwise take its first steps on noisy advantages, which
     # can make a strong policy worse before the critic catches up (e.g. a best-response exploiter).
@@ -479,13 +485,15 @@ def _ppo_update(
     rng,
     magnet: PolicyValueNet | None = None,
     value_only: bool = False,
+    symmetries: list[tuple[torch.Tensor, torch.Tensor, torch.Tensor]] | None = None,
 ) -> tuple[float, float]:
     """Run PPO epochs over the collected batch; return mean (policy_loss, value_loss).
 
     With a ``magnet`` (and ``config.magnet_coef > 0``) the loss also pays ``KL(pi || magnet)``
     over the legal actions. ``value_only`` trains just the value baseline (critic warm-up); with no
     separate privileged critic the value head shares the policy's trunk, so that still moves the
-    policy slightly.
+    policy slightly. ``symmetries`` holds ``(feature_index, critic_feature_index, action_map)``
+    per symmetry, for the ``config.symmetry_coef`` regularizer.
     """
     feats = torch.as_tensor(batch["feat"])
     cfeats = torch.as_tensor(batch["cfeat"]) if critic is not None else None
@@ -527,6 +535,17 @@ def _ppo_update(
                     mag_logp = torch.log_softmax(mag_logits, dim=1)
                 kl = (probs * (logp_all - mag_logp) * masks[idx]).sum(dim=1).mean()
                 loss = loss + config.magnet_coef * kl
+            if symmetries and config.symmetry_coef > 0 and not value_only:
+                f_idx, c_idx, a_map = symmetries[int(rng.integers(len(symmetries)))]
+                sym_logits, sym_value = net(feats[idx][:, f_idx])
+                if critic is not None:
+                    sym_value = critic(cfeats[idx][:, c_idx])
+                sym_logits = sym_logits[:, a_map].masked_fill(masks[idx] == 0, -1e9)
+                sym_logp = torch.log_softmax(sym_logits, dim=1)
+                target = probs.detach()
+                sym_kl = (target * (logp_all.detach() - sym_logp) * masks[idx]).sum(dim=1).mean()
+                sym_v = nn.functional.mse_loss(sym_value, value.detach())
+                loss = loss + config.symmetry_coef * (sym_kl + sym_v)
             opt.zero_grad()
             loss.backward()
             nn.utils.clip_grad_norm_(params, config.max_grad_norm)
@@ -609,6 +628,16 @@ def train_ppo(
         critic.eval()
         params += list(critic.parameters())
     opt = optim.Adam(params, lr=config.lr)
+    symmetries = None
+    if config.symmetry_coef > 0:
+        symmetries = [
+            (
+                torch.as_tensor(f_idx, dtype=torch.long),
+                torch.as_tensor(np.concatenate([f_idx, f_idx + input_dim]), dtype=torch.long),
+                torch.as_tensor(a_map, dtype=torch.long),
+            )
+            for f_idx, a_map in game.symmetries()
+        ]
     workers = _WorkerPool(game, input_dim, config) if config.num_workers > 0 else None
 
     # Fixed opponents take negative ids so they never collide with learner snapshots.
@@ -651,7 +680,9 @@ def train_ppo(
             elif config.magnet_coef > 0 and (iteration - 1) % config.magnet_interval == 0:
                 magnet = copy.deepcopy(net).eval()  # refresh the reference policy
             warm = iteration <= config.critic_warmup
-            last_losses = _ppo_update(net, critic, opt, batch, config, rng, magnet, warm)
+            last_losses = _ppo_update(
+                net, critic, opt, batch, config, rng, magnet, warm, symmetries
+            )
             net.eval()
             if critic is not None:
                 critic.eval()

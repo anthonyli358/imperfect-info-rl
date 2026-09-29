@@ -52,6 +52,8 @@ class Config:
         *((f"nash_g {i}", f"runs/nash_g_{i}.pt") for i in range(100, 500, 100)),
         *((f"rnad {i}", f"runs/rnad_{i}.pt") for i in range(100, 500, 100)),
         *((f"careful {i}", f"runs/careful_{i}.pt") for i in range(100, 500, 100)),
+        *((f"diverse {i}", f"runs/diverse_{i}.pt") for i in range(100, 500, 100)),
+        *((f"diverse_sym {i}", f"runs/diverse_sym_{i}.pt") for i in range(100, 500, 100)),
     )
     deals: int = 1000
     out: str = "runs/elo_ladder.json"

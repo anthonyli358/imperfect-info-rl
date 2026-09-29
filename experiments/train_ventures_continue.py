@@ -22,6 +22,8 @@ Run with::
     uv run python -m experiments.train_ventures_continue       # nash_g
     uv run python -m experiments.train_ventures_continue rnad  # the R-NaD-style variant
     uv run python -m experiments.train_ventures_continue careful  # careful heuristic in the league
+    uv run python -m experiments.train_ventures_continue diverse  # four styles in the league
+    uv run python -m experiments.train_ventures_continue diverse_sym  # + suit-symmetry regularizer
 """
 
 from __future__ import annotations
@@ -34,7 +36,9 @@ import iirl.games  # noqa: F401  (registers "ventures")
 from experiments import exploit_ventures
 from experiments import train_ventures_nash as nash
 from experiments.train_ventures_league import _train
-from iirl.core.registry import make_heuristic
+from iirl.core.registry import make, make_heuristic
+from iirl.eval.duplicate import duplicate_match
+from iirl.games.ventures.heuristic import LEAGUE_STYLES
 from iirl.selfplay import PPOConfig
 
 
@@ -76,6 +80,44 @@ CAREFUL = Config(
 )
 
 
+DIVERSE = Config(
+    tag="diverse",
+    anchor="ventures_careful",
+    anchor_elo=1500.0,
+    ppo=replace(
+        nash.variant("nash", nash.Config().ppo),
+        gamma=0.999,
+        seed=5,
+        scripted_opponents=tuple(make_heuristic(name) for name in LEAGUE_STYLES),
+        scripted_frac=0.3,
+    ),
+)
+DIVERSE_SYM = replace(
+    DIVERSE, tag="diverse_sym", ppo=replace(DIVERSE.ppo, symmetry_coef=0.1, seed=6)
+)
+PANEL = ("ventures", *LEAGUE_STYLES)
+
+
+def panel(path: str, tag: str, deals: int = 500) -> dict:
+    """Rate a checkpoint against every opponent style (duplicate deals); save and return it.
+
+    The weakest matchup matters more than the average: an agent that feeds on one habit shows
+    up as a large spread.
+    """
+    out_path = Path(f"runs/panel_{tag}.json")
+    if out_path.exists():
+        return json.loads(out_path.read_text("utf-8"))
+    game = make("ventures")
+    result = {}
+    for name in PANEL:
+        agent = (exploit_ventures.ppo_agent, {"path": path})
+        r = duplicate_match(game, agent, (make_heuristic, {"short_name": name}), deals, seed=61)
+        result[name] = {"score": r.score, "score_se": r.score_se, "margin": r.margin}
+        print(f"  panel {tag} vs {name:<20} {r.score:.3f}+-{r.score_se:.3f}  {r.margin:+.1f}")
+    out_path.write_text(json.dumps(result, indent=2), "utf-8")
+    return result
+
+
 def main(config: Config) -> None:
     """Train, then exploit with each seed; print the exploitability estimate (the max)."""
     ppo = replace(config.ppo, iterations=config.iterations)
@@ -98,10 +140,11 @@ def main(config: Config) -> None:
             )
         scores.append(float(json.loads(record.read_text("utf-8"))["final"]["score"]))
     print(f"\nexploitability of {config.tag}: max {max(scores):.3f}  (runs: {scores})")
+    panel(path, config.tag)
 
 
 if __name__ == "__main__":
     import sys
 
-    configs = {"rnad": RNAD, "careful": CAREFUL}
+    configs = {"rnad": RNAD, "careful": CAREFUL, "diverse": DIVERSE, "diverse_sym": DIVERSE_SYM}
     main(configs[sys.argv[1]] if sys.argv[1:] else Config())

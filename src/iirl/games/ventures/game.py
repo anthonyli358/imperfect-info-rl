@@ -470,6 +470,10 @@ class Ventures(Game):
             ]
         )
 
+    def symmetries(self) -> list[tuple[np.ndarray, np.ndarray]]:
+        """Return the 119 non-identity suit permutations (the five suits are interchangeable)."""
+        return _suit_symmetries()
+
     def information_state_string(self, state: State, player: Player) -> str:
         """Return a hashable infoset key from exactly what ``player`` observes."""
         assert isinstance(state, VenturesState)
@@ -625,6 +629,52 @@ class Ventures(Game):
         view["hidden"][opp] = sum(state.hands[opp]) - len(known)
         view["player"] = player
         return view
+
+
+@cache
+def _suit_symmetries() -> list[tuple[np.ndarray, np.ndarray]]:
+    """Build ``(feature_index, action_map)`` for every non-identity suit permutation.
+
+    ``sigma[s]`` is the new label of old suit ``s``. The tensor layout (see
+    ``information_state_tensor``) is: 9 card-type blocks, per-suit route features for both players
+    (6 each), per-suit hand/discard features (9), scalars (unchanged), and the just-discarded-suit
+    flags. A relabelled tensor takes position ``i`` from ``old[feature_index[i]]``.
+    """
+    from itertools import permutations
+
+    ranks = len(RANKS)
+    out = []
+    for sigma in permutations(range(NUM_SUITS)):
+        if list(sigma) == list(range(NUM_SUITS)):
+            continue
+        inv = [0] * NUM_SUITS
+        for s, t in enumerate(sigma):
+            inv[t] = s
+        card_src = [inv[c // ranks] * ranks + c % ranks for c in range(NUM_CARD_TYPES)]
+
+        def suit_block(width: int, inv: list[int] = inv) -> list[int]:
+            return [inv[t] * width + k for t in range(NUM_SUITS) for k in range(width)]
+
+        index: list[int] = []
+        offset = 0
+        for _ in range(9):  # card-type blocks
+            index += [offset + c for c in card_src]
+            offset += NUM_CARD_TYPES
+        for width in (6, 6, 9):  # own routes, opponent routes, per-suit hand/discard features
+            index += [offset + i for i in suit_block(width)]
+            offset += NUM_SUITS * width
+        index += [offset + i for i in range(7)]  # scalars
+        offset += 7
+        index += [offset + inv[t] for t in range(NUM_SUITS)]  # just-discarded suit
+        action_map = np.arange(NUM_ACTIONS)
+        for c in range(NUM_CARD_TYPES):
+            new_c = sigma[c // ranks] * ranks + c % ranks
+            action_map[c] = new_c
+            action_map[DISCARD_OFFSET + c] = DISCARD_OFFSET + new_c
+        for s in range(NUM_SUITS):
+            action_map[TAKE_DISCARD_OFFSET + s] = TAKE_DISCARD_OFFSET + sigma[s]
+        out.append((np.asarray(index), action_map))
+    return out
 
 
 def _replace(state: VenturesState, **changes: object) -> VenturesState:

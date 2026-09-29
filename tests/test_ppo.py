@@ -248,3 +248,22 @@ def test_critic_warmup_leaves_the_policy_unchanged() -> None:
     net, _ = train_ppo(game, {"random": RandomAgent("random")}, config, init_net=start)
     for a, b in zip(start.policy_head.parameters(), net.policy_head.parameters(), strict=True):
         assert torch.equal(a, b)
+
+
+def test_ppo_with_symmetry_regularizer_runs() -> None:
+    from iirl.agents.heuristic import VenturesHeuristic
+
+    game = make("ventures")
+    config = PPOConfig(
+        iterations=2,
+        games_per_iter=8,
+        num_envs=8,
+        hidden=(32,),
+        privileged_critic=True,
+        symmetry_coef=0.5,
+        eval_interval=2,
+        eval_games=4,
+        feature_sample_games=4,
+    )
+    _, history = train_ppo(game, {"heuristic": VenturesHeuristic()}, config)
+    assert np.isfinite(history[-1].policy_loss) and np.isfinite(history[-1].value_loss)
