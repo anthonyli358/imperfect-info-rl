@@ -187,7 +187,7 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   belief vs uniform 0.500 ± 0.012. At 64 × 4, determinized search no longer improves on the
   Nash-trained policy, with or without the belief. Belief search is shelved; it may matter again
   at much larger search budgets (Phase D) or on games where hands say more.
-- [ ] **B. Nash-seeking learner.** Turn PPO self-play into a method that converges to equilibrium:
+- [x] **B. Nash-seeking learner** (core done; results above). Turn PPO self-play into a method that converges to equilibrium:
   **MMD / R-NaD-style** regularization toward a slowly updated reference ("magnet") policy — close
   to a drop-in change to `selfplay/ppo.py` — plus **league play** (AlphaStar / PSRO-lite): keep a
   pool of past agents and train exploiters against the current main agent, and mix them into the
@@ -199,7 +199,7 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   enters as potential-based reward shaping (already in place), which cannot change the optimum.
 - [ ] **Recipe note for new games** (Jaipur onward): with no RL base yet, write the heuristic,
   behaviour-clone its replays, then fine-tune with PPO — skips the random-init phase.
-- [ ] **C. Belief-aware test-time search.** Replace uniform determinization with **Bayesian
+- [x] **C. Belief-aware test-time search** (built; no gain at 64 × 4, shelved; results above). Replace uniform determinization with **Bayesian
   determinization**: weight each sampled opponent hand by the likelihood of the opponent's observed
   actions under the policy (their discards and plays reveal their hand). Small change to
   `resample_from_infostate` / the search; likely the cheapest large gain. Then Gumbel root search
@@ -212,6 +212,30 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero
   exploitability.
+
+**Next steps (2026-09-29), in order.** Each is useful alone; stop wherever the curve flattens.
+
+1. [ ] **Finish `nash_g`** (the stall fix, running). Ladder-rate its checkpoints; exploitability
+   as the max of two exploiter runs; confirm the stall is gone (count 200-turn self-play games).
+   Update the play page's opponent list.
+2. [ ] **Refresh the stale number.** Rate net-guided PIMC on today's yardstick: duplicate deals
+   vs the heuristic and vs the best Nash policy. Settles whether any search-based agent still
+   competes.
+3. [ ] **Cheap Nash-seeking variants**, each vs a same-budget plain-Nash control, and judged on
+   both Elo and exploitability (max of ≥ 2 exploiter runs):
+   - **R-NaD magnet reset:** refresh the magnet to the *average* of recent policies rather than
+     the current one (closer to the method's convergence guarantee).
+   - **Proper PSRO:** keep a population (past mains and exploiters), build its payoff matrix from
+     duplicate matches, solve for the Nash *mixture*, and train the main agent against that
+     mixture. The fixed-exploiter league failed because every member got equal, fixed weight.
+   - **Scale:** a bigger net (1024 × 3) or simply 2× the games.
+4. [ ] **Decision point: go deeper on Ventures, or move to Jaipur.**
+   - *Move on* if the exploiter edge is at or below ~+2 points/game, or if step 3 gives nothing.
+     Jaipur (Stage 2) then tests the recipe and interface on a second game, and brings the planned
+     interface hardening (including a generic `player_view` hook, so the play UI works for any
+     game).
+   - *Go deeper* if the remaining edge looks like something search could close: **D** (Rust
+     engine; test search on the Nash policy at 256 × 8 and beyond), then **E** (ReBeL).
 
 **Done when:** a best-response exploiter can no longer beat the agent by a statistically
 meaningful margin, and the agent beats every panel opponent — with the recipe documented as the

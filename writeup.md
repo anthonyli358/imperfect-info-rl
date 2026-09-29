@@ -51,6 +51,46 @@ Bayesian belief over the opponent's hand.
 
 ---
 
+## Where we stand (2026-09-29)
+
+We have tried most of the families that apply to a long, luck-heavy, imperfect-information card
+game, and one is clearly best **so far**: **Nash-seeking PPO, with no search at play time.** It
+has the most evidence behind it; "nothing else could beat it" is not established.
+
+| Approach | Verdict on Ventures |
+|---|---|
+| Heuristic, PIMC search | Solid baselines (~1676–1700 Elo) |
+| REINFORCE, PPO v1 | Beat random, plateau below the heuristic |
+| AlphaZero (learned value + search) | Fails: the deal's luck swamps the value net |
+| Tabular CFR | Exact on toy games; the game is far too long for it |
+| Net-guided PIMC | ~1855, but from 40 games, before the current features |
+| Expert iteration (search distilled into the policy) | Fragile, no gain |
+| **PPO v2 → Nash-seeking PPO** | **Best: ~1970 Elo; exploiter edge down from +12.6 to about +4 points/game** |
+| Belief-weighted search on top | Better beliefs, no gain in play at 64 sims × 4 worlds |
+| Exploiters as fixed league opponents | Worse on both counts |
+
+**Why "best" and not "done":**
+- **Not unexploitable yet.** The best exploiter still scores 0.545 (+4 points/game). Small, but
+  clearly above even.
+- **Search was only tested small.** It adds nothing at 64 × 4 on top of the Nash policy, but
+  earlier, more search kept helping up to 256 × 8, and the Python engine makes big budgets too
+  slow to test properly.
+- **One stale number.** Net-guided PIMC's ~1855 predates the current features and was never
+  played against today's agents.
+
+**Not yet tried:**
+1. **Cheap variants of what worked:** a proper PSRO league, where a meta-solver mixes the
+   opponents (fixed exploiters played uniformly are what failed); full R-NaD, which periodically
+   resets the magnet to the average policy; a bigger network, or simply longer training.
+2. **A fast engine and batched GPU search** (Rust core). This is the only way to learn whether
+   search helps the Nash policy at scale, and a prerequisite for the next item.
+3. **ReBeL / Student of Games:** search over what both players can infer, with CFR at each step.
+   It is the principled route to real unexploitability, and by far the most work.
+4. **Deep CFR / NFSP:** equilibrium methods too, but they tend to struggle at this game length.
+   More useful as the Stage 6 comparison than as contenders.
+
+The ordered plan is in `plan.md` (Stage 1b, "Next steps").
+
 ## Why each method lands where it does
 
 **PIMC (Perfect-Information Monte Carlo).** Determinized UCT: sample worlds consistent with the info
