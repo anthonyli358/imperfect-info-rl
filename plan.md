@@ -230,6 +230,17 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      duplicate matches, solve for the Nash *mixture*, and train the main agent against that
      mixture. The fixed-exploiter league failed because every member got equal, fixed weight.
    - **Scale:** a bigger net (1024 × 3) or simply 2× the games.
+   - [x] **R-NaD magnet averaging** (`magnet_ema = 0.02`, vs `nash_g`): no gain. Ladder
+     1968/1983/1962/1979, exploitability 0.560 (vs 0.547).
+3b. [ ] **Fix the leaky anchor (found 2026-09-29).** Against a heuristic that never gifts a
+   playable card (`ventures_careful`), `league_control` scores only 0.570 (+6.8), against 0.816
+   vs the plain one; PPO v2 loses (0.441). Next:
+   - [ ] Re-anchor the Ventures ladder on the careful heuristic (report both anchors).
+   - [ ] Continue Nash training with the careful heuristic in the league instead of the plain
+     one; judge by score vs careful and by exploitability (max of ≥ 2 runs).
+   - [ ] A "careful" Camel Stocks heuristic (e.g. contests the camel majority, never leaves
+     precious goods in the market), to check whether that agent has a similar dependence.
+   - [ ] Analyse recorded human games (`runs/human_games/`) with the same conditional questions.
 4. [ ] **Decision point: go deeper on Ventures, or move to Jaipur.**
    - *Move on* if the exploiter edge is at or below ~+2 points/game, or if step 3 gives nothing.
      Jaipur (Stage 2) then tests the recipe and interface on a second game, and brings the planned

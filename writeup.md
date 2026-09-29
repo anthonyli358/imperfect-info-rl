@@ -137,6 +137,49 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### The agents are strong, but much of the Ventures edge was a leaky opponent (2026-09-29)
+
+The behaviour analysis below found the Ventures agent living off the heuristic's discards. So
+the heuristic got a careful human's discard discipline: never hand the opponent a playable card
+when a safe discard exists, and nothing else changed (`ventures_careful`). Then each best agent
+played the plain heuristic, the careful one, and itself (`experiments/analyze_opponents.py`,
+400 games each), with the key matches confirmed on 1000 duplicate deals:
+
+| Match (1000 duplicate deals) | Score | Margin |
+|---|:---:|:---:|
+| league_control vs plain heuristic | 0.816 ± 0.008 | +54.9 |
+| **league_control vs careful heuristic** | **0.570 ± 0.011** | **+6.8** |
+| careful vs plain heuristic | 0.521 ± 0.003 | +0.9 |
+| **PPO v2 vs careful heuristic** | **0.441 ± 0.011** | **−2.8** |
+
+- **One rule nearly closes the gap.** Against the careful heuristic the agent's margin falls
+  from +55 to +7 points a game, and its average route value from +15 to +5. PPO v2, "~1820 Elo",
+  actually loses to it.
+- **It is not that the careful heuristic plays better in general.** The two heuristics are nearly
+  even against each other (0.521). It specifically denies the agent the income it learned to
+  depend on: the plain heuristic gifts a playable card 26% of the time, the careful one 4%.
+- **The Ventures Elo numbers are inflated by a leaky anchor.** Every rating above is anchored on
+  the plain heuristic. Against the careful one, `league_control` is only about +50 Elo up. The
+  exploiter yardstick (0.545) was the honest measure all along: a trained counter-strategy does
+  better against the agent than the careful heuristic (0.430), but not by much.
+- **Why training produced this.** The heuristic was a permanent member of the Nash training
+  league, and the agent learned its weakness. Self-play opponents gift too (9.5% in agent-vs-agent
+  games), so the lesson never had to be unlearned.
+- **Camel Stocks shows no sign of the same problem so far.** In self-play the agent is balanced
+  (49% wins; camel bonus split 49/51), and its style is similar against itself and the heuristic.
+  Its herd is bigger against itself (4.2 vs 2.0), since the opponent competes for camels too. A
+  similar "careful" variant for Camel Stocks has not been built yet.
+
+The practical conclusion, and the user's intuition: these agents are strong, not unbeatable. The
+next training runs should use the careful heuristic (and other non-leaky opponents) in the
+league and as the Elo anchor, and a human who simply never gifts takes away most of the Ventures
+agent's edge.
+
+**Also: R-NaD-style averaging did not help.** With the magnet as a slowly moving average of the
+policy (`magnet_ema = 0.02`) instead of a periodic copy, and everything else as `nash_g`, the
+ladder reads 1968 / 1983 / 1962 / 1979 (same as `nash_g`) and the exploiter scores 0.560 (max of
+0.532 and 0.560) vs `nash_g`'s 0.547. No gain in strength or exploitability.
+
 ### How the best agents play, vs the human-style heuristic (2026-09-29)
 
 Each game's best agent played its heuristic for 200 games (both seats), with every decision logged
