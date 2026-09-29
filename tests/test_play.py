@@ -57,3 +57,51 @@ def test_player_view_hides_the_opponent_hand() -> None:
         assert view["hands"][1] == []  # nothing about the opponent's hand is known yet
         assert view["hidden"][1] == sum(s.hands[1])
         assert view["hands"][0] == g.to_display(s)["hands"][0]
+
+
+def test_finished_games_are_recorded_and_replay_exactly(tmp_path) -> None:  # noqa: ANN001
+    rng = np.random.default_rng(2)
+    session = Session(record_dir=tmp_path)
+    view = session.new("camel_stocks", "heuristic", "Heuristic", "0")
+    while not view["terminal"]:
+        view = session.act(int(rng.choice([a["id"] for a in view["legal"]])))
+    files = list((tmp_path / "camel_stocks").glob("*.json"))
+    assert len(files) == 1
+    record = json.loads(files[0].read_text("utf-8"))
+    assert record["human_seat"] == 0 and record["margin"] == view["margin"]
+    g = make("camel_stocks")
+    s = g.new_initial_state()
+    for step in record["actions"]:
+        s = g.apply_action(s, step["action"])
+    assert g.is_terminal(s) and g.returns(s) == record["returns"]
+
+
+def test_careful_heuristic_never_gifts_when_a_safe_discard_exists() -> None:
+    from iirl.core.registry import make_heuristic
+    from iirl.core.runner import _sample_chance
+    from iirl.games.ventures.game import DISCARD_OFFSET, _can_play
+    from iirl.games.ventures.state import Phase
+
+    g, careful = make("ventures"), make_heuristic("ventures_careful")
+    rng = np.random.default_rng(0)
+    checked = 0
+    for _ in range(20):
+        s = g.new_initial_state()
+        while not g.is_terminal(s):
+            if g.is_chance_node(s):
+                s = g.apply_action(s, _sample_chance(g, s, rng))
+                continue
+            a = careful.step(g, s, rng)
+            if s.phase == Phase.PLAY and a >= DISCARD_OFFSET:
+                opp = s.routes[1 - s.to_move]
+
+                def gift(c: int, s=s, opp=opp) -> bool:
+                    r = opp[c // 10]
+                    return bool(r) and _can_play(r, c)
+
+                held = [c for c, n in enumerate(s.hands[s.to_move]) if n]
+                if any(not gift(c) for c in held):
+                    assert not gift(a - DISCARD_OFFSET)
+                    checked += 1
+            s = g.apply_action(s, a)
+    assert checked > 50

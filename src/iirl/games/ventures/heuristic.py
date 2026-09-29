@@ -25,6 +25,7 @@ from iirl.games.ventures.game import (
     DISCARD_OFFSET,
     DRAW_DECK_ACTION,
     TAKE_DISCARD_OFFSET,
+    _can_play,
     route_max_number,
     route_number_sum,
 )
@@ -126,10 +127,11 @@ class VenturesHeuristic(Agent):
 
         # No committed play worth making: discard from the least-wanted suit, lowest rank first.
         discards = [a for a in legal if DISCARD_OFFSET <= a < DRAW_DECK_ACTION]
-        return min(
-            discards,
-            key=lambda a: (pursued[suit_of(a - DISCARD_OFFSET)], rank_of(a - DISCARD_OFFSET)),
-        )
+        return min(discards, key=lambda a: self._discard_key(state, a - DISCARD_OFFSET, pursued))
+
+    def _discard_key(self, state: VenturesState, card: int, pursued: list[bool]) -> tuple:
+        """Sort key for choosing a discard (lowest first): unwanted suits, then low ranks."""
+        return (pursued[suit_of(card)], rank_of(card))
 
     def _draw_phase(
         self,
@@ -159,3 +161,24 @@ class VenturesHeuristic(Agent):
         if DRAW_DECK_ACTION in legal:
             return DRAW_DECK_ACTION
         return int(rng.choice(list(legal)))  # forced: only discards left to draw
+
+
+@register_heuristic("ventures_careful")
+class CarefulVenturesHeuristic(VenturesHeuristic):
+    """The heuristic, but it never hands the opponent a card they can play if it can avoid it.
+
+    A careful human's discard discipline: before anything else, prefer a discard the opponent
+    cannot put on a route they have started; if every option is such a gift, give the least
+    valuable one (the lowest card). The plain heuristic ignores the opponent entirely and gifts a
+    playable card 25% of the time even when a safe discard exists, which is income the agent
+    learned to live on.
+    """
+
+    def __init__(self, name: str = "careful") -> None:
+        """Create the careful heuristic."""
+        super().__init__(name)
+
+    def _discard_key(self, state: VenturesState, card: int, pursued: list[bool]) -> tuple:
+        opp_route = state.routes[1 - state.to_move][suit_of(card)]
+        gift = bool(opp_route) and _can_play(opp_route, card)
+        return (gift, *super()._discard_key(state, card, pursued))

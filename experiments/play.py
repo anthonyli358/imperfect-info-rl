@@ -2,7 +2,8 @@
 
 Starts a small standard-library HTTP server on ``127.0.0.1`` (``iirl.play``) and opens
 ``viz/play.html``. Only your view is sent to the page; the opponent's hand is revealed when the
-game ends.
+game ends. Every finished game is saved to ``runs/human_games/<game>/`` (moves, chance outcomes
+and result), so your games can be analysed like the agents'.
 
 Run with::
 
@@ -29,8 +30,10 @@ class Config:
         host: Bind address (keep it local).
         port: Port to serve on.
         agents: Per game, ``(label, checkpoint)`` opponents offered in the page, strongest first;
-            ``"heuristic"`` is the game's hand-tuned agent. Missing checkpoints are skipped.
+            ``"heuristic"`` is the game's hand-tuned agent and other names without ``.pt`` are
+            registered heuristics. Missing checkpoints are skipped.
         open_browser: Open the page on start.
+        record_dir: Where finished games are saved as JSON, for analysis (``None``: off).
     """
 
     host: str = "127.0.0.1"
@@ -43,6 +46,7 @@ class Config:
                 ("Nash PPO (nash_long), 1941 Elo", "runs/nash_long.pt"),
                 ("PPO v2, 1822 Elo", "runs/ppo_ventures_best.pt"),
                 ("Heuristic, 1676 Elo", "heuristic"),
+                ("Careful heuristic (never gifts)", "ventures_careful"),
             ),
             "camel_stocks": (
                 ("Nash PPO (camel_nash), ~1970 Elo", "runs/camel_nash.pt"),
@@ -52,19 +56,21 @@ class Config:
         }
     )
     open_browser: bool = True
+    record_dir: str | None = "runs/human_games"
 
 
 def main(config: Config) -> None:
     """Serve the play page with the opponents whose checkpoints exist."""
     agents = {
         game: [
-            (label, p if p == "heuristic" else str(ROOT / p))
+            (label, str(ROOT / p) if p.endswith(".pt") else p)
             for label, p in opponents
-            if p == "heuristic" or (ROOT / p).exists()
+            if not p.endswith(".pt") or (ROOT / p).exists()
         ]
         for game, opponents in config.agents.items()
     }
-    serve(ROOT / "viz" / "play.html", agents, config.host, config.port, config.open_browser)
+    record = ROOT / config.record_dir if config.record_dir else None
+    serve(ROOT / "viz" / "play.html", agents, config.host, config.port, config.open_browser, record)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
+import time
 import webbrowser
 from collections.abc import Mapping, Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -25,9 +26,15 @@ from iirl.core.registry import make, make_heuristic
 
 
 def build_agent(game_name: str, checkpoint: str) -> Agent:
-    """Return the agent for ``checkpoint``: ``"heuristic"`` (the game's own) or a PPO checkpoint."""
+    """Return the agent for ``checkpoint``.
+
+    ``"heuristic"`` is the game's own heuristic, another name without ``.pt`` is a registered
+    heuristic (e.g. ``"ventures_careful"``), and a ``.pt`` path is a PPO checkpoint.
+    """
     if checkpoint == "heuristic":
         return make_heuristic(game_name)
+    if not checkpoint.endswith(".pt"):
+        return make_heuristic(checkpoint)
     return PPOAgent.from_checkpoint(checkpoint)
 
 
@@ -43,8 +50,15 @@ def _chance_visible(game: Game, state: State, player: int) -> bool:
 class Session:
     """One game between the human and an agent; every method returns the human's view."""
 
-    def __init__(self) -> None:
-        """Create an empty session (a game starts with :meth:`new`)."""
+    def __init__(self, record_dir: Path | None = None) -> None:
+        """Create an empty session (a game starts with :meth:`new`).
+
+        With ``record_dir``, every finished game is saved there as JSON (see :meth:`_save`).
+        """
+        self.record_dir = record_dir
+        self.history: list[dict] = []
+        self.checkpoint = ""
+        self.started_at = ""
         self.lock = threading.Lock()
         self.game_name = ""
         self.game: Game | None = None
@@ -64,7 +78,8 @@ class Session:
         """
         self.game_name, self.game = game_name, make(game_name)
         self.agent = build_agent(game_name, checkpoint)
-        self.agent_label = label
+        self.agent_label, self.checkpoint = label, checkpoint
+        self.history, self.started_at = [], time.strftime("%Y-%m-%dT%H:%M:%S")
         self.human = int(self.rng.integers(2)) if seat == "random" else int(seat)
         self.state = self.game.new_initial_state()
         self.log, self.dealt = [], False
@@ -97,6 +112,15 @@ class Session:
             entry = {"who": "chance", "text": g.action_to_string(s, action)}
         else:
             entry = {"who": "chance", "text": "a hidden card is drawn"}
+        self.history.append(
+            {
+                "player": "chance"
+                if player is None
+                else ("human" if player == self.human else "agent"),
+                "action": int(action),
+                "label": g.action_to_string(s, action),
+            }
+        )
         self.state = g.apply_action(s, action)
         self.agent.observe(g, self.state, None if player is None else action)
         if entry:
@@ -125,6 +149,34 @@ class Session:
         record["points"] += margin
         record["wins"] += margin > 0
         record["draws"] += margin == 0
+        self._save(margin)
+
+    def _save(self, margin: float) -> None:
+        """Write the finished game to ``record_dir/<game>/<time>.json``.
+
+        The record holds every action in order, chance outcomes included, so the game can be
+        replayed exactly (apply the actions to ``new_initial_state``) and analysed like any other.
+        """
+        if self.record_dir is None:
+            return
+        g, s = self.game, self.state
+        folder = self.record_dir / self.game_name
+        folder.mkdir(parents=True, exist_ok=True)
+        record = {
+            "game": self.game_name,
+            "opponent": self.agent_label,
+            "checkpoint": self.checkpoint,
+            "human_seat": self.human,
+            "started_at": self.started_at,
+            "finished_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "margin": margin,
+            "result": "win" if margin > 0 else "loss" if margin < 0 else "draw",
+            "returns": g.returns(s),
+            "final": g.to_display(s),
+            "actions": self.history,
+        }
+        name = self.started_at.replace(":", "") + ".json"
+        (folder / name).write_text(json.dumps(record, indent=1), "utf-8")
 
     def view(self, error: str | None = None) -> dict:
         """Return the human's view: ``player_view`` until the game ends, then the full position."""
@@ -161,6 +213,7 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8765,
     open_browser: bool = True,
+    record_dir: Path | None = None,
 ) -> None:
     """Serve ``page`` and the game API until interrupted.
 
@@ -170,8 +223,9 @@ def serve(
         host: Bind address (keep it local).
         port: Port to serve on.
         open_browser: Open the page on start.
+        record_dir: Save every finished game here as JSON (``None``: don't record).
     """
-    session = Session()
+    session = Session(record_dir)
     games = {
         name: {"label": make(name).game_type.long_name, "agents": [a for a, _ in opponents]}
         for name, opponents in agents.items()
