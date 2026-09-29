@@ -162,7 +162,8 @@ matters.
 What stands out, against the usual human advice:
 - **It opens early and wide.** The standard advice is to open two or three expeditions, late,
   and only with the cards to finish them. The agent opens a route on its first turn and ends
-  with four or five, wagering on more than half of them.
+  with four or five, wagering on more than half of them. (The heuristic is a *cautious* human
+  stand-in: it never wagers at all, where a typical player wagers on a strong route.)
 - **It accepts losing routes.** A third of its routes finish below zero, which a careful human
   treats as a mistake. Its routes are worth nearly three times as much on average, and three in
   four games include an 8-card route for the +20 bonus. It plays the portfolio, not each route.
