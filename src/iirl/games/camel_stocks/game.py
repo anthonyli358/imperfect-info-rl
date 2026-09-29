@@ -591,6 +591,22 @@ class CamelStocks(Game):
             "given": cards(state.given),
         }
 
+    def player_view(self, state: State, player: Player) -> dict:
+        """Return :meth:`to_display` minus what ``player`` cannot see.
+
+        The opponent's hand becomes just its publicly known goods (seen taken from the market)
+        plus ``hidden[opp]``, the number of unknown cards. Everything else is public.
+        """
+        assert isinstance(state, CamelStocksState)
+        view = self.to_display(state)
+        opp = 1 - player
+        known = [g for g, n in enumerate(state.known[opp]) for _ in range(n)]
+        view["hands"][opp] = known
+        view["hidden"] = [0, 0]
+        view["hidden"][opp] = sum(state.hands[opp]) - len(known)
+        view["player"] = player
+        return view
+
 
 @register("camel_stocks")
 def _make_camel_stocks() -> CamelStocks:

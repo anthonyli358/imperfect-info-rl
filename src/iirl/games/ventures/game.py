@@ -582,6 +582,11 @@ class Ventures(Game):
             "ranks": list(RANKS),
             "hand_size": HAND_SIZE,
             "start_cost": START_COST,
+            "actions": {
+                "discard_offset": DISCARD_OFFSET,
+                "draw_deck": DRAW_DECK_ACTION,
+                "take_offset": TAKE_DISCARD_OFFSET,
+            },
         }
 
     def to_display(self, state: State) -> dict:
@@ -602,6 +607,22 @@ class Ventures(Game):
             "just_discarded_suit": state.just_discarded_suit,
             "scores": [self._score(state, 0), self._score(state, 1)],
         }
+
+    def player_view(self, state: State, player: Player) -> dict:
+        """Return :meth:`to_display` minus what ``player`` cannot see.
+
+        The opponent's hand becomes just its publicly known cards (taken from a discard pile) plus
+        ``hidden[opp]``, the number of unknown cards.
+        """
+        assert isinstance(state, VenturesState)
+        view = self.to_display(state)
+        opp = 1 - player
+        known = [c for c in range(NUM_CARD_TYPES) for _ in range(state.known[opp][c])]
+        view["hands"][opp] = known
+        view["hidden"] = [0, 0]
+        view["hidden"][opp] = sum(state.hands[opp]) - len(known)
+        view["player"] = player
+        return view
 
 
 def _replace(state: VenturesState, **changes: object) -> VenturesState:

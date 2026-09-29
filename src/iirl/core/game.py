@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from iirl.core.types import Action, ChanceOutcome, GameType, Player
+from iirl.core.types import Action, ChanceOutcome, GameType, Information, Player
 
 
 class State:
@@ -177,3 +177,16 @@ class Game(ABC):
             "terminal": self.is_terminal(state),
             "current_player": int(self.current_player(state)),
         }
+
+    def player_view(self, state: State, player: Player) -> dict:
+        """Return what ``player`` may see of ``state``, as JSON-serializable data for a play UI.
+
+        Like :meth:`to_display`, but with everything hidden from ``player`` removed (for a card
+        game: the opponent's hand beyond its size and publicly known cards, and the deck's
+        contents). A play server sends only this to the human, so hidden information cannot leak
+        through the page. The default suits perfect-information games; imperfect-information games
+        must override it.
+        """
+        if self.game_type.information != Information.PERFECT:
+            raise NotImplementedError(f"{type(self).__name__} does not provide player_view")
+        return self.to_display(state)

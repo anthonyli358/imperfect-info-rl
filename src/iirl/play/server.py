@@ -1,9 +1,9 @@
-"""Play Ventures against an agent in the browser: a local session and a tiny HTTP server.
+"""Play any registered game against an agent in the browser: a local session and a tiny server.
 
 Standard library only. The engine and the agent run in Python; the page (``viz/play.html``)
-receives only the human player's view: their own hand, the public board, the opponent's hand
-*size* and the opponent cards that are public (taken from a discard pile). The opponent's hand is
-revealed when the game ends. The runnable entry point is ``experiments/play_ventures.py``.
+receives only the human player's view (``Game.player_view``) plus the legal moves, labelled by
+``Game.action_to_string``. Nothing hidden from the human is sent until the game ends, when the full
+position (``Game.to_display``) is revealed. The runnable entry point is ``experiments/play.py``.
 """
 
 from __future__ import annotations
@@ -11,26 +11,39 @@ from __future__ import annotations
 import json
 import threading
 import webbrowser
+from collections.abc import Callable, Mapping, Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import numpy as np
 
-import iirl.games  # noqa: F401  (registers "ventures")
+import iirl.games  # noqa: F401  (registers the built-in games)
 from iirl.agents.base import Agent
-from iirl.agents.heuristic import VenturesHeuristic
+from iirl.agents.heuristic import CamelStocksHeuristic, VenturesHeuristic
 from iirl.agents.ppo import PPOAgent
+from iirl.core.game import Game, State
 from iirl.core.registry import make
-from iirl.games.ventures.cards import NUM_CARD_TYPES
-from iirl.games.ventures.game import DISCARD_OFFSET, DRAW_DECK_ACTION, TAKE_DISCARD_OFFSET
-from iirl.games.ventures.state import Phase
+
+HEURISTICS: dict[str, Callable[[], Agent]] = {
+    "ventures": lambda: VenturesHeuristic("heuristic"),
+    "camel_stocks": lambda: CamelStocksHeuristic("heuristic"),
+}
 
 
-def build_agent(checkpoint: str) -> Agent:
-    """Return the agent for ``checkpoint``: ``"heuristic"`` or a PPO checkpoint path."""
+def build_agent(game_name: str, checkpoint: str) -> Agent:
+    """Return the agent for ``checkpoint``: ``"heuristic"`` (the game's own) or a PPO checkpoint."""
     if checkpoint == "heuristic":
-        return VenturesHeuristic("heuristic")
+        return HEURISTICS[game_name]()
     return PPOAgent.from_checkpoint(checkpoint)
+
+
+def _chance_visible(game: Game, state: State, player: int) -> bool:
+    """Whether ``player`` can tell a chance event's outcomes apart (e.g. their own draw)."""
+    outcomes = [a for a, _ in game.chance_outcomes(state)]
+    if len(outcomes) < 2:
+        return True
+    views = {game.information_state_string(game.apply_action(state, a), player) for a in outcomes}
+    return len(views) > 1
 
 
 class Session:
@@ -38,23 +51,30 @@ class Session:
 
     def __init__(self) -> None:
         """Create an empty session (a game starts with :meth:`new`)."""
-        self.game = make("ventures")
         self.lock = threading.Lock()
-        self.state = None
+        self.game_name = ""
+        self.game: Game | None = None
+        self.state: State | None = None
         self.log: list[dict] = []
         self.agent: Agent | None = None
         self.agent_label = ""
         self.human = 0
+        self.dealt = False
         self.rng = np.random.default_rng()
-        self.record = {"games": 0, "wins": 0, "draws": 0, "points": 0.0}
+        self.records: dict[str, dict] = {}
 
-    def new(self, checkpoint: str, label: str, seat: str) -> dict:
-        """Start a game vs ``checkpoint``; ``seat`` is ``"0"``, ``"1"`` or ``"random"``."""
-        self.agent = build_agent(checkpoint)
+    def new(self, game_name: str, checkpoint: str, label: str, seat: str) -> dict:
+        """Start a game of ``game_name`` vs ``checkpoint``.
+
+        ``seat`` is ``"0"``, ``"1"`` or ``"random"``.
+        """
+        self.game_name, self.game = game_name, make(game_name)
+        self.agent = build_agent(game_name, checkpoint)
         self.agent_label = label
         self.human = int(self.rng.integers(2)) if seat == "random" else int(seat)
         self.state = self.game.new_initial_state()
-        self.log = []
+        self.log, self.dealt = [], False
+        self.records.setdefault(game_name, {"games": 0, "wins": 0, "draws": 0, "points": 0.0})
         self.agent.reset(self.game, 1 - self.human)
         self._advance()
         return self.view()
@@ -73,29 +93,22 @@ class Session:
     def _apply(self, action: int, player: int | None) -> None:
         """Apply ``action`` by ``player`` (``None``: a chance event) and log what the human sees."""
         g, s = self.game, self.state
-        chance = player is None
-        if not chance:
-            text = self._describe(s, action, player)
-        else:  # a deck draw, whose card only the drawing player sees
-            player = s.to_move
-            if s.phase == Phase.DEAL:
-                text = None
-            elif player == self.human:
-                text = f"You drew {g.action_to_string(s, action).removeprefix('draw ')}"
-            else:
-                text = "Opponent drew from the deck"
+        if player is not None:
+            who = "you" if player == self.human else "opp"
+            label = f"{'You' if who == 'you' else 'Opponent'}: {g.action_to_string(s, action)}"
+            entry = {"who": who, "text": label}
+        elif not self.dealt:
+            entry = None  # the opening deal is not logged
+        elif _chance_visible(g, s, self.human):
+            entry = {"who": "chance", "text": g.action_to_string(s, action)}
+        else:
+            entry = {"who": "chance", "text": "a hidden card is drawn"}
         self.state = g.apply_action(s, action)
-        self.agent.observe(g, self.state, None if chance else action)
-        if text:
-            self.log.append({"who": "you" if player == self.human else "opp", "text": text})
+        self.agent.observe(g, self.state, None if player is None else action)
+        if entry:
+            self.log.append(entry)
         if g.is_terminal(self.state):
             self._finish()
-
-    def _describe(self, s, action: int, player: int) -> str | None:  # noqa: ANN001
-        if action == DRAW_DECK_ACTION:
-            return None  # logged when the draw resolves
-        who = "You" if player == self.human else "Opponent"
-        return f"{who}: {self.game.action_to_string(s, action)}"
 
     def _advance(self) -> None:
         """Resolve chance nodes and agent moves until it is the human's turn or the game ends."""
@@ -105,62 +118,44 @@ class Session:
                 outcomes = g.chance_outcomes(self.state)
                 probs = np.array([p for _, p in outcomes])
                 self._apply(int(outcomes[self.rng.choice(len(outcomes), p=probs)][0]), None)
-            elif g.current_player(self.state) == self.human:
+                continue
+            self.dealt = True
+            if g.current_player(self.state) == self.human:
                 return
-            else:
-                self._apply(self.agent.step(g, self.state, self.rng), 1 - self.human)
+            self._apply(self.agent.step(g, self.state, self.rng), 1 - self.human)
 
     def _finish(self) -> None:
         margin = self.game.returns(self.state)[self.human]
-        self.record["games"] += 1
-        self.record["points"] += margin
-        self.record["wins"] += margin > 0
-        self.record["draws"] += margin == 0
+        record = self.records[self.game_name]
+        record["games"] += 1
+        record["points"] += margin
+        record["wins"] += margin > 0
+        record["draws"] += margin == 0
 
     def view(self, error: str | None = None) -> dict:
-        """Return the human's view: nothing about the opponent's hand beyond what is public."""
+        """Return the human's view: ``player_view`` until the game ends, then the full position."""
         g, s = self.game, self.state
         if s is None:
-            return {"started": False, "record": self.record}
-        me, opp = self.human, 1 - self.human
-        d = g.to_display(s)
+            return {"started": False}
         terminal = g.is_terminal(s)
-        legal = {"play": [], "discard": [], "deck": False, "take": []}
-        if not terminal and g.current_player(s) == me:
-            for a in g.legal_actions(s):
-                if a < DISCARD_OFFSET:
-                    legal["play"].append(a)
-                elif a < DRAW_DECK_ACTION:
-                    legal["discard"].append(a - DISCARD_OFFSET)
-                elif a == DRAW_DECK_ACTION:
-                    legal["deck"] = True
-                else:
-                    legal["take"].append(a - TAKE_DISCARD_OFFSET)
-        known = [c for c in range(NUM_CARD_TYPES) for _ in range(s.known[opp][c])]
+        your_turn = not terminal and g.current_player(s) == self.human
         out = {
             "started": True,
+            "game": self.game_name,
             "meta": g.display_meta(),
             "agent": self.agent_label,
-            "seat": me,
-            "your_turn": not terminal and g.current_player(s) == me,
-            "phase": d["phase"],
+            "seat": self.human,
+            "your_turn": your_turn,
             "terminal": terminal,
-            "deck_size": d["deck_size"],
-            "turn": s.turn,
-            "hand": d["hands"][me],
-            "opp_hand_size": len(d["hands"][opp]),
-            "opp_known": known,
-            "routes": {"you": d["routes"][me], "opp": d["routes"][opp]},
-            "scores": {"you": d["scores"][me], "opp": d["scores"][opp]},
-            "discards": d["discards"],
-            "just_discarded_suit": d["just_discarded_suit"],
-            "legal": legal,
+            "view": g.to_display(s) if terminal else g.player_view(s, self.human),
+            "legal": [{"id": a, "label": g.action_to_string(s, a)} for a in g.legal_actions(s)]
+            if your_turn
+            else [],
             "log": self.log,
-            "record": self.record,
+            "record": self.records[self.game_name],
         }
         if terminal:
-            out["opp_hand"] = d["hands"][opp]
-            out["margin"] = g.returns(s)[me]
+            out["margin"] = g.returns(s)[self.human]
         if error:
             out["error"] = error
         return out
@@ -168,7 +163,7 @@ class Session:
 
 def serve(
     page: Path,
-    agents: list[tuple[str, str]],
+    agents: Mapping[str, Sequence[tuple[str, str]]],
     host: str = "127.0.0.1",
     port: int = 8765,
     open_browser: bool = True,
@@ -177,12 +172,16 @@ def serve(
 
     Args:
         page: The HTML page to serve at ``/``.
-        agents: ``(label, checkpoint)`` opponents offered in the page.
+        agents: Per game name, the ``(label, checkpoint)`` opponents offered in the page.
         host: Bind address (keep it local).
         port: Port to serve on.
         open_browser: Open the page on start.
     """
     session = Session()
+    games = {
+        name: {"label": make(name).game_type.long_name, "agents": [a for a, _ in opponents]}
+        for name, opponents in agents.items()
+    }
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args) -> None:  # noqa: ANN002 - quiet access log
@@ -202,8 +201,8 @@ def serve(
         def do_GET(self) -> None:  # noqa: N802 - http.server API
             if self.path in ("/", "/index.html"):
                 self._send(page.read_bytes(), "text/html; charset=utf-8")
-            elif self.path == "/api/agents":
-                self._json({"agents": [{"label": a, "id": i} for i, (a, _) in enumerate(agents)]})
+            elif self.path == "/api/games":
+                self._json({"games": games})
             elif self.path == "/api/state":
                 with session.lock:
                     self._json(session.view())
@@ -216,11 +215,12 @@ def serve(
                 body = json.loads(self.rfile.read(length) or b"{}")
                 with session.lock:
                     if self.path == "/api/new":
-                        label, checkpoint = agents[int(body.get("agent", 0))]
+                        name = str(body.get("game", next(iter(agents))))
+                        label, checkpoint = agents[name][int(body.get("agent", 0))]
                         seat = str(body.get("seat", "random"))
                         if seat not in ("0", "1", "random"):
                             raise ValueError(f"bad seat {seat!r}")
-                        self._json(session.new(checkpoint, label, seat))
+                        self._json(session.new(name, checkpoint, label, seat))
                     elif self.path == "/api/act":
                         self._json(session.act(int(body["action"])))
                     else:
@@ -230,8 +230,9 @@ def serve(
 
     server = ThreadingHTTPServer((host, port), Handler)
     url = f"http://{host}:{port}"
-    print(f"Ventures: play at {url}  (Ctrl+C to stop)")
-    print("opponents: " + ", ".join(label for label, _ in agents))
+    print(f"play at {url}  (Ctrl+C to stop)")
+    for name, opponents in agents.items():
+        print(f"{name}: " + ", ".join(label for label, _ in opponents))
     if open_browser:
         webbrowser.open(url)
     try:
