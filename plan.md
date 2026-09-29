@@ -272,6 +272,8 @@ Goal: a second game to reveal which abstractions are real vs incidental — then
   ✅ the recipe transfers. Ladder (heuristic = 1500): PPO 1810 → 1889, Nash phase → **1968–1972**,
   0.94 vs the heuristic. Exploitability **0.509** (max of 2), validated: the same exploiter finds
   0.571 on the 100-iteration checkpoint. Close to unexploitable within this budget.
+- [x] Held-out opponent: vs PIMC (8 × 80), which is roughly even with the heuristic, it scores
+  **0.950 ± 0.026** (+23.3), as decisively as vs the heuristic it trained with.
 - [x] Play page for any game: `Game.player_view` hook; game-agnostic play server; per-game board
   renderers with a generic fallback (`experiments/play.py`, `viz/play.html`)
 

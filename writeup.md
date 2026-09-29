@@ -174,7 +174,13 @@ Ventures (0.545).
 
 A plausible reason it is easier (a hypothesis, not yet tested): Camel Stocks is likely shorter,
 its luck milder (the market is public and most of the hidden information is one hand), and its
-margins small, so there is less for an exploiter to find. Next: rate against held-out opponents (e.g. PIMC).
+margins small, so there is less for an exploiter to find.
+
+**Held out: it beats an opponent it never trained against.** PIMC search (8 worlds × 80
+simulations) is roughly even with the heuristic (the heuristic scores 0.450 ± 0.044 against it),
+and the Nash-trained agent beats it **0.950 ± 0.026** (+23.3 per game, 50 duplicate deals), about
+as decisively as it beats the heuristic it trained with (0.94). Its strength is not tuned to its
+training opponents.
 
 **Hardening the interface after the second game.** With two real games, the refactor the plan
 deferred was small. The generic agents, trainers and evaluators already had no game-specific code.
