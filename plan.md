@@ -160,15 +160,17 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   `nash_nash`, **0.815 (+52.2) vs the heuristic**, 0.640 vs PPO v2 (1000 duplicate deals each).
   Periodic checkpoints (`nash_long_<iter>.pt`) are rated in `runs/elo_ladder.json`
   (`experiments/elo_ladder.py`): PPO v2 1822, nash 1890, nash_long 1917 → 1946 → 1941.
-- [ ] **B (exploiter league, in progress).** `experiments/train_ventures_league.py` (resumable).
+- [x] **B (exploiter league: negative).** `experiments/train_ventures_league.py` (resumable).
   Two rounds of 200 iterations from `nash_long`, each exploiter added to the league. So far it
   **makes things worse**: the exploiter score rises 0.522 → **0.556** (r1) → **0.573** (r2), and
   the r1 agent did not even close `nash_long`'s own hole (that exploiter scores 0.550 vs r1).
   Elo vs the heuristic still rises (r1 1942, r2 **1962**), so beating conventional play and
   being unexploitable have pulled apart. The same-budget plain-Nash control (`league_control`) still
-  has to run; rerun the script to finish it. If the control stays near 0.52, dedicated
-  exploiters as fixed league members hurt: training vs a few fixed best responses overfits to
-  them instead of moving toward Nash.
+  ran after: **0.544 (+4.5), 1973 Elo**, better than league r2 on both counts. Dedicated
+  exploiters as fixed league members hurt (they overfit to a few best responses); keep the plain
+  recipe. Open question: the control also measured above `nash_long`'s 0.522. That is either
+  a real trade-off with longer training or the exploiter yardstick's run-to-run variance; repeat
+  exploiter runs on one target would tell.
 - [x] **Endgame stall fix.** `PPOConfig.gamma` (default 1.0, unchanged behaviour): with 0.999 a
   winning player prefers ending the game sooner over stalling to the turn cap. Use it from the
   next training run (not in the running control, which must match the league rounds).
