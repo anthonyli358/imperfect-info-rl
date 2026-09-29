@@ -271,7 +271,7 @@ REINFORCE ~1420, PPO ~1340 (peak 1431); both ~0.97–1.00 vs random, 0–5% vs t
 
 ```bash
 uv sync
-uv run pytest                                   # 65 tests
+uv run pytest                                   # 67 tests
 uv run python -m experiments.ventures_tournament   # random < heuristic < PIMC
 uv run python -m experiments.train_ventures        # REINFORCE Elo curve
 uv run python -m experiments.train_ventures_az     # AlphaZero (negative result)
@@ -283,4 +283,5 @@ uv run python -m experiments.exploit_ventures      # best-response exploiter vs 
 uv run python -m experiments.elo_ladder            # rate the lineage vs the heuristic (resumable)
 uv run python -m experiments.belief_ventures       # belief quality + belief-search matches
 uv run python -m experiments.train_ventures_league # exploiter league (resumable)
+uv run python -m experiments.play_ventures         # play the agents yourself (browser, local)
 ```

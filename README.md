@@ -44,6 +44,7 @@ uv run pytest           # conformance suite + unit tests (51)
 uv run python -m experiments.ventures_tournament    # random < heuristic < PIMC
 uv run python -m experiments.train_ventures_guided  # net-guided PIMC — beats the heuristic
 uv run python -m experiments.train_ventures_ppo     # PPO self-play — beats the heuristic (~65 min)
+uv run python -m experiments.play_ventures          # play against the trained agents in your browser
 ```
 
 Lint / format (also enforced in CI):

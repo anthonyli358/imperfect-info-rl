@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Play Ventures</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+  :root {
+    --ground: #f0f2f6; --surface: #ffffff; --surface-2: #f6f7fa; --ink: #1b2230; --muted: #5c6678;
+    --faint: #8b93a4; --line: #e1e5ee; --accent: #4f6aa8; --accent-soft: #e7ecf7;
+    --shadow: 0 1px 2px rgba(20, 28, 46, .06), 0 8px 24px rgba(20, 28, 46, .06);
+    --pos: #2f7d55; --neg: #b8414c; color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #0f131b; --surface: #191e29; --surface-2: #131822; --ink: #e9edf4; --muted: #97a1b3;
+      --faint: #6b7688; --line: #29303d; --accent: #8099c8; --accent-soft: #232c3d;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
+      --pos: #57b483; --neg: #e06b76; color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0f131b; --surface: #191e29; --surface-2: #131822; --ink: #e9edf4; --muted: #97a1b3;
+    --faint: #6b7688; --line: #29303d; --accent: #8099c8; --accent-soft: #232c3d;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
+    --pos: #57b483; --neg: #e06b76; color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: "Hanken Grotesk", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  button { font: inherit; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 22px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 20px; }
+  .eyebrow { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--faint); margin: 0 0 6px; }
+  h1 { font-family: "Archivo", sans-serif; font-weight: 800; font-size: clamp(28px, 5vw, 40px); letter-spacing: -.02em; line-height: .95; margin: 0; }
+  .sub { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  .spacer { flex: 1; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  select { font: inherit; font-size: 13px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; max-width: 100%; }
+  .btn { font-family: "Archivo", sans-serif; font-weight: 600; font-size: 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 8px 14px; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  .btn:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .record { font-size: 12px; color: var(--muted); }
+  .record b { color: var(--ink); }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
+  .stage { background: radial-gradient(120% 90% at 50% 42%, color-mix(in srgb, var(--accent) 5%, var(--surface)), var(--surface)); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 420px; }
+
+  .panel { border-radius: 12px; padding: 12px 14px; border: 1px solid transparent; }
+  .panel.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .pname { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 15px; }
+  .kind { font-size: 11px; color: var(--faint); }
+  .pscore { margin-left: auto; font-weight: 700; font-size: 17px; }
+  .pos { color: var(--pos); } .neg { color: var(--neg); }
+
+  .tableau { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+  .route { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 6px 5px 5px; display: flex; flex-direction: column; gap: 4px; min-height: 58px; min-width: 0; }
+  .route-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+  .route-name { font-size: 10px; font-weight: 600; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .route-score { font-size: 11px; font-weight: 700; }
+  .stack { display: flex; flex-direction: column; gap: 3px; }
+
+  .card { --suit: var(--muted); position: relative; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--suit) 32%, var(--line)); background: color-mix(in srgb, var(--suit) 13%, var(--surface)); color: color-mix(in srgb, var(--suit) 72%, var(--ink)); display: flex; align-items: center; justify-content: center; font-family: "JetBrains Mono", monospace; font-weight: 700; box-shadow: inset 3px 0 0 var(--suit); }
+  .card.mini { height: 22px; font-size: 12px; padding-left: 3px; }
+  .card.hand { height: 52px; min-width: 40px; font-size: 17px; border-radius: 8px; box-shadow: inset 0 3px 0 var(--suit), var(--shadow); flex-direction: column; cursor: pointer; padding: 0 4px; }
+  .card.hand .tag { font-family: "Hanken Grotesk", sans-serif; font-weight: 600; font-size: 9px; opacity: .8; }
+  .card.hand.playable::after { content: ""; position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--pos); }
+  .card.hand.selected { outline: 2px solid var(--accent); outline-offset: 2px; transform: translateY(-4px); }
+  .card.hand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .card.hand.inert { cursor: default; }
+  .card.back { --suit: var(--faint); background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 5px, var(--surface) 5px, var(--surface) 10px); color: var(--faint); cursor: default; box-shadow: none; }
+  .card.known { box-shadow: inset 0 3px 0 var(--suit), 0 0 0 1px var(--suit); }
+
+  .hand { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: flex-end; }
+  .hand-note { font-size: 11px; color: var(--faint); margin-top: 6px; }
+
+  .center { display: flex; align-items: stretch; gap: 10px; padding: 4px; }
+  .deck { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 14px; border-radius: 10px; border: 1px dashed var(--line); background: var(--surface-2); min-width: 84px; color: var(--ink); }
+  .deck .n { font-size: 22px; font-weight: 700; }
+  .deck .t { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
+  .discards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; flex: 1; }
+  .pile { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: inherit; min-width: 0; }
+  .pile .slot { width: 100%; min-height: 30px; border-radius: 7px; border: 1px dashed var(--line); display: flex; align-items: center; justify-content: center; }
+  .pile .slot .card { width: 100%; }
+  .pile .cap { font-size: 9px; color: var(--faint); text-transform: uppercase; }
+  .target { cursor: pointer; outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 2px; border-radius: 10px; }
+  .target:hover { background: var(--accent-soft); }
+  .target:focus-visible { outline-color: var(--accent); }
+
+  .prompt { text-align: center; font-size: 13px; color: var(--muted); min-height: 36px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
+  .prompt b { color: var(--ink); }
+  .error { color: var(--neg); font-size: 12px; text-align: center; min-height: 16px; }
+
+  .banner { border-radius: 12px; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .banner .big { font-family: "Archivo", sans-serif; font-weight: 800; font-size: 20px; }
+
+  .log { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; max-height: 620px; }
+  .log h2 { font-family: "Archivo", sans-serif; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 0; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  .log-list { overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+  .log-list .you { color: var(--ink); } .log-list .opp { color: var(--muted); }
+  .log-list .you::before { content: "● "; color: var(--accent); } .log-list .opp::before { content: "○ "; color: var(--faint); }
+  .empty { color: var(--muted); text-align: center; padding: 60px 10px; }
+  footer { color: var(--faint); font-size: 11px; line-height: 1.5; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    .log { max-height: 260px; }
+    .tableau, .discards { gap: 4px; }
+    .route-name { font-size: 8px; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <p class="eyebrow">Human vs agent</p>
+      <h1>Play Ventures</h1>
+      <div class="sub" id="sub">Pick an opponent and start a game.</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="controls">
+      <select id="agent" aria-label="Opponent"></select>
+      <select id="seat" aria-label="Seat">
+        <option value="random">Random seat</option>
+        <option value="0">You go first</option>
+        <option value="1">You go second</option>
+      </select>
+      <button class="btn primary" id="new">New game</button>
+    </div>
+  </header>
+  <div class="record" id="record"></div>
+
+  <div class="layout">
+    <section class="stage" id="stage" aria-label="Game board"><div class="empty">No game yet.</div></section>
+    <aside class="log" aria-label="Move log"><h2>Moves</h2><div class="log-list" id="log"></div></aside>
+  </div>
+
+  <footer>Each turn: play a card onto one of your routes (ascending, backing cards first) or discard it, then draw from the deck or take the top of a discard pile (not the one you just discarded to). A started route scores (sum − 20) × (1 + backing cards), +20 with 8 or more cards. The game ends when the deck runs out. A green dot marks cards you can play; outlined opponent cards are ones they took from a discard pile. Ventures is an original game on a classic mechanical skeleton, an independent implementation.</footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var el = function (id) { return document.getElementById(id); };
+  var view = null, selected = null, busy = false;
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function decode(meta, id) {
+    var n = meta.ranks.length, rank = meta.ranks[id % n];
+    return { suit: Math.floor(id / n), rank: rank, backing: rank === meta.ranks[0] };
+  }
+  function color(meta, s) { return meta.suit_colors[s]; }
+  function signed(v) { return (v > 0 ? "+" : "") + v; }
+  function sign(v) { return v > 0 ? "pos" : v < 0 ? "neg" : ""; }
+  function cardName(meta, id) {
+    var d = decode(meta, id);
+    return meta.suit_names[d.suit] + " " + (d.backing ? "backing" : d.rank);
+  }
+  function card(meta, id, cls, attrs) {
+    var d = decode(meta, id);
+    var label = d.backing ? "◆" : d.rank;
+    var tag = cls.indexOf("hand") >= 0 ? '<span class="tag">' + esc(meta.suit_names[d.suit].slice(0, 3)) + "</span>" : "";
+    return "<div class=\"card " + cls + "\" style=\"--suit:" + color(meta, d.suit) + "\" " + (attrs || "") +
+      ' title="' + esc(cardName(meta, id)) + '">' + label + tag + "</div>";
+  }
+  function routeScore(meta, cards) {
+    if (!cards.length) return null;
+    var backing = 0, sum = 0;
+    cards.forEach(function (id) { var d = decode(meta, id); if (d.backing) backing++; else sum += d.rank; });
+    return (sum - meta.start_cost) * (1 + backing) + (cards.length >= 8 ? 20 : 0);
+  }
+
+  function api(path, body) {
+    return fetch(path, body === undefined ? {} : {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+  }
+
+  function tableau(meta, routes) {
+    return '<div class="tableau">' + routes.map(function (cards, s) {
+      var sc = routeScore(meta, cards);
+      return '<div class="route"><div class="route-head"><span class="route-name" style="color:' + color(meta, s) + '">' +
+        esc(meta.suit_names[s]) + "</span>" + (sc === null ? "" : '<span class="route-score ' + sign(sc) + '">' + signed(sc) + "</span>") +
+        '</div><div class="stack">' + cards.map(function (id) { return card(meta, id, "mini"); }).join("") + "</div></div>";
+    }).join("") + "</div>";
+  }
+
+  function render() {
+    var v = view;
+    var rec = v.record;
+    el("record").innerHTML = rec.games
+      ? "Your record: <b>" + rec.wins + "–" + (rec.games - rec.wins - rec.draws) + (rec.draws ? "–" + rec.draws : "") +
+        "</b> over " + rec.games + " game" + (rec.games > 1 ? "s" : "") + ", " + signed(Math.round(rec.points / rec.games * 10) / 10) + " points per game"
+      : "";
+    if (!v.started) return;
+    var meta = v.meta, L = v.legal, play = v.your_turn && v.phase === "PLAY", draw = v.your_turn && v.phase === "DRAW";
+    el("sub").textContent = "vs " + v.agent + " · you are " + (v.seat === 0 ? "first" : "second") + " to play";
+
+    // Opponent
+    var knownLeft = v.opp_known.slice();
+    var oppCards = v.terminal
+      ? v.opp_hand.slice().sort(function (a, b) { return a - b; }).map(function (id) { return card(meta, id, "hand inert"); }).join("")
+      : knownLeft.map(function (id) { return card(meta, id, "hand inert known"); }).join("") +
+        new Array(v.opp_hand_size - knownLeft.length + 1).join('<div class="card hand back">?</div>');
+    var opp = '<div class="panel' + (!v.terminal && !v.your_turn ? " active" : "") + '"><div class="panel-head">' +
+      '<span class="pname">Opponent</span><span class="kind">' + esc(v.agent) + "</span>" +
+      '<span class="pscore ' + sign(v.scores.opp) + '">' + signed(v.scores.opp) + "</span></div>" +
+      tableau(meta, v.routes.opp) + '<div class="hand">' + oppCards + "</div>" +
+      (v.terminal ? '<div class="hand-note">Their hand, revealed.</div>' : "") + "</div>";
+
+    // Center: deck and discard piles
+    var deck = draw && L.deck
+      ? '<button class="deck target" data-act="deck"><span class="n mono">' + v.deck_size + '</span><span class="t">draw deck</span></button>'
+      : '<div class="deck"><span class="n mono">' + v.deck_size + '</span><span class="t">in deck</span></div>';
+    var piles = v.discards.map(function (pile, s) {
+      var top = pile.length ? card(meta, pile[pile.length - 1], "mini") : '<span class="cap">—</span>';
+      var canTake = draw && L.take.indexOf(s) >= 0;
+      return (canTake ? '<button class="pile target" data-act="take" data-s="' + s + '" aria-label="Take the ' + esc(meta.suit_names[s]) + ' discard">' : '<div class="pile">') +
+        '<div class="slot">' + top + '</div><span class="cap">' + esc(meta.suit_names[s].slice(0, 3)) + (pile.length > 1 ? " ·" + pile.length : "") +
+        "</span>" + (canTake ? "</button>" : "</div>");
+    }).join("");
+    var center = '<div class="center">' + deck + '<div class="discards">' + piles + "</div></div>";
+
+    // Prompt
+    var prompt;
+    if (v.terminal) {
+      prompt = "";
+    } else if (!v.your_turn) {
+      prompt = "Opponent is thinking…";
+    } else if (play && selected === null) {
+      prompt = "<b>Your turn:</b> pick a card from your hand.";
+    } else if (play) {
+      var canPlay = L.play.indexOf(selected) >= 0;
+      prompt = "<b>" + esc(cardName(meta, selected)) + "</b>" +
+        '<button class="btn primary" data-act="play"' + (canPlay ? "" : " disabled") + ">Play to route</button>" +
+        '<button class="btn" data-act="discard">Discard</button>' +
+        '<button class="btn" data-act="cancel">Cancel</button>';
+    } else {
+      prompt = "<b>Draw:</b> click the deck or a highlighted discard pile.";
+    }
+
+    // You
+    var hand = v.hand.slice().sort(function (a, b) { return a - b; }).map(function (id, i) {
+      var cls = "hand" + (L.play.indexOf(id) >= 0 && play ? " playable" : "") + (play && id === selected ? " selected" : "") + (play ? "" : " inert");
+      return card(meta, id, cls, play ? 'tabindex="0" role="button" data-card="' + id + '"' : "");
+    }).join("");
+    var you = '<div class="panel' + (v.your_turn ? " active" : "") + '"><div class="panel-head">' +
+      '<span class="pname">You</span><span class="kind">P' + v.seat + "</span>" +
+      '<span class="pscore ' + sign(v.scores.you) + '">' + signed(v.scores.you) + "</span></div>" +
+      tableau(meta, v.routes.you) + '<div class="hand">' + hand + "</div></div>";
+
+    var banner = "";
+    if (v.terminal) {
+      var m = v.margin;
+      banner = '<div class="banner"><span class="big ' + sign(m) + '">' + (m > 0 ? "You win" : m < 0 ? "You lose" : "Draw") + "</span>" +
+        '<span class="mono">' + v.scores.you + " – " + v.scores.opp + "</span>" +
+        '<button class="btn primary" data-act="again">Play again</button></div>';
+    }
+    el("stage").innerHTML = banner + opp + center + '<div class="prompt">' + prompt + '</div><div class="error">' + esc(v.error || "") + "</div>" + you;
+
+    el("log").innerHTML = v.log.map(function (e) { return '<div class="' + e.who + '">' + esc(e.text) + "</div>"; }).join("");
+    el("log").scrollTop = el("log").scrollHeight;
+  }
+
+  function act(action) {
+    if (busy) return;
+    busy = true;
+    api("/api/act", { action: action }).then(function (v) { view = v; selected = null; busy = false; render(); });
+  }
+
+  el("stage").addEventListener("click", function (e) {
+    if (!view || !view.started) return;
+    var meta = view.meta, t = e.target.closest("[data-card],[data-act]");
+    if (!t) return;
+    if (t.dataset.card !== undefined) { selected = +t.dataset.card; view.error = ""; render(); return; }
+    var a = t.dataset.act;
+    if (a === "cancel") { selected = null; render(); }
+    else if (a === "play") act(selected);
+    else if (a === "discard") act(meta.num_suits * meta.ranks.length + selected);
+    else if (a === "deck") act(2 * meta.num_suits * meta.ranks.length);
+    else if (a === "take") act(2 * meta.num_suits * meta.ranks.length + 1 + (+t.dataset.s));
+    else if (a === "again") start();
+  });
+  el("stage").addEventListener("keydown", function (e) {
+    if ((e.key === "Enter" || e.key === " ") && e.target.dataset && e.target.dataset.card !== undefined) {
+      e.preventDefault(); e.target.click();
+    }
+  });
+
+  function start() {
+    selected = null;
+    api("/api/new", { agent: +el("agent").value, seat: el("seat").value }).then(function (v) { view = v; render(); });
+  }
+  el("new").addEventListener("click", start);
+
+  api("/api/agents").then(function (d) {
+    el("agent").innerHTML = d.agents.map(function (a) { return '<option value="' + a.id + '">' + esc(a.label) + "</option>"; }).join("");
+  });
+  api("/api/state").then(function (v) { view = v; render(); });
+})();
+</script>
+</html>
