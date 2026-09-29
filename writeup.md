@@ -174,8 +174,14 @@ Ventures (0.545).
 
 A plausible reason it is easier (a hypothesis, not yet tested): Camel Stocks is likely shorter,
 its luck milder (the market is public and most of the hidden information is one hand), and its
-margins small, so there is less for an exploiter to find. Next: rate against Ventures-style held-out
-opponents (e.g. PIMC), and play it (the play page needs a generic `player_view` hook first).
+margins small, so there is less for an exploiter to find. Next: rate against held-out opponents (e.g. PIMC).
+
+**Hardening the interface after the second game.** With two real games, the refactor the plan
+deferred was small. The generic agents, trainers and evaluators already had no game-specific code.
+The heuristics moved into their games' packages and register themselves, a new `player_view`
+hook made the play server game-agnostic, and `docs/adding-a-game.md` now spells out the contract
+and which component uses each hook. One planned abstraction, a separate `Encoder` class, was
+dropped: the encoder as a `Game` method was enough for both games.
 
 ### Stage 1b: toward an unexploitable agent (2026-09-25 → 09-28)
 

@@ -272,14 +272,21 @@ Goal: a second game to reveal which abstractions are real vs incidental — then
   ✅ the recipe transfers. Ladder (heuristic = 1500): PPO 1810 → 1889, Nash phase → **1968–1972**,
   0.94 vs the heuristic. Exploitability **0.509** (max of 2), validated: the same exploiter finds
   0.571 on the 100-iteration checkpoint. Close to unexploitable within this budget.
-- [ ] Play page: a generic `player_view` hook, so the browser UI works for Camel Stocks too
+- [x] Play page for any game: `Game.player_view` hook; game-agnostic play server; per-game board
+  renderers with a generic fallback (`experiments/play.py`, `viz/play.html`)
 
 **Refactor block — harden the game-agnostic core:**
 
-- [ ] Extract a stable, documented interface contract (both games conform)
-- [ ] Confirm `agents/` contain zero game-specific branches
-- [ ] Base `Encoder` abstraction; per-game encoders subclass it
-- [ ] Registry + config cleanup; write the "how to add a game" doc
+- [x] Extract a stable, documented interface contract (both games conform): `docs/adding-a-game.md`
+  lists the required methods and which component uses each optional hook
+- [x] Confirm `agents/` contain zero game-specific branches: the generic agents, trainers and
+  evaluators had none. The heuristics moved into their games (`games/<name>/heuristic.py`) and
+  register with `register_heuristic`; game-agnostic code gets one via `make_heuristic(name)`
+- [x] ~~Base `Encoder` abstraction~~ **Decided against.** With two games, the encoder as a `Game`
+  method (`information_state_tensor`) works well, and the only thing agents build on top (the
+  privileged critic's input) is already generic. A parallel class hierarchy would add indirection
+  with no user.
+- [x] Registry cleanup (heuristic registry) and the "how to add a game" doc
 
 **Done when:** adding a third game would touch only `games/` and an encoder — nothing in `agents/`.
 

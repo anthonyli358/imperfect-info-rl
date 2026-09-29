@@ -4,7 +4,7 @@ The agent never reasons about a game's hidden structure itself. Each move it ask
 worlds consistent with its information state (``game.resample_from_infostate``), runs independent
 UCT in each treating it as perfect-information-with-chance, and ranks each root action by its pooled
 mean value across worlds. Being game-agnostic, the same agent runs on any imperfect-info game that
-implements ``resample_from_infostate`` (Ventures now; Jaipur in Stage 2, unchanged).
+implements ``resample_from_infostate`` (Ventures and Camel Stocks, unchanged).
 """
 
 from __future__ import annotations

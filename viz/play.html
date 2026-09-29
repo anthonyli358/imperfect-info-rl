@@ -293,6 +293,18 @@
     }
   };
 
+  // ======================= Any other game: the raw view and the legal moves =======================
+  var G = {
+    rules: "No board for this game yet: the panel shows your view of the position, and every legal move is a button.",
+    render: function () {
+      var moves = state.your_turn ? '<div class="move-group">' + state.legal.map(function (a) {
+        return '<button class="btn" data-act="' + a.id + '">' + esc(a.label) + "</button>";
+      }).join("") + "</div>" : "";
+      var p = state.terminal ? "" : state.your_turn ? "<b>Your turn:</b> choose a move." : "Opponent is thinking…";
+      return banner() + '<pre class="mono" style="white-space:pre-wrap;font-size:12px;margin:0">' + esc(JSON.stringify(state.view, null, 1)) + "</pre>" + prompt(p) + moves;
+    }
+  };
+
   var RENDERERS = { ventures: V, camel_stocks: C };
 
   function api(path, body) {
@@ -302,14 +314,14 @@
 
   function render() {
     if (!state || !state.started) return;
-    var R = RENDERERS[state.game], rec = state.record;
+    var R = RENDERERS[state.game] || G, rec = state.record;
     el("title").textContent = games[state.game] ? games[state.game].label : state.game;
     el("sub").textContent = "vs " + state.agent + " · you are " + (state.seat === 0 ? "first" : "second") + " to play";
     el("record").innerHTML = rec.games ? "Your " + esc(el("title").textContent) + " record: <b>" + rec.wins + "–" + (rec.games - rec.wins - rec.draws) +
       (rec.draws ? "–" + rec.draws : "") + "</b> over " + rec.games + " game" + (rec.games > 1 ? "s" : "") + ", " +
       signed(Math.round(rec.points / rec.games * 10) / 10) + " points per game" : "";
-    el("rules").textContent = R ? R.rules : "";
-    el("stage").innerHTML = R ? R.render() : '<div class="empty">No board for this game yet.</div>';
+    el("rules").textContent = R.rules;
+    el("stage").innerHTML = R.render();
     el("log").innerHTML = state.log.map(function (e) { return '<div class="' + e.who + '">' + esc(e.text) + "</div>"; }).join("");
     el("log").scrollTop = el("log").scrollHeight;
   }
@@ -337,7 +349,7 @@
   function fillAgents() {
     var g = games[el("game").value];
     el("agent").innerHTML = (g ? g.agents : []).map(function (a, i) { return '<option value="' + i + '">' + esc(a) + "</option>"; }).join("");
-    el("rules").textContent = RENDERERS[el("game").value] ? RENDERERS[el("game").value].rules : "";
+    el("rules").textContent = (RENDERERS[el("game").value] || G).rules;
   }
   function start() {
     selected = null;

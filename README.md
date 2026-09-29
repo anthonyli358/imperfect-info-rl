@@ -6,7 +6,8 @@ to poker.
 The repo hangs off **one abstraction**: a game-agnostic `Game`/`State` interface (modelled on
 OpenSpiel's). Every agent is written against that interface and contains zero game-specific code, so
 each new game is "implement the engine, reuse the agents". See [`plan.md`](plan.md) for the roadmap
-and [`writeup.md`](writeup.md) for findings.
+and [`writeup.md`](writeup.md) for findings; [`docs/adding-a-game.md`](docs/adding-a-game.md) explains
+how to add one.
 
 ## Headline result
 

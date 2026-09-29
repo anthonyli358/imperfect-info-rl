@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import threading
 import webbrowser
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -19,21 +19,15 @@ import numpy as np
 
 import iirl.games  # noqa: F401  (registers the built-in games)
 from iirl.agents.base import Agent
-from iirl.agents.heuristic import CamelStocksHeuristic, VenturesHeuristic
 from iirl.agents.ppo import PPOAgent
 from iirl.core.game import Game, State
-from iirl.core.registry import make
-
-HEURISTICS: dict[str, Callable[[], Agent]] = {
-    "ventures": lambda: VenturesHeuristic("heuristic"),
-    "camel_stocks": lambda: CamelStocksHeuristic("heuristic"),
-}
+from iirl.core.registry import make, make_heuristic
 
 
 def build_agent(game_name: str, checkpoint: str) -> Agent:
     """Return the agent for ``checkpoint``: ``"heuristic"`` (the game's own) or a PPO checkpoint."""
     if checkpoint == "heuristic":
-        return HEURISTICS[game_name]()
+        return make_heuristic(game_name)
     return PPOAgent.from_checkpoint(checkpoint)
 
 

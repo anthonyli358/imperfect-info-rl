@@ -60,3 +60,39 @@ def make(short_name: str, **kwargs: object) -> Game:
 def registered_games() -> list[str]:
     """Return the sorted names of all registered games."""
     return sorted(_REGISTRY)
+
+
+# --- Per-game heuristic agents ------------------------------------------------------------------
+# A game may register a hand-tuned agent alongside its engine: the Elo anchor, a fixed league
+# member, and the default opponent in the play UI. Game-agnostic code asks for it by game name, so
+# adding a game never touches ``agents/``.
+_HEURISTICS: dict[str, Callable[[], object]] = {}
+
+
+def register_heuristic(short_name: str) -> Callable[[Callable[[], object]], Callable[[], object]]:
+    """Decorator registering a zero-arg factory for ``short_name``'s heuristic agent.
+
+    Raises:
+        ValueError: If ``short_name`` already has a heuristic.
+    """
+
+    def decorator(factory: Callable[[], object]) -> Callable[[], object]:
+        if short_name in _HEURISTICS:
+            raise ValueError(f"Game {short_name!r} already has a heuristic")
+        _HEURISTICS[short_name] = factory
+        return factory
+
+    return decorator
+
+
+def make_heuristic(short_name: str):  # noqa: ANN201 - an Agent (not imported: core <- agents)
+    """Construct the heuristic agent registered for ``short_name``.
+
+    Raises:
+        KeyError: If the game has no registered heuristic.
+    """
+    try:
+        return _HEURISTICS[short_name]()
+    except KeyError:
+        known = ", ".join(sorted(_HEURISTICS)) or "<none>"
+        raise KeyError(f"No heuristic for {short_name!r}; available: {known}") from None
