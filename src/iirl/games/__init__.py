@@ -1,5 +1,6 @@
 """From-scratch game engines. Importing this package registers the built-in games."""
 
-from iirl.games import ventures  # noqa: F401  (import registers "ventures")
+# Importing each engine registers it.
+from iirl.games import camel_stocks, ventures  # noqa: F401
 
-__all__ = ["ventures"]
+__all__ = ["camel_stocks", "ventures"]

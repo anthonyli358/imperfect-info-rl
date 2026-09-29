@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+import iirl.games  # noqa: F401  (registers every built-in engine)
 import toy_game  # noqa: F401  (import registers "toy_showdown")
 from conformance import check_conformance
 from iirl.core.registry import make, registered_games
