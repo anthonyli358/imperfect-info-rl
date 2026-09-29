@@ -55,6 +55,10 @@ class PPOConfig:
     entropy_coef: float = 0.01
     max_grad_norm: float = 0.5
     gae_lambda: float = 0.95
+    # Discount per own decision. 1 is undiscounted; slightly below 1 (e.g. 0.999) makes a winning
+    # player prefer ending the game sooner, breaking the tie that otherwise lets a leader stall to
+    # the turn cap (the result is the same either way, so gamma = 1 is indifferent).
+    gamma: float = 1.0
     shaping: bool = True
     reward_scale: float = 50.0
     win_bonus: float = 0.0  # points added to the final return for winning (Elo counts wins)
@@ -276,21 +280,24 @@ def _run_envs(
 def _gae(
     phi: list[float], values: list[float], final_return: float, config: PPOConfig
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Return (advantages, value targets) for one player's decision sequence (γ = 1).
+    """Return (advantages, value targets) for one player's decision sequence.
 
-    Rewards are potential differences between the player's consecutive decisions, and the final
-    step collects ``return - phi``; the sum telescopes to ``return - phi[0]``.
+    Rewards are discounted potential differences between the player's consecutive decisions,
+    ``gamma * phi[k + 1] - phi[k]``, and the final step collects ``return - phi``. The discounted
+    sum telescopes to ``gamma^(n-1) * return - phi[0]``, so the shaping leaves the optimal policy
+    unchanged (Ng et al., 1999); with ``gamma = 1`` it is the plain difference.
     """
     n = len(values)
-    phi_next = np.append(np.asarray(phi[1:], dtype=np.float64), final_return)
-    rewards = (phi_next - np.asarray(phi, dtype=np.float64)) / config.reward_scale
+    g = config.gamma
+    p = np.asarray(phi, dtype=np.float64)
+    rewards = np.append(g * p[1:] - p[:-1], final_return - p[-1]) / config.reward_scale
     v = np.asarray(values, dtype=np.float64)
     v_next = np.append(v[1:], 0.0)
-    deltas = rewards + v_next - v
+    deltas = rewards + g * v_next - v
     adv = np.zeros(n)
     running = 0.0
     for k in range(n - 1, -1, -1):
-        running = deltas[k] + config.gae_lambda * running
+        running = deltas[k] + g * config.gae_lambda * running
         adv[k] = running
     return adv, adv + v
 

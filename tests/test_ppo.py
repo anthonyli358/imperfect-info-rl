@@ -82,6 +82,25 @@ def test_shaped_gae_telescopes_to_the_true_return() -> None:
     assert np.allclose(adv, target)
 
 
+def test_discounted_gae_telescopes_and_prefers_ending_a_won_game_sooner() -> None:
+    from iirl.selfplay.ppo import _gae
+
+    # With discount gamma the shaped return telescopes to gamma^(n-1) * return - phi[0].
+    g = 0.99
+    config = PPOConfig(gae_lambda=1.0, reward_scale=1.0, gamma=g)
+    phi = [3.0, -7.0, 12.0, 5.0]
+    adv, _ = _gae(phi, [0.0] * 4, 30.0, config)
+    assert abs(adv[0] - (g**3 * 30.0 - 3.0)) < 1e-9
+    # A stall (extra decisions, same potential, same result) is worth less to the winner...
+    quick, _ = _gae([5.0, 5.0], [0.0] * 2, 30.0, config)
+    stall, _ = _gae([5.0] * 6, [0.0] * 6, 30.0, config)
+    assert quick[0] > stall[0]
+    # ...and to the loser a stall is worth more (their loss is discounted away).
+    quick, _ = _gae([5.0, 5.0], [0.0] * 2, -30.0, config)
+    stall, _ = _gae([5.0] * 6, [0.0] * 6, -30.0, config)
+    assert stall[0] > quick[0]
+
+
 def test_ppo_with_privileged_critic_league_and_win_bonus_runs() -> None:
     from iirl.agents.heuristic import VenturesHeuristic
 

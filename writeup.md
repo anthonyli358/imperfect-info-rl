@@ -169,6 +169,13 @@ are the cause.)*
 **Also found:** the endgame stall. With one card left in the deck, drawing it ends the game, so the
 trailing player never draws it, and a weak policy in the lead also stalls. The 200-turn cap then ends
 the game with the same result. `nash` did this in 3 of 200 self-play games, `nash_long` in none.
+The leader stalls because training gives it no reason not to. Undiscounted, drawing now and
+stalling to the cap earn the identical return, and the deck-clock shaping is flat while the deck
+does not move. So the policy is indifferent in a position it rarely sees. It never costs a game
+(the leader wins either way), which is why neither training nor Elo noticed. Fix: `PPOConfig.gamma`
+(a discount per own decision; shaping becomes `gamma * phi' - phi`, still policy-invariant).
+Just below 1 (0.999), a won game is worth slightly more ended sooner. It is used from the next
+training run on.
 
 ### PPO self-play beats the heuristic — and PIMC — without search
 The reactive-RL plateau was an engineering artifact. PPO v2 (pure self-play + snapshot pool, no

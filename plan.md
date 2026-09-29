@@ -169,6 +169,9 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   has to run; rerun the script to finish it. If the control stays near 0.52, dedicated
   exploiters as fixed league members hurt: training vs a few fixed best responses overfits to
   them instead of moving toward Nash.
+- [x] **Endgame stall fix.** `PPOConfig.gamma` (default 1.0, unchanged behaviour): with 0.999 a
+  winning player prefers ending the game sooner over stalling to the turn cap. Use it from the
+  next training run (not in the running control, which must match the league rounds).
 - [x] **C (first result).** ✅ `agents/belief.py` particle filter (`Agent.reset`/`observe` hooks,
   `Game.repair_world`), `experiments/belief_ventures.py`. Lessons: a plain filter collapses (each
   opponent reveal kills ~80% of particles); rejuvenating with uniform resamples is worse than
