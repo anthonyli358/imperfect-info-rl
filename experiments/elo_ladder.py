@@ -7,17 +7,21 @@ this is cheap to rerun as the lineage grows, and safe to stop at any time.
 
 Run with::
 
-    uv run python -m experiments.elo_ladder
+    uv run python -m experiments.elo_ladder              # Ventures
+    uv run python -m experiments.elo_ladder camel_stocks # Camel Stocks (its heuristic = 1500)
 """
 
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import iirl.games  # noqa: F401  (registers "ventures")
 from experiments.exploit_ventures import heuristic_agent, ppo_agent
+from iirl.agents.base import Agent
+from iirl.agents.heuristic import CamelStocksHeuristic
 from iirl.core.registry import make
 from iirl.eval.duplicate import duplicate_match
 from iirl.eval.tournament import anchored_elo
@@ -33,6 +37,9 @@ class Config:
         lineage: ``(label, checkpoint)`` in training order; missing checkpoints are skipped.
         deals: Duplicate deals per rating (``2 *`` games).
         out: The results file.
+        game: Registered game name.
+        heuristic: Factory for the anchor agent.
+        anchor_elo: The anchor's fixed rating.
     """
 
     lineage: tuple[tuple[str, str], ...] = (
@@ -46,25 +53,40 @@ class Config:
     )
     deals: int = 1000
     out: str = "runs/elo_ladder.json"
+    game: str = "ventures"
+    heuristic: Callable[[], Agent] = heuristic_agent
+    anchor_elo: float = HEURISTIC_ELO
+
+
+CAMEL_STOCKS = Config(
+    lineage=(
+        *((f"camel_ppo {i}", f"runs/camel_ppo_{i}.pt") for i in range(100, 700, 100)),
+        *((f"camel_nash {i}", f"runs/camel_nash_{i}.pt") for i in range(100, 500, 100)),
+    ),
+    out="runs/elo_ladder_camel_stocks.json",
+    game="camel_stocks",
+    heuristic=CamelStocksHeuristic,
+    anchor_elo=1500.0,
+)
 
 
 def main(config: Config) -> None:
     """Rate each unrated checkpoint vs the heuristic; print and save the ladder."""
-    game = make("ventures")
+    game = make(config.game)
     out = Path(config.out)
     ladder = json.loads(out.read_text("utf-8")) if out.exists() else {}
     for label, path in config.lineage:
         if label in ladder or not Path(path).exists():
             continue
-        r = duplicate_match(game, (ppo_agent, {"path": path}), (heuristic_agent, {}), config.deals)
+        r = duplicate_match(game, (ppo_agent, {"path": path}), (config.heuristic, {}), config.deals)
         ladder[label] = {
             "checkpoint": path,
-            "elo": round(anchored_elo(r.score, HEURISTIC_ELO), 1),
+            "elo": round(anchored_elo(r.score, config.anchor_elo), 1),
             # Elo is logistic in the score, so +-1 SE on the score maps to this Elo error.
             "elo_se": round(
                 (
-                    anchored_elo(r.score + r.score_se, HEURISTIC_ELO)
-                    - anchored_elo(r.score - r.score_se, HEURISTIC_ELO)
+                    anchored_elo(r.score + r.score_se, config.anchor_elo)
+                    - anchored_elo(r.score - r.score_se, config.anchor_elo)
                 )
                 / 2,
                 1,
@@ -90,4 +112,6 @@ def main(config: Config) -> None:
 
 
 if __name__ == "__main__":
-    main(Config())
+    import sys
+
+    main(CAMEL_STOCKS if sys.argv[1:] == ["camel_stocks"] else Config())
