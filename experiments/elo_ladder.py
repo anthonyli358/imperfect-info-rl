@@ -42,6 +42,7 @@ class Config:
         *((f"nash_long {i}", f"runs/nash_long_{i}.pt") for i in range(100, 700, 100)),
         *((f"league r{r}", f"runs/league_r{r}.pt") for r in range(1, 6)),
         ("league control", "runs/league_control.pt"),
+        *((f"nash_g {i}", f"runs/nash_g_{i}.pt") for i in range(100, 500, 100)),
     )
     deals: int = 1000
     out: str = "runs/elo_ladder.json"

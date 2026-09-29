@@ -92,10 +92,11 @@ def _dump(path: Path, data: dict) -> None:
     tmp.replace(path)  # atomic, so a kill mid-write cannot corrupt the log
 
 
-def _train(start: str, ppo: PPOConfig, tag: str) -> str:
+def _train(start: str, ppo: PPOConfig, tag: str, save_every: int = 0) -> str:
     """Train from ``start`` with ``ppo``; save as ``runs/<tag>.pt`` and return the path.
 
     Skipped if ``runs/<tag>.pt`` exists; continued from ``runs/<tag>_partial.pt`` if that does.
+    With ``save_every``, also keeps ``runs/<tag>_<iteration>.pt`` every that many iterations.
     """
     path, partial = Path(f"runs/{tag}.pt"), Path(f"runs/{tag}_partial.pt")
     if path.exists():
@@ -136,6 +137,9 @@ def _train(start: str, ppo: PPOConfig, tag: str) -> str:
         if p.iteration == 0:
             return
         nash.save(net, partial)
+        it = done + p.iteration
+        if save_every and it % save_every == 0:
+            nash.save(net, Path(f"runs/{tag}_{it}.pt"))
         st = _load(STATE)
         st.setdefault("partial", {})[tag] = {
             "iteration": done + p.iteration,
