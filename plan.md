@@ -241,6 +241,19 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
    - [ ] A "careful" Camel Stocks heuristic (e.g. contests the camel majority, never leaves
      precious goods in the market), to check whether that agent has a similar dependence.
    - [ ] Analyse recorded human games (`runs/human_games/`) with the same conditional questions.
+3c. [ ] **Approaches to try next**, in order (the leak says the bottleneck is what the agent trains
+   and is measured against, more than the learning algorithm):
+   1. **Style-diverse league**: several fixed opponents with distinct habits (careful, tight,
+      aggressive, hoarder), not one heuristic. AlphaStar's lesson, and ours: one opponent with one
+      habit taught a habit-specific exploit.
+   2. **Suit-symmetry augmentation** (Ventures): the five suits are interchangeable, so train on
+      randomly relabelled positions (feature and action permutations). Up to 120× the effective
+      data, and no accidental suit preferences.
+   3. **Proper PSRO**: a population payoff matrix, and train against its Nash mixture, not
+      uniform fixed opponents (why the exploiter league failed).
+   4. **Endgame search**: few cards left means a small tree; search it deeply, where a human can
+      out-calculate a policy (clock management, the stall).
+   5. **Human games as a test set**: where does a human beat it, and in which positions?
 4. [ ] **Decision point: go deeper on Ventures, or move to Jaipur.**
    - *Move on* if the exploiter edge is at or below ~+2 points/game, or if step 3 gives nothing.
      Jaipur (Stage 2) then tests the recipe and interface on a second game, and brings the planned
