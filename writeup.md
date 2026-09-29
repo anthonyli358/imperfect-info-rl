@@ -170,9 +170,42 @@ What stands out, against the usual human advice:
 - **It almost never feeds the opponent.** Only 0.2% of its discards are cards the opponent can
   play, against 25% for the heuristic. It also plays instead of discarding far more often.
 - **It lives off the discard piles.** Half its draws come from a discard pile; the heuristic
-  almost never takes one. Much of that is the heuristic's gift discards, which the agent picks up.
-  It is not mainly clock control: over the last 8 deck cards, it takes a discard 74% of the time
-  when ahead and 67% when behind.
+  almost never takes one. Some of that is the heuristic's gift discards, which the agent picks
+  up, but see Q2 below: much of it is taking *dead* cards to slow the clock.
+
+Conditional questions (400 games; each asked only in the positions where the choice arises;
+± one standard error):
+
+| Question | Agent | Heuristic |
+|---|:---:|:---:|
+| Q1. Opening a route early: does the hand hold 20+ in that suit (enough to pay the start cost)? | 12% ± 1 (n=1686) | 100% (n=736) |
+| Q1. Opening a route late (under 20 cards left): holds 20+? | 30% ± 4 (n=152) | 100% (n=336) |
+| Q2. A discard pile offers a card it can play: takes one? | 40% ± 1 (n=7886) | 0.3% |
+| Q2. No pile offers a playable card: takes a discard anyway? | **50% ± 1** (n=3255) | 0% |
+| Q3. A safe discard exists: discards a card the opponent can play anyway? | **0.3%** (n=2694) | 25% ± 1 (n=7854) |
+| Q4. Wagering: sum of the numbers held in that suit | 14.3 ± 0.2 (n=1587) | never wagers |
+| Q4. Wagered routes that end positive | 72% ± 2 (n=947) | — |
+| Q5. Plays over a lower card of the same suit it still holds (wasting it)? | 0.3% (n=7257) | 0% |
+
+- **Q1: it opens on hope, not on a made hand.** The standard rule is to open a route only when
+  the cards in hand already cover the 20-point start cost. The heuristic follows it exactly. The
+  agent opens early with enough only 12% of the time, and even late only 30%. It is counting on
+  future draws and the discard piles to fill the route, and three in four routes succeed.
+- **Q2: it takes dead cards to slow the clock.** When no pile offers a card it can use, it still
+  takes a discard half the time. These cards are dead to it (below its route's top card), and
+  none of them was a card the opponent could play (there was never one to deny, across 300 games).
+  So the point is the clock: taking a discard does not shrink the deck. These takes come late
+  (about 8.5 cards left) and mostly when its *projected* score, which counts playable cards in
+  hand, is ahead: 71% ± 1 of the dead-card takes, against 44% ± 2 of its deck draws in the same
+  situation. When it has more cards to play than turns left, it buys turns. A human who is ahead
+  usually wants the game over.
+- **Q3: the heuristic's gifts are not forced.** It hands over a playable card 25% of the time
+  *even when a safe discard is available*. The agent almost never does.
+- **Q4: it wagers light, and it mostly works.** Its average holding in a suit when it plays a
+  backing card is 14 points of number cards, short of the 20 start cost, yet 72% of wagered
+  routes end positive.
+- **Q5: the one human rule it keeps.** It essentially never plays over its own lower card of the
+  same suit, which would strand that card.
 
 **Camel Stocks** (`camel_nash`; wins 95% of these games, 80 vs 59 points)
 

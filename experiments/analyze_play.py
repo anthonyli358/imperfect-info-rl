@@ -153,6 +153,98 @@ def analyze_ventures(game: Game, agent: Agent, heuristic: Agent, n: int, rng) ->
     return {k: {m: round(t.mean(m), 3) for m in t.counts} for k, t in tallies.items()}
 
 
+def ventures_questions(game: Game, agent: Agent, heuristic: Agent, n: int, rng) -> dict:  # noqa: ANN001
+    """Conditional strategic questions: what each player does when a specific dilemma arises.
+
+    Returns per player ``{question: [samples]}``; summarize with :func:`summarize`.
+    """
+    from iirl.games.ventures.cards import NUM_CARD_TYPES, is_backing, rank_of, suit_of
+    from iirl.games.ventures.game import (
+        DISCARD_OFFSET,
+        TAKE_DISCARD_OFFSET,
+        _can_play,
+        route_max_number,
+    )
+    from iirl.games.ventures.state import Phase
+
+    samples = {"agent": defaultdict(list), "heuristic": defaultdict(list)}
+
+    def suit_strength(hand, suit: int) -> int:  # noqa: ANN001 - sum of number ranks held in a suit
+        return sum(
+            rank_of(c) * hand[c]
+            for c in range(NUM_CARD_TYPES)
+            if suit_of(c) == suit and not is_backing(c)
+        )
+
+    for i in range(n):
+        agent_seat = i % 2
+        seats = (agent, heuristic) if agent_seat == 0 else (heuristic, agent)
+        role = {agent_seat: "agent", 1 - agent_seat: "heuristic"}
+        wagered: dict[int, set[int]] = {0: set(), 1: set()}
+
+        def on_move(s, a, p, nxt, role=role, wagered=wagered) -> None:  # noqa: ANN001
+            q = samples[role[p]]
+            hand, routes, opp_routes, deck = s.hands[p], s.routes[p], s.routes[1 - p], sum(s.deck)
+            if s.phase == Phase.PLAY and a < DISCARD_OFFSET:
+                suit = suit_of(a)
+                if not routes[suit]:  # Q1: opening a route; is the suit strong enough to pay 20?
+                    strong = suit_strength(hand, suit) >= 20
+                    q["late_open_strong" if deck < 20 else "early_open_strong"].append(strong)
+                if is_backing(a):  # Q4: wagering; how strong is the suit?
+                    q["wager_suit_strength"].append(suit_strength(hand, suit))
+                    wagered[p].add(suit)
+                else:  # Q5: playing over a lower playable card of the same suit it still holds
+                    top = route_max_number(routes[suit])
+                    lower = any(
+                        hand[c]
+                        and suit_of(c) == suit
+                        and not is_backing(c)
+                        and top < rank_of(c) < rank_of(a)
+                        for c in range(NUM_CARD_TYPES)
+                    )
+                    q["skips_own_lower_card"].append(lower)
+            elif s.phase == Phase.PLAY:  # Q3: a gift discard when a safe one was available
+
+                def gift(c: int) -> bool:
+                    r = opp_routes[suit_of(c)]
+                    return bool(r) and _can_play(r, c)
+
+                held = [c for c in range(NUM_CARD_TYPES) if hand[c]]
+                if any(not gift(c) for c in held):
+                    q["gift_when_safe_available"].append(gift(a - DISCARD_OFFSET))
+            elif s.phase == Phase.DRAW:  # Q2: taking a discard, playable for me or not
+                tops = {
+                    t: s.discards[t][-1]
+                    for t in range(len(s.discards))
+                    if s.discards[t] and t != s.just_discarded_suit
+                }
+                playable = {t for t, c in tops.items() if _can_play(routes[suit_of(c)], c)}
+                took = a - TAKE_DISCARD_OFFSET if a >= TAKE_DISCARD_OFFSET else None
+                if playable:
+                    q["takes_playable_top"].append(took in playable)
+                elif tops:
+                    q["takes_unplayable_top"].append(took is not None)
+
+        final = _play(game, seats, rng, on_move)
+        for p in (0, 1):
+            for suit in wagered[p]:
+                value = _ventures_route_value(final.routes[p][suit])
+                samples[role[p]]["wagered_route_positive"].append(value > 0)
+    return samples
+
+
+def summarize(samples: dict) -> dict:
+    """Return per player ``{question: {"mean", "se", "n"}}`` for the collected samples."""
+    out = {}
+    for who, qs in samples.items():
+        out[who] = {}
+        for key, xs in qs.items():
+            arr = np.asarray(xs, dtype=float)
+            se = float(arr.std(ddof=1) / np.sqrt(len(arr))) if len(arr) > 1 else float("nan")
+            out[who][key] = {"mean": round(float(arr.mean()), 3), "se": round(se, 3), "n": len(arr)}
+    return out
+
+
 def _ventures_route_value(route) -> int:  # noqa: ANN001
     from iirl.games.ventures.cards import BONUS_CARDS, BONUS_POINTS, START_COST
     from iirl.games.ventures.game import route_backing_count, route_number_sum
