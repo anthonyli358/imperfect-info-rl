@@ -155,7 +155,27 @@ good for value tokens that shrink as the good sells out, with a bonus for sets o
   camels for goods, it beats random in every game (+53 points) and beats PIMC at 4 worlds × 60
   simulations (PIMC scores 0.258). As on Ventures, cheap search does not beat a good heuristic.
 
-Next: train it with the Ventures recipe unchanged, and see whether Nash-seeking PPO transfers.
+**The recipe transfers, and does better here.** Trained with the Ventures recipe unchanged (600
+iterations of PPO from scratch, then 400 of Nash-seeking PPO with `gamma = 0.999`; about 256k games,
+under two hours), rated on the same kind of ladder against its own heuristic (anchored at 1500 Elo,
+an arbitrary convention not comparable with Ventures):
+
+| Checkpoint | ppo 100 | ppo 300 | ppo 500 | ppo 600 | nash 100 | nash 200 | nash 300 | nash 400 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| Elo | 1810 | 1851 | 1912 | 1889 | 1915 | 1950 | 1972 | 1968 |
+
+The final agent scores **0.94 vs the heuristic** (margin +19.5), and the Nash phase adds about
++80 Elo over plain PPO. **Exploitability: 0.509** (max of two exploiter runs, 0.509 and 0.481):
+the exploiters found essentially no edge. Because "found nothing" is exactly what a broken
+yardstick reports, it was validated on a known-weaker target: the same procedure against the
+100-iteration PPO checkpoint finds **0.571** (+2.2). So the yardstick works on this game, and the
+Nash-trained agent is close to unexploitable within this exploiter budget, much closer than on
+Ventures (0.545).
+
+A plausible reason it is easier (a hypothesis, not yet tested): Camel Stocks is likely shorter,
+its luck milder (the market is public and most of the hidden information is one hand), and its
+margins small, so there is less for an exploiter to find. Next: rate against Ventures-style held-out
+opponents (e.g. PIMC), and play it (the play page needs a generic `player_view` hook first).
 
 ### Stage 1b: toward an unexploitable agent (2026-09-25 → 09-28)
 
@@ -352,5 +372,5 @@ uv run python -m experiments.exploit_ventures      # best-response exploiter vs 
 uv run python -m experiments.elo_ladder            # rate the lineage vs the heuristic (resumable)
 uv run python -m experiments.belief_ventures       # belief quality + belief-search matches
 uv run python -m experiments.train_ventures_league # exploiter league (resumable)
-uv run python -m experiments.play_ventures         # play the agents yourself (browser, local)
+uv run python -m experiments.play                  # play the agents yourself (browser, local)
 ```

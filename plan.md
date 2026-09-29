@@ -268,7 +268,10 @@ Goal: a second game to reveal which abstractions are real vs incidental — then
   precious goods first, camels as currency
 - [x] Eval vs random / heuristic: heuristic 1.000 vs random (+53); PIMC at 4 × 60 scores only
   0.258 vs the heuristic, so the heuristic is a strong anchor, as on Ventures
-- [ ] Train with the Ventures recipe (Nash-seeking PPO) unchanged; Elo ladder and exploitability
+- [x] Train with the Ventures recipe (Nash-seeking PPO) unchanged (`experiments/train_camel_stocks.py`):
+  ✅ the recipe transfers. Ladder (heuristic = 1500): PPO 1810 → 1889, Nash phase → **1968–1972**,
+  0.94 vs the heuristic. Exploitability **0.509** (max of 2), validated: the same exploiter finds
+  0.571 on the 100-iteration checkpoint. Close to unexploitable within this budget.
 - [ ] Play page: a generic `player_view` hook, so the browser UI works for Camel Stocks too
 
 **Refactor block — harden the game-agnostic core:**
