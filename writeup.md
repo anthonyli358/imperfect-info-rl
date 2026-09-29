@@ -69,6 +69,11 @@ has the most evidence behind it; "nothing else could beat it" is not established
 | Belief-weighted search on top | Better beliefs, no gain in play at 64 sims × 4 worlds |
 | Exploiters as fixed league opponents | Worse on both counts |
 
+> **Caveat (2026-09-29).** The Ventures Elo figures are anchored on a heuristic that leaks: it
+> hands over playable cards. Against a careful version that never does, the best agent scores only
+> 0.570 (+6.8 points a game), and PPO v2 loses. See the findings log. Read the Ventures Elo
+> numbers as "vs a leaky opponent"; exploitability is the honest measure.
+
 **Why "best" and not "done":**
 - **Not unexploitable yet.** The best exploiter still scores 0.545 (+4 points/game). Small, but
   clearly above even.
