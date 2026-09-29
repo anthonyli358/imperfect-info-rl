@@ -215,9 +215,10 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
 
 **Next steps (2026-09-29), in order.** Each is useful alone; stop wherever the curve flattens.
 
-1. [ ] **Finish `nash_g`** (the stall fix, running). Ladder-rate its checkpoints; exploitability
-   as the max of two exploiter runs; confirm the stall is gone (count 200-turn self-play games).
-   Update the play page's opponent list.
+1. [x] **Finish `nash_g`.** Ladder 1969/1982/1975/1962 (flat, within noise of league_control's
+   1973); exploitability 0.547 (max of 2). The recipe has plateaued at ~1970 Elo / ~0.545. The
+   stall persists (1 in 300 self-play games, as before): the leader still rarely draws the last
+   card, a position too rare to learn in 400 iterations. Harmless.
 2. [ ] **Refresh the stale number.** Rate net-guided PIMC on today's yardstick: duplicate deals
    vs the heuristic and vs the best Nash policy. Settles whether any search-based agent still
    competes.

@@ -36,7 +36,7 @@ class Config:
     host: str = "127.0.0.1"
     port: int = 8765
     agents: tuple[tuple[str, str], ...] = (
-        ("Nash PPO, stall fix (nash_g)", "runs/nash_g.pt"),
+        ("Nash PPO (nash_g), ~1970 Elo", "runs/nash_g.pt"),
         ("Nash PPO (league_control), 1973 Elo", "runs/league_control.pt"),
         ("Nash PPO (nash_long), 1941 Elo", "runs/nash_long.pt"),
         ("PPO v2, 1822 Elo", "runs/ppo_ventures_best.pt"),

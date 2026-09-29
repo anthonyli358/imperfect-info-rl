@@ -247,6 +247,11 @@ lower bound. On that basis longer training cost no exploitability (`nash_long` 0
 `league_control` 0.544), while `league_control` gained ~30 Elo. The league's 0.573 is still worse.
 From now on every exploitability number is the max of at least two exploiter runs.
 
+**A plateau.** 400 more iterations of the plain recipe from `league_control`, with the stall fix
+(`nash_g`), rate 1969 → 1982 → 1975 → 1962 on the ladder: within noise of `league_control`
+(1973). Its exploitability is 0.547 (max of 0.547 and 0.545), the same as `nash_long` and
+`league_control`. On both axes the recipe has flattened at about **1970 Elo and 0.545**.
+
 **Also found:** the endgame stall. With one card left in the deck, drawing it ends the game, so the
 trailing player never draws it, and a weak policy in the lead also stalls. The 200-turn cap then ends
 the game with the same result. `nash` did this in 3 of 200 self-play games, `nash_long` in none.
@@ -257,6 +262,10 @@ does not move. So the policy is indifferent in a position it rarely sees. It nev
 (a discount per own decision; shaping becomes `gamma * phi' - phi`, still policy-invariant).
 Just below 1 (0.999), a won game is worth slightly more ended sooner. It is used from the next
 training run on.
+It has not taken yet: `nash_g`, trained 400 iterations with `gamma = 0.999`, still stalls in 1 of
+300 self-play games, like `league_control`. In the stalled game the leader (+27) gives drawing
+the last card only 4–24% probability, so greedy play never draws it. The position is too rare
+(well under 1% of games) for 400 iterations to teach it. Still harmless: the result is the same.
 
 ### PPO self-play beats the heuristic — and PIMC — without search
 The reactive-RL plateau was an engineering artifact. PPO v2 (pure self-play + snapshot pool, no
