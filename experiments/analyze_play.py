@@ -188,6 +188,38 @@ def analyze_camel_stocks(game: Game, agent: Agent, heuristic: Agent, n: int, rng
             if s.phase == Phase.PLAY:
                 g["turns"] += 1
                 t.add("hand_size_at_turn", sum(s.hands[p]))
+                # What the previous mover left in the market for this player (after refills).
+                if s.turn > 0:
+                    prev = tallies[role[1 - p]]
+                    goods = [c for c in range(CAMEL) for _ in range(s.market[c])]
+                    prev.add("left_precious_in_market", sum(1 for c in goods if c in PRECIOUS))
+                    prev.add(
+                        "left_market_top_tokens",
+                        sum(s.tokens[c][0] for c in goods if s.tokens[c]),
+                    )
+                # Fresh deck cards this move puts into the market (the opponent sees them first).
+                revealed = 1 if a < TAKE_CAMELS else s.market[CAMEL] if a == TAKE_CAMELS else 0
+                t.add("deck_cards_revealed_per_turn", revealed)
+                # The dilemma: a precious good on offer *and* a cheaper good that extends a set.
+                if sum(s.hands[p]) < HAND_LIMIT:
+                    precious = [c for c in PRECIOUS if s.market[c] and s.tokens[c]]
+                    sets = [
+                        c
+                        for c in range(CAMEL)
+                        if c not in PRECIOUS and s.market[c] and s.tokens[c] and s.hands[p][c] >= 2
+                    ]
+                    if precious and sets:
+                        first = a if a < TAKE_CAMELS else a - EX_TAKE_OFFSET
+                        took = a < TAKE_CAMELS or EX_TAKE_OFFSET <= a < EX_DONE
+                        choice = (
+                            "precious"
+                            if took and first in precious
+                            else "set"
+                            if took and first in sets
+                            else "other"
+                        )
+                        for option in ("precious", "set", "other"):
+                            t.add(f"dilemma_{option}", float(choice == option))
                 if a < TAKE_CAMELS:
                     g["take_one"] += 1
                     t.add("take_precious_share", float(a in PRECIOUS))
@@ -210,7 +242,11 @@ def analyze_camel_stocks(game: Game, agent: Agent, heuristic: Agent, n: int, rng
                 else:
                     g["exchange"] += 1
             elif s.phase == Phase.EX_GIVE:
-                t.add("exchange_gives_camel", float(a - EX_GIVE_OFFSET == CAMEL))
+                given = a - EX_GIVE_OFFSET
+                t.add("exchange_gives_camel", float(given == CAMEL))
+                if given != CAMEL:  # what an exchange hands the opponent
+                    t.add("exchange_gives_precious", float(given in PRECIOUS))
+                    t.add("exchange_given_top_token", s.tokens[given][0] if s.tokens[given] else 0)
             if s.phase in (Phase.EX_TAKE,) and a == EX_DONE:
                 t.add("exchange_size", sum(s.taken))
 

@@ -198,7 +198,20 @@ What stands out:
 - **Fewer, bigger, earlier sales.** It sells about as often as the heuristic, but in bigger sets:
   44% of its sales earn a bonus token, its gold, silver and gem sales are larger, and it gets the
   first (most valuable) tokens in more goods. Each sale is worth a third more.
-- **It chases the precious goods.** Over half its single takes are gems, gold or silver.
+- **Precious goods over bigger sets? No more than a human.** Over half its single takes are gems,
+  gold or silver, but that is expected. The telling case is the dilemma: a precious good on offer
+  *and* a cheaper good that would grow a set of two or more. Over about 660 such positions each
+  (400 games), both players take the precious good about three times in four (agent 77% ± 2,
+  heuristic 76% ± 2). The agent is, if anything, a little *more* willing to build the cheap set
+  (12% vs 7%) and less likely to do something else instead.
+- **It opens up the market less for the opponent.** Taking one good refills a slot from the
+  deck, and taking camels refills several: fresh cards the opponent gets first pick of. An
+  exchange draws nothing; it refills the market with cards you choose. The agent reveals 15% fewer
+  deck cards per turn (0.75 vs 0.89) and leaves 19% fewer precious goods in the market for the
+  opponent's turn (0.45 vs 0.55; the total top-token value it leaves is only 4% lower). What its
+  exchanges hand back is cheap: goods averaging a 2.5-point top token, only 14% of them precious.
+  This fits a deliberate "don't open the market" habit, but it is also a side effect of exchanging
+  more and taking fewer single goods, and these statistics cannot tell the two apart.
 - **The rulebook's camel tip does not show up.** The rules advise taking a big group of camels
   when the opponent's hand is full, so they cannot use the new market cards. The agent does this
   no more often than the heuristic (35% vs 43% of its camel takes come when the opponent holds 6+
