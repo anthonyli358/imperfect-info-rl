@@ -30,6 +30,7 @@ from iirl.games.camel_stocks.cards import (
     CAMEL,
     CAMEL_BONUS,
     CAMEL_COLOR,
+    CAMEL_SYMBOL,
     CARD_COUNTS,
     CARD_NAMES,
     DEAL_SIZE,
@@ -37,6 +38,7 @@ from iirl.games.camel_stocks.cards import (
     EMPTY_PILES_TO_END,
     GOOD_COLORS,
     GOOD_NAMES,
+    GOOD_SYMBOLS,
     GOOD_TOKENS,
     HAND_LIMIT,
     MARKET_SIZE,
@@ -564,6 +566,8 @@ class CamelStocks(Game):
         return {
             "card_names": list(CARD_NAMES),
             "card_colors": [*GOOD_COLORS, CAMEL_COLOR],
+            "card_symbols": [*GOOD_SYMBOLS, CAMEL_SYMBOL],
+            "precious": sorted(PRECIOUS),
             "hand_limit": HAND_LIMIT,
             "tokens": [list(t) for t in GOOD_TOKENS],
         }

@@ -94,7 +94,27 @@
   .target:hover { background: var(--accent-soft); }
   .target:focus-visible { outline-color: var(--accent); }
 
-  /* Camel Stocks */
+  /* Camel Stocks: goods cards, coins, market */
+  .gcard { --c: var(--muted); position: relative; width: 58px; height: 80px; border-radius: 9px; flex: none;
+    background: linear-gradient(160deg, color-mix(in srgb, var(--c) 88%, #fff), var(--c));
+    border: 1px solid color-mix(in srgb, var(--c) 70%, #000); color: #fff; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+  .gcard .sym { font-size: 24px; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+  .gcard .nm { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+  .gcard.known { outline: 2px dashed var(--c); outline-offset: 2px; }
+  .gcard.back { --c: #6b7688; background: repeating-linear-gradient(45deg, #5c6678, #5c6678 6px, #6b7688 6px, #6b7688 12px); }
+  .gcard.small { width: 44px; height: 60px; } .gcard.small .sym { font-size: 18px; } .gcard.small .nm { font-size: 8px; }
+  .coins { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+  .coin { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700;
+    background: color-mix(in srgb, var(--c) 22%, var(--surface)); color: color-mix(in srgb, var(--c) 75%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line)); }
+  .coin.top { width: 28px; height: 28px; font-size: 13px; background: var(--c); color: #fff; border-color: color-mix(in srgb, var(--c) 70%, #000); }
+  .zone { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+  .zone-title { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; display: flex; gap: 10px; align-items: baseline; }
+  .zone-title b { color: var(--ink); letter-spacing: 0; text-transform: none; font-size: 12px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .herd { display: flex; align-items: center; gap: 6px; }
+  .herd .gcard { width: 40px; height: 54px; } .herd .gcard .sym { font-size: 18px; } .herd .gcard .nm { display: none; }
+  .herd .n { font-family: "JetBrains Mono", monospace; font-weight: 700; }
   .tokens { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
   .tpile { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 6px; min-width: 0; }
   .tpile .name { font-size: 10px; font-weight: 700; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -252,29 +272,46 @@
   var C = {
     rules: "Each turn, do one thing: take one good from the market (hand limit 7), take all the camels, exchange 2+ goods from the market for as many cards and/or camels (never giving back a good you take), or sell cards of one good (gems, gold, silver: at least 2) for its top tokens, with a bonus for 3, 4 or 5+ cards. The game ends when three token piles are empty or the deck cannot refill the market. The larger herd scores +5. Outlined opponent cards are goods they were seen taking.",
     card: function (meta, id, cls) {
-      return '<div class="card good ' + (cls || "") + '" style="--suit:' + meta.card_colors[id] + '" title="' + esc(meta.card_names[id]) + '">' + esc(meta.card_names[id]) + "</div>";
+      return '<div class="gcard ' + (cls || "") + '" style="--c:' + meta.card_colors[id] + '" title="' + esc(meta.card_names[id]) + '">' +
+        '<span class="sym">' + meta.card_symbols[id] + '</span><span class="nm">' + esc(meta.card_names[id]) + "</span></div>";
+    },
+    goodOf: function (meta, label) {
+      // The good a move label is about (for colouring its button), or -1.
+      for (var g = meta.card_names.length - 1; g >= 0; g--) {
+        if (label.toLowerCase().indexOf(meta.card_names[g].toLowerCase()) >= 0) return g;
+      }
+      return /camel/.test(label) ? meta.card_names.length - 1 : -1;
     },
     render: function () {
       var meta = state.meta, v = state.view, me = state.seat, opp = 1 - me;
-      var names = meta.card_names;
-      var tokens = '<div class="tokens">' + v.tokens.map(function (pile, g) {
-        return '<div class="tpile' + (pile.length ? "" : " empty") + '"><div class="name" style="color:' + meta.card_colors[g] + '">' + esc(names[g]) +
-          '</div><div class="vals">' + (pile.length ? "<b>" + pile[0] + "</b> " + pile.slice(1).join(" ") : "sold out") + "</div></div>";
-      }).join("") + "</div>";
-      var chips = '<div class="chips"><span class="chip">deck <b>' + v.deck_size + '</b></span><span class="chip">bonus left 3/4/5+: <b>' + v.bonus_left.join(" / ") + "</b></span></div>";
-      var market = '<div class="market">' + v.market.map(function (c) { return C.card(meta, c); }).join("") + "</div>";
+      var names = meta.card_names, camel = names.length - 1;
+      var byGood = function (a, b) { return a - b; };
+      var tokens = '<div class="zone"><div class="zone-title">Goods tokens <b>next sale takes the big coin first</b></div><div class="tokens">' +
+        v.tokens.map(function (pile, g) {
+          var coins = pile.map(function (t, i) { return '<span class="coin' + (i === 0 ? " top" : "") + '">' + t + "</span>"; }).join("");
+          return '<div class="tpile' + (pile.length ? "" : " empty") + '" style="--c:' + meta.card_colors[g] + '"><div class="name" style="color:' + meta.card_colors[g] + '">' +
+            meta.card_symbols[g] + " " + esc(names[g]) + (meta.precious.indexOf(g) >= 0 ? " ×2+" : "") +
+            '</div><div class="coins">' + (coins || '<span class="vals">sold out</span>') + "</div></div>";
+        }).join("") + '</div><div class="chips" style="margin-top:8px"><span class="chip">bonus tokens left for 3 / 4 / 5+ cards: <b>' + v.bonus_left.join(" / ") +
+        '</b></span><span class="chip">larger herd: <b>+5</b></span></div></div>';
+      var market = '<div class="zone"><div class="zone-title">Market <b>' + v.deck_size + " cards left in the deck</b></div>" +
+        '<div class="row">' + v.market.slice().sort(byGood).map(function (c) { return C.card(meta, c); }).join("") + "</div></div>";
       function panel(p, who) {
         var hidden = (v.hidden || [0, 0])[p];
-        var cards = v.hands[p].map(function (c) { return C.card(meta, c, p === opp && !state.terminal ? "known" : ""); }).join("") +
-          new Array(hidden + 1).join('<div class="card good back">?</div>');
+        var cards = v.hands[p].slice().sort(byGood).map(function (c) { return C.card(meta, c, p === opp && !state.terminal ? "known" : ""); }).join("") +
+          new Array(hidden + 1).join('<div class="gcard back"><span class="sym">?</span></div>');
+        var size = v.hands[p].length + hidden;
         var active = !state.terminal && (p === me ? state.your_turn : !state.your_turn);
+        var herd = '<div class="herd">' + C.card(meta, camel, "small") + '<span class="n">× ' + v.herds[p] + "</span></div>";
         return '<div class="panel' + (active ? " active" : "") + '"><div class="panel-head"><span class="pname">' + who + "</span>" +
-          '<span class="kind">' + (p === opp ? esc(state.agent) : "P" + me) + '</span><span class="chip">herd <b>' + v.herds[p] + ' camels</b></span>' +
-          '<span class="pscore">' + v.scores[p] + "</span></div>" + '<div class="hand">' + cards + "</div></div>";
+          '<span class="kind">' + (p === opp ? esc(state.agent) : "P" + me) + '</span><span class="chip">hand <b>' + size + "/" + meta.hand_limit + "</b></span>" +
+          '<span class="pscore">' + v.scores[p] + ' <span class="kind">pts</span></span></div>' +
+          '<div class="row" style="justify-content:space-between;align-items:flex-end"><div class="hand" style="margin-top:0">' + cards + "</div>" + herd + "</div></div>";
       }
       var exch = (v.taken && v.taken.length) || (v.given && v.given.length)
-        ? '<div class="prompt"><b>Exchange:</b> taking ' + (v.taken.map(function (c) { return names[c]; }).join(", ") || "—") +
-          "; giving " + (v.given.map(function (c) { return names[c]; }).join(", ") || "—") + "</div>" : "";
+        ? '<div class="zone"><div class="zone-title">Exchange in progress</div><div class="row"><span class="kind">taking</span>' +
+          v.taken.map(function (c) { return C.card(meta, c, "small"); }).join("") + '<span class="kind" style="margin-left:12px">giving</span>' +
+          (v.given.map(function (c) { return C.card(meta, c, "small"); }).join("") || '<span class="kind">—</span>') + "</div></div>" : "";
       var moves = "";
       if (state.your_turn) {
         var groups = {};
@@ -284,12 +321,15 @@
         });
         moves = '<div class="moves">' + ["Take", "Sell", "Exchange"].filter(function (k) { return groups[k]; }).map(function (k) {
           return '<div class="move-group"><span class="glabel">' + k + "</span>" + groups[k].map(function (a) {
-            return '<button class="btn" data-act="' + a.id + '">' + esc(a.label.replace(/^exchange: /, "")) + "</button>";
+            var g = C.goodOf(meta, a.label);
+            var style = g >= 0 ? ' style="box-shadow: inset 4px 0 0 ' + meta.card_colors[g] + '"' : "";
+            return '<button class="btn" data-act="' + a.id + '"' + style + ">" + (g >= 0 ? meta.card_symbols[g] + " " : "") +
+              esc(a.label.replace(/^exchange: /, "")) + "</button>";
           }).join("") + "</div>";
         }).join("") + "</div>";
       }
       var p = state.terminal ? "" : state.your_turn ? "<b>Your turn:</b> choose a move below." : "Opponent is thinking…";
-      return banner() + panel(opp, "Opponent") + tokens + chips + market + exch + prompt(p) + moves + panel(me, "You");
+      return banner() + panel(opp, "Opponent") + tokens + market + exch + prompt(p) + moves + panel(me, "You");
     }
   };
 

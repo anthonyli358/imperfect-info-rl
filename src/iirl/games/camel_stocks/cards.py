@@ -30,8 +30,12 @@ CAMEL = NUM_GOODS  # card type id of a camel
 NUM_CARD_TYPES = NUM_GOODS + 1
 GOOD_NAMES: tuple[str, ...] = ("Gems", "Gold", "Silver", "Silk", "Spice", "Hides")
 CARD_NAMES: tuple[str, ...] = (*GOOD_NAMES, "Camel")
-GOOD_COLORS: tuple[str, ...] = ("#c0414c", "#c9a227", "#8a94a6", "#7d5fb0", "#c9772b", "#8a5a3b")
-CAMEL_COLOR = "#b89b6a"
+# Display only. Colours follow the original's conventional colour per good (so players who know it
+# read the board at a glance); symbols are plain Unicode glyphs.
+GOOD_COLORS: tuple[str, ...] = ("#c8323f", "#d4a017", "#7f8da3", "#7a4fb5", "#3f9a4a", "#8b5a2b")
+GOOD_SYMBOLS: tuple[str, ...] = ("◆", "●", "◈", "≋", "✿", "▦")
+CAMEL_COLOR = "#c19a5b"
+CAMEL_SYMBOL = "🐪"
 
 # Cards per type (goods, then camels): 55 in all.
 CARD_COUNTS: tuple[int, ...] = (6, 6, 6, 8, 8, 10, 11)
