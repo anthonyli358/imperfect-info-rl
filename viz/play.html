@@ -104,6 +104,25 @@
   .gcard.known { outline: 2px dashed var(--c); outline-offset: 2px; }
   .gcard.back { --c: #6b7688; background: repeating-linear-gradient(45deg, #5c6678, #5c6678 6px, #6b7688 6px, #6b7688 12px); }
   .gcard.small { width: 44px; height: 60px; } .gcard.small .sym { font-size: 18px; } .gcard.small .nm { font-size: 8px; }
+  /* Ventures: rank cards, route strips, deck and discard piles */
+  .vcard .rank { font-family: "JetBrains Mono", monospace; font-size: 26px; font-weight: 700; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+  .vcard .corner { position: absolute; top: 4px; left: 6px; font-size: 12px; opacity: .9; }
+  .vcard.small .rank { font-size: 19px; } .vcard.small .nm { display: none; }
+  .gcard.hand { cursor: pointer; transition: transform .12s; }
+  .gcard.hand.inert { cursor: default; }
+  .gcard.hand.playable::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--pos); }
+  .gcard.hand.selected { transform: translateY(-8px); outline: 3px solid var(--accent); outline-offset: 2px; }
+  .gcard.hand:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  button.gcard { font: inherit; cursor: pointer; padding: 0; }
+  .deckcard .sym { font-family: "JetBrains Mono", monospace; font-size: 20px; }
+  .strip { height: 22px; border-radius: 5px; background: var(--c); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 6px;
+    font-family: "JetBrains Mono", monospace; font-weight: 700; font-size: 12px; border: 1px solid color-mix(in srgb, var(--c) 70%, #000); text-shadow: 0 1px 1px rgba(0,0,0,.3); }
+  .route { border-top: 3px solid var(--c); }
+  .route.hl { outline: 2px dashed var(--c); outline-offset: 1px; }
+  .route-empty { font-size: 20px; opacity: .25; text-align: center; padding-top: 6px; }
+  .slot-empty { width: 44px; height: 60px; border-radius: 9px; border: 1px dashed var(--line); display: grid; place-items: center; font-size: 18px; opacity: .5; }
+  .center .pile { gap: 3px; }
+  .center .pile.target { padding: 3px; }
   .coins { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
   .coin { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700;
     background: color-mix(in srgb, var(--c) 22%, var(--surface)); color: color-mix(in srgb, var(--c) 75%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line)); }
@@ -206,9 +225,16 @@
     decode: function (meta, id) { var n = meta.ranks.length, r = meta.ranks[id % n]; return { suit: Math.floor(id / n), rank: r, backing: r === meta.ranks[0] }; },
     name: function (meta, id) { var d = V.decode(meta, id); return meta.suit_names[d.suit] + " " + (d.backing ? "backing" : d.rank); },
     card: function (meta, id, cls, attrs) {
+      // A full-colour card: the rank large (a backing card shows ×), the venture's symbol in the corner.
       var d = V.decode(meta, id);
-      var tag = cls.indexOf("hand") >= 0 ? '<span class="tag">' + esc(meta.suit_names[d.suit].slice(0, 3)) + "</span>" : "";
-      return '<div class="card ' + cls + '" style="--suit:' + meta.suit_colors[d.suit] + '" ' + (attrs || "") + ' title="' + esc(V.name(meta, id)) + '">' + (d.backing ? "◆" : d.rank) + tag + "</div>";
+      return '<div class="gcard vcard ' + cls + '" style="--c:' + meta.suit_colors[d.suit] + '" ' + (attrs || "") + ' title="' + esc(V.name(meta, id)) + '">' +
+        '<span class="corner">' + meta.suit_symbols[d.suit] + '</span><span class="rank">' + (d.backing ? "×" : d.rank) + '</span>' +
+        '<span class="nm">' + (d.backing ? "backing" : esc(meta.suit_names[d.suit])) + "</span></div>";
+    },
+    strip: function (meta, id) {
+      var d = V.decode(meta, id);
+      return '<div class="strip" style="--c:' + meta.suit_colors[d.suit] + '" title="' + esc(V.name(meta, id)) + '"><span>' + (d.backing ? "×" : d.rank) +
+        "</span><span>" + meta.suit_symbols[d.suit] + "</span></div>";
     },
     routeScore: function (meta, cards) {
       if (!cards.length) return null;
@@ -216,12 +242,15 @@
       cards.forEach(function (id) { var d = V.decode(meta, id); if (d.backing) b++; else s += d.rank; });
       return (s - meta.start_cost) * (1 + b) + (cards.length >= 8 ? 20 : 0);
     },
-    tableau: function (meta, routes) {
+    tableau: function (meta, routes, highlight) {
       return '<div class="tableau">' + routes.map(function (cards, s) {
         var sc = V.routeScore(meta, cards);
-        return '<div class="route"><div class="route-head"><span class="route-name" style="color:' + meta.suit_colors[s] + '">' + esc(meta.suit_names[s]) + "</span>" +
+        var body = cards.length ? cards.map(function (id) { return V.strip(meta, id); }).join("")
+          : '<div class="route-empty" style="color:' + meta.suit_colors[s] + '">' + meta.suit_symbols[s] + "</div>";
+        return '<div class="route' + (highlight === s ? " hl" : "") + '" style="--c:' + meta.suit_colors[s] + '"><div class="route-head"><span class="route-name" style="color:' + meta.suit_colors[s] + '">' +
+          meta.suit_symbols[s] + " " + esc(meta.suit_names[s]) + "</span>" +
           (sc === null ? "" : '<span class="route-score ' + sign(sc) + '">' + signed(sc) + "</span>") +
-          '</div><div class="stack">' + cards.map(function (id) { return V.card(meta, id, "mini"); }).join("") + "</div></div>";
+          '</div><div class="stack">' + body + "</div></div>";
       }).join("") + "</div>";
     },
     render: function () {
@@ -236,34 +265,43 @@
       var playPhase = state.your_turn && v.phase === "PLAY", drawPhase = state.your_turn && v.phase === "DRAW";
       var hidden = (v.hidden || [0, 0])[opp];
       var oppCards = v.hands[opp].slice().sort(function (a, b) { return a - b; })
-        .map(function (id) { return V.card(meta, id, "hand inert" + (state.terminal ? "" : " known")); }).join("") +
-        new Array(hidden + 1).join('<div class="card hand back">?</div>');
+        .map(function (id) { return V.card(meta, id, "small" + (state.terminal ? "" : " known")); }).join("") +
+        new Array(hidden + 1).join('<div class="gcard back small"><span class="sym">?</span></div>');
       var oppPanel = '<div class="panel' + (!state.terminal && !state.your_turn ? " active" : "") + '"><div class="panel-head"><span class="pname">Opponent</span><span class="kind">' + esc(state.agent) +
-        '</span><span class="pscore ' + sign(v.scores[opp]) + '">' + signed(v.scores[opp]) + "</span></div>" + V.tableau(meta, v.routes[opp]) +
-        '<div class="hand">' + oppCards + "</div>" + (state.terminal ? '<div class="hand-note">Their hand, revealed.</div>' : "") + "</div>";
-      var deckHtml = drawPhase && deck
-        ? '<button class="deck target" data-act="' + A.draw_deck + '"><span class="n mono">' + v.deck_size + '</span><span class="t">draw deck</span></button>'
-        : '<div class="deck"><span class="n mono">' + v.deck_size + '</span><span class="t">in deck</span></div>';
+        '</span><span class="pscore ' + sign(v.scores[opp]) + '">' + signed(v.scores[opp]) + ' <span class="kind">pts</span></span></div>' +
+        '<div class="hand" style="margin:0 0 10px">' + oppCards + "</div>" + V.tableau(meta, v.routes[opp]) +
+        (state.terminal ? '<div class="hand-note">Their hand, revealed.</div>' : "") + "</div>";
+      var deckHtml = '<div class="pile">' + (drawPhase && deck
+        ? '<button class="gcard back deckcard target" data-act="' + A.draw_deck + '" aria-label="Draw from the deck"><span class="sym">' + v.deck_size + "</span><span class=\"nm\">draw</span></button>"
+        : '<div class="gcard back deckcard"><span class="sym">' + v.deck_size + '</span><span class="nm">deck</span></div>') + '<span class="cap">' + v.deck_size + " left</span></div>";
       var piles = v.discards.map(function (pile, s) {
-        var top = pile.length ? V.card(meta, pile[pile.length - 1], "mini") : '<span class="cap">—</span>';
+        var top = pile.length ? V.card(meta, pile[pile.length - 1], "small")
+          : '<div class="slot-empty" style="color:' + meta.suit_colors[s] + '">' + meta.suit_symbols[s] + "</div>";
         var can = drawPhase && take.indexOf(s) >= 0;
         return (can ? '<button class="pile target" data-act="' + (A.take_offset + s) + '" aria-label="Take the ' + esc(meta.suit_names[s]) + ' discard">' : '<div class="pile">') +
-          '<div class="slot">' + top + '</div><span class="cap">' + esc(meta.suit_names[s].slice(0, 3)) + (pile.length > 1 ? " ·" + pile.length : "") + "</span>" + (can ? "</button>" : "</div>");
+          top + '<span class="cap">' + (pile.length ? pile.length + " discarded" : "empty") + "</span>" + (can ? "</button>" : "</div>");
       }).join("");
-      var p;
+      var p, highlight = -1;
       if (state.terminal) p = "";
       else if (!state.your_turn) p = "Opponent is thinking…";
       else if (playPhase && selected === null) p = "<b>Your turn:</b> pick a card from your hand.";
-      else if (playPhase) p = "<b>" + esc(V.name(meta, selected)) + "</b>" +
-        '<button class="btn primary" data-act="' + selected + '"' + (play.indexOf(selected) >= 0 ? "" : " disabled") + ">Play to route</button>" +
-        '<button class="btn" data-act="' + (A.discard_offset + selected) + '">Discard</button><button class="btn" data-act="cancel">Cancel</button>';
-      else p = "<b>Draw:</b> click the deck or a highlighted discard pile.";
+      else if (playPhase) {
+        var d = V.decode(meta, selected), canPlay = play.indexOf(selected) >= 0, route = v.routes[me][d.suit];
+        highlight = canPlay ? d.suit : -1;
+        var now = V.routeScore(meta, route), next = V.routeScore(meta, route.concat([selected]));
+        var preview = canPlay ? ' <span class="kind">' + esc(meta.suit_names[d.suit]) + " route: " + (now === null ? "not started" : signed(now)) +
+          " → <b class=\"" + sign(next) + "\">" + signed(next) + "</b></span>" : ' <span class="kind">cannot be played (routes ascend; backing cards go first)</span>';
+        p = "<b>" + esc(V.name(meta, selected)) + "</b>" + preview +
+          '<button class="btn primary" data-act="' + selected + '"' + (canPlay ? "" : " disabled") + ">Play to route</button>" +
+          '<button class="btn" data-act="' + (A.discard_offset + selected) + '">Discard</button><button class="btn" data-act="cancel">Cancel</button>';
+      } else p = "<b>Draw:</b> click the deck or a highlighted discard pile.";
       var hand = v.hands[me].slice().sort(function (a, b) { return a - b; }).map(function (id) {
         var cls = "hand" + (playPhase && play.indexOf(id) >= 0 ? " playable" : "") + (playPhase && id === selected ? " selected" : "") + (playPhase ? "" : " inert");
         return V.card(meta, id, cls, playPhase ? 'tabindex="0" role="button" data-card="' + id + '"' : "");
       }).join("");
       var you = '<div class="panel' + (state.your_turn ? " active" : "") + '"><div class="panel-head"><span class="pname">You</span><span class="kind">P' + me +
-        '</span><span class="pscore ' + sign(v.scores[me]) + '">' + signed(v.scores[me]) + "</span></div>" + V.tableau(meta, v.routes[me]) + '<div class="hand">' + hand + "</div></div>";
+        '</span><span class="pscore ' + sign(v.scores[me]) + '">' + signed(v.scores[me]) + ' <span class="kind">pts</span></span></div>' + V.tableau(meta, v.routes[me], highlight) +
+        '<div class="hand">' + hand + "</div></div>";
       return banner() + oppPanel + '<div class="center">' + deckHtml + '<div class="discards">' + piles + "</div></div>" + prompt(p) + you;
     }
   };

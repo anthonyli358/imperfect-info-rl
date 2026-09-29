@@ -44,6 +44,7 @@ _IS_BACKING: tuple[bool, ...] = tuple(r == BACKING for r in _RANK_OF)
 # distinct, reasonably color-blind-safe hue used consistently by the replay viewer.
 SUIT_NAMES: tuple[str, ...] = ("Harbor", "Summit", "Orchard", "Foundry", "Bazaar")
 SUIT_COLORS: tuple[str, ...] = ("#2f7f9f", "#c9772b", "#3f9152", "#7d5fb0", "#c0414c")
+SUIT_SYMBOLS: tuple[str, ...] = ("⚓", "▲", "❦", "⚙", "✦")  # plain Unicode glyphs, display only
 
 
 def card_name(card: int) -> str:
