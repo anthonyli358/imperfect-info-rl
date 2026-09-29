@@ -152,14 +152,16 @@ to add. Earlier, the same search gave about +30 Elo over PPO v2.
 agent with every exploiter found so far as a fixed league opponent, then trains a fresh exploiter
 against it (`experiments/train_ventures_league.py`). Two rounds from `nash_long`:
 
-| Agent | Exploiter score | Old exploiter's score vs it |
-|---|:---:|:---:|
-| nash_long | 0.522 (+2.5) | — |
-| league round 1 | 0.556 (+4.6) | 0.550 |
-| league round 2 | 0.573 (+8.4) | 0.547 |
+| Agent | Exploiter score | Old exploiter's score vs it | Elo (ladder) |
+|---|:---:|:---:|:---:|
+| nash_long | 0.522 (+2.5) | — | 1941 |
+| league round 1 | 0.556 (+4.6) | 0.550 | 1942 |
+| league round 2 | 0.573 (+8.4) | 0.547 | **1962** |
 
 Exploitability *rose*, and round 1 did not even close `nash_long`'s own hole (that exploiter does
-better against it, 0.550 vs 0.522). Strength is flat (round 1: 1942 Elo). The likely reason:
+better against it, 0.550 vs 0.522). Yet round 2 is the highest-rated agent so far vs the heuristic
+(1962 ± 10): beating conventional play and being unexploitable are different targets, and here
+they pulled apart. The likely reason for the exploitability rise:
 training against a few fixed best responses overfits to them rather than moving toward
 equilibrium. *(Pending: a same-budget control with plain Nash training, to confirm the exploiters
 are the cause.)*

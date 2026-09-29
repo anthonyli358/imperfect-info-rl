@@ -164,7 +164,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   Two rounds of 200 iterations from `nash_long`, each exploiter added to the league. So far it
   **makes things worse**: the exploiter score rises 0.522 → **0.556** (r1) → **0.573** (r2), and
   the r1 agent did not even close `nash_long`'s own hole (that exploiter scores 0.550 vs r1).
-  Strength is flat (r1 1942 Elo). The same-budget plain-Nash control (`league_control`) still
+  Elo vs the heuristic still rises (r1 1942, r2 **1962**), so beating conventional play and
+  being unexploitable have pulled apart. The same-budget plain-Nash control (`league_control`) still
   has to run; rerun the script to finish it. If the control stays near 0.52, dedicated
   exploiters as fixed league members hurt: training vs a few fixed best responses overfits to
   them instead of moving toward Nash.
