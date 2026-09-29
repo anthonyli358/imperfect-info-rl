@@ -168,9 +168,10 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   being unexploitable have pulled apart. The same-budget plain-Nash control (`league_control`) still
   ran after: **0.544 (+4.5), 1973 Elo**, better than league r2 on both counts. Dedicated
   exploiters as fixed league members hurt (they overfit to a few best responses); keep the plain
-  recipe. Open question: the control also measured above `nash_long`'s 0.522. That is either
-  a real trade-off with longer training or the exploiter yardstick's run-to-run variance; repeat
-  exploiter runs on one target would tell.
+  recipe. Repeat exploiter runs (seed 1) showed the yardstick varies ~0.02 per run, twice its
+  standard error: nash_long 0.522/0.545, league_control 0.544/0.538. Exploitability = the max
+  over ≥ 2 exploiter runs (a single run is a lower bound). By that, nash_long and
+  league_control are equally exploitable (~0.545), and league_control is 30 Elo stronger.
 - [x] **Endgame stall fix.** `PPOConfig.gamma` (default 1.0, unchanged behaviour): with 0.999 a
   winning player prefers ending the game sooner over stalling to the turn cap. Use it from the
   next training run (not in the running control, which must match the league rounds).

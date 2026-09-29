@@ -18,7 +18,7 @@ characteristic reason** — which is the point of the exercise.
 | Agent | Elo | vs heuristic | One-line why |
 |------:|:---:|:---:|:---|
 | **Nash-seeking PPO** (`league_control`, no search) | **~1970** | **85% — beats it** | PPO v2 + magnet KL toward a slow copy + league, ~350k more games |
-| Nash-seeking PPO (`nash_long`) | ~1940 | 82% | the least exploitable measured (exploiter 0.522) |
+| Nash-seeking PPO (`nash_long`) | ~1940 | 82% | equally exploitable (0.545, max of 2 runs) |
 | **Net-guided PIMC** (learned priors + honest leaf) | **~1855** | **74% — beats it** | learn the *search priors*, keep an honest leaf value |
 | **PPO self-play** (v2 recipe, no search) | **~1800** | **67% — beats it** | card-relative features, shaped rewards, privileged critic, 150k games |
 | PIMC (determinized search, no learning) | ~1700 | +10 / ~52% | explicit lookahead with an honest leaf estimate |
@@ -43,7 +43,8 @@ net-guided numbers predate the v2 information-state encoding; they have not been
 by how much a best-response exploiter trained against the frozen agent can win. Nash-seeking
 training (a KL "magnet" toward a slowly refreshed copy of the policy, plus a league) gave the
 strongest agents so far, **~1940–1970 Elo with no search**, and far less exploitable: the best
-exploiter scores 0.522–0.544 (+2.5 to +4.5 points/game), down from 0.628 (+12.6) against PPO v2.
+exploiter scores about 0.545 (+4 points/game, max of two exploiter runs), down from 0.628 (+12.6)
+against PPO v2.
 Adding dedicated exploiters to the league made things worse, not better. With a policy
 this strong, determinized search at 64 sims × 4 worlds no longer helps, with or without a
 Bayesian belief over the opponent's hand.
@@ -170,11 +171,21 @@ equilibrium. **The control confirms it:** the same 400 iterations of plain Nash 
 both a lower exploiter score (0.544 vs 0.573, about 2 SE apart) and a higher rating (1973 vs 1962).
 Fixed exploiters in the league hurt on both counts; the plain recipe stays.
 
-A caveat on the yardstick itself: the control, like the league, measured *more* exploitable than
-its starting point `nash_long` (0.544 vs 0.522). Either longer training trades exploitability
-for strength against the heuristic, or the exploiter measurement varies from run to run more than
-its ±0.010 standard error says (screened checkpoints of a single exploiter run already span
-0.51–0.58). Telling these apart needs repeat exploiter runs on the same target.
+**The yardstick is noisier than its error bars.** The control, like the league, first measured
+*more* exploitable than `nash_long` (0.544 vs 0.522). Repeating the exploiter run with another
+seed settled it:
+
+| Target | Exploiter seed 0 | Seed 1 | Max (the estimate) |
+|---|:---:|:---:|:---:|
+| nash_long | 0.522 | 0.545 | **0.545** |
+| league_control | 0.544 | 0.538 | **0.544** |
+
+A single exploiter run's result moves by ~0.02 between seeds, twice its ±0.010 standard error:
+each run is one *search* for a weakness, and some searches find less. Exploitability is the best
+response's score, so the estimate is the **maximum over several runs**, and a single run is only a
+lower bound. On that basis longer training cost no exploitability (`nash_long` 0.545 vs
+`league_control` 0.544), while `league_control` gained ~30 Elo. The league's 0.573 is still worse.
+From now on every exploitability number is the max of at least two exploiter runs.
 
 **Also found:** the endgame stall. With one card left in the deck, drawing it ends the game, so the
 trailing player never draws it, and a weak policy in the lead also stalls. The 200-turn cap then ends
