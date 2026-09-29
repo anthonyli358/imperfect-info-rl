@@ -37,6 +37,7 @@ from pathlib import Path
 import iirl.games  # noqa: F401  (registers "ventures")
 from experiments import exploit_ventures
 from experiments import train_ventures_nash as nash
+from iirl.agents.base import Agent
 from iirl.agents.heuristic import VenturesHeuristic
 from iirl.agents.ppo import PPOAgent
 from iirl.core.registry import make
@@ -92,18 +93,28 @@ def _dump(path: Path, data: dict) -> None:
     tmp.replace(path)  # atomic, so a kill mid-write cannot corrupt the log
 
 
-def _train(start: str, ppo: PPOConfig, tag: str, save_every: int = 0) -> str:
+def _train(
+    start: str | None,
+    ppo: PPOConfig,
+    tag: str,
+    save_every: int = 0,
+    game_name: str = "ventures",
+    heuristic: Agent | None = None,
+    anchor_elo: float = 1676.0,
+) -> str:
     """Train from ``start`` with ``ppo``; save as ``runs/<tag>.pt`` and return the path.
 
     Skipped if ``runs/<tag>.pt`` exists; continued from ``runs/<tag>_partial.pt`` if that does.
     With ``save_every``, also keeps ``runs/<tag>_<iteration>.pt`` every that many iterations.
+    ``start=None`` trains from scratch. ``game_name``, ``heuristic`` (the Elo anchor, default the
+    Ventures heuristic) and ``anchor_elo`` let other games reuse this trainer.
     """
     path, partial = Path(f"runs/{tag}.pt"), Path(f"runs/{tag}_partial.pt")
     if path.exists():
         print(f"{tag}: done already ({path})", flush=True)
         return str(path)
-    game = make("ventures")
-    heuristic = VenturesHeuristic("heuristic")
+    game = make(game_name)
+    heuristic = heuristic or VenturesHeuristic("heuristic")
     done, games_done = 0, 0
     state = _load(STATE)
     if partial.exists() and tag in state.get("partial", {}):
@@ -147,8 +158,8 @@ def _train(start: str, ppo: PPOConfig, tag: str, save_every: int = 0) -> str:
         }
         _dump(STATE, st)
 
-    ppo = replace(ppo, anchor_elos={"heuristic": 1676.0}, iterations=ppo.iterations - done)
-    init = PPOAgent.from_checkpoint(start).net
+    ppo = replace(ppo, anchor_elos={"heuristic": anchor_elo}, iterations=ppo.iterations - done)
+    init = PPOAgent.from_checkpoint(start).net if start else None
     net, _ = train_ppo(game, {"heuristic": heuristic}, ppo, report, checkpoint, init_net=init)
     nash.save(net, path)
     partial.unlink(missing_ok=True)
