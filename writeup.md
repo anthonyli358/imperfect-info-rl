@@ -137,6 +137,77 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### How the best agents play, vs the human-style heuristic (2026-09-29)
+
+Each game's best agent played its heuristic for 200 games (both seats), with every decision logged
+(`experiments/analyze_play.py`). The heuristics encode the standard human advice for each game, so
+they stand in for "what a person naturally does". Both columns come from the same games, which
+means some differences are the agent reacting to this particular opponent; that is noted where it
+matters.
+
+**Ventures** (`league_control`, 1973 Elo; wins 84% of these games, 73 vs 16 points a game)
+
+| Per game or per decision | Agent | Heuristic |
+|---|:---:|:---:|
+| Routes opened | **4.5** | 2.7 |
+| Turn of the first opening | **1** | 12 |
+| Backing (wager) cards played | **4.1** on 2.4 routes | 0 |
+| Routes that end negative | **36%** | 1% |
+| Average route value | **+16** | +6 |
+| 8-card (+20 bonus) routes | **0.74** | 0 |
+| Share of turns spent discarding | **23%** | 66% |
+| Discards the opponent can play on a route they started | **0.2%** | 25% |
+| Draws taken from a discard pile | **48%** | 0.3% |
+
+What stands out, against the usual human advice:
+- **It opens early and wide.** The standard advice is to open two or three expeditions, late,
+  and only with the cards to finish them. The agent opens a route on its first turn and ends
+  with four or five, wagering on more than half of them.
+- **It accepts losing routes.** A third of its routes finish below zero, which a careful human
+  treats as a mistake. Its routes are worth nearly three times as much on average, and three in
+  four games include an 8-card route for the +20 bonus. It plays the portfolio, not each route.
+- **It almost never feeds the opponent.** Only 0.2% of its discards are cards the opponent can
+  play, against 25% for the heuristic. It also plays instead of discarding far more often.
+- **It lives off the discard piles.** Half its draws come from a discard pile; the heuristic
+  almost never takes one. Much of that is the heuristic's gift discards, which the agent picks up.
+  It is not mainly clock control: over the last 8 deck cards, it takes a discard 74% of the time
+  when ahead and 67% when behind.
+
+**Camel Stocks** (`camel_nash`; wins 95% of these games, 80 vs 59 points)
+
+| Per game or per decision | Agent | Heuristic |
+|---|:---:|:---:|
+| Turns spent on exchanges | **23%** | 3% |
+| Turns taking a single good | 29% | **56%** |
+| Exchanges that give back goods (not only camels) | **35%** | 0% |
+| Goods per exchange | **2.7** | 2.1 |
+| Herd at the end | **2.1** | 6.5 |
+| Camel bonus won | **26%** | 74% |
+| Sales of 3+ cards (earning a bonus) | **44%** | 31% |
+| Precious-goods sale size | **2.6** | 2.1 |
+| Points per sale | **9.2** | 6.9 |
+| Goods sold first (best tokens) | **57%** | 43% |
+| Single takes that are precious | **52%** | 35% |
+
+What stands out:
+- **Camels are spent, not saved.** The agent ends with a third of the heuristic's herd and gives
+  up the +5 herd bonus three games in four. The camels become exchanges instead: a quarter of its
+  turns, often swapping two or three goods at once, and a third of the time paying with unwanted
+  goods rather than camels.
+- **Fewer, bigger, earlier sales.** It sells about as often as the heuristic, but in bigger sets:
+  44% of its sales earn a bonus token, its gold, silver and gem sales are larger, and it gets the
+  first (most valuable) tokens in more goods. Each sale is worth a third more.
+- **It chases the precious goods.** Over half its single takes are gems, gold or silver.
+- **The rulebook's camel tip does not show up.** The rules advise taking a big group of camels
+  when the opponent's hand is full, so they cannot use the new market cards. The agent does this
+  no more often than the heuristic (35% vs 43% of its camel takes come when the opponent holds 6+
+  cards).
+
+**The common thread.** In both games, the agent trades safety for volume. It takes risks a
+careful player avoids (losing routes; a lost camel bonus) to get more of what scores the most
+(long wagered routes; big, early precious sales), and it is careful exactly where a human is
+careless: what it hands the opponent.
+
 ### Stage 2 begins: Camel Stocks (2026-09-29)
 
 The second game is **Camel Stocks**, an original trading card game on the mechanical skeleton of
@@ -385,4 +456,5 @@ uv run python -m experiments.elo_ladder            # rate the lineage vs the heu
 uv run python -m experiments.belief_ventures       # belief quality + belief-search matches
 uv run python -m experiments.train_ventures_league # exploiter league (resumable)
 uv run python -m experiments.play                  # play the agents yourself (browser, local)
+uv run python -m experiments.analyze_play          # how the best agents play vs the heuristics
 ```
