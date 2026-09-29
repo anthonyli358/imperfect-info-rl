@@ -175,6 +175,24 @@ played the plain heuristic, the careful one, and itself (`experiments/analyze_op
   Its herd is bigger against itself (4.2 vs 2.0), since the opponent competes for camels too. A
   similar "careful" variant for Camel Stocks has not been built yet.
 
+**The fix works: train against the careful heuristic.** Continuing from `league_control` for the
+same 400 iterations with the careful heuristic in the league (20% of games) instead of the plain
+one (`careful`), then rating both on a robustness panel of every opponent style (500 duplicate
+deals each; the new styles are defined in `games/ventures/heuristic.py`):
+
+| Opponent style | league_control | **careful run** |
+|---|:---:|:---:|
+| plain heuristic | 0.831 | 0.853 |
+| careful (never gifts) | 0.574 | **0.716** |
+| hoarder (careful, and takes discards to deny them) | 0.623 | **0.736** |
+| aggressive (careful, opens on weak hands, wagers freely) | 0.732 | 0.765 |
+| tight (careful, at most 3 routes, never wagers) | 0.803 | 0.892 |
+| **weakest matchup** | **0.574** | **0.716** |
+
+It improves against every style, most where it was weakest, and its exploitability holds at
+**0.544** (max of 0.538 and 0.544). It learned to win without the gifts, rather than swapping one
+exploit for another.
+
 The practical conclusion, and the user's intuition: these agents are strong, not unbeatable. The
 next training runs should use the careful heuristic (and other non-leaky opponents) in the
 league and as the Elo anchor, and a human who simply never gifts takes away most of the Ventures
