@@ -82,6 +82,20 @@ def test_shaped_gae_telescopes_to_the_true_return() -> None:
     assert np.allclose(adv, target)
 
 
+def test_ema_magnet_moves_part_way_toward_the_policy() -> None:
+    import torch
+
+    from iirl.nn.policy_value import PolicyValueNet
+    from iirl.selfplay.ppo import _ema_update
+
+    torch.manual_seed(0)
+    magnet, policy = PolicyValueNet(4, 3, (8,)), PolicyValueNet(4, 3, (8,))
+    before = [p.clone() for p in magnet.parameters()]
+    _ema_update(magnet, policy, 0.25)
+    for b, m, p in zip(before, magnet.parameters(), policy.parameters(), strict=True):
+        assert torch.allclose(m, 0.75 * b + 0.25 * p)
+
+
 def test_discounted_gae_telescopes_and_prefers_ending_a_won_game_sooner() -> None:
     from iirl.selfplay.ppo import _gae
 

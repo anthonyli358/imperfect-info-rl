@@ -77,6 +77,11 @@ class PPOConfig:
     # Nash equilibrium instead of orbiting it (Sokota et al. 2023; Perolat et al. 2022). 0 is off.
     magnet_coef: float = 0.0
     magnet_interval: int = 20
+    # With ``magnet_ema > 0`` the magnet is instead a slowly moving average of the policy's weights,
+    # ``magnet <- (1 - ema) * magnet + ema * pi`` every iteration (``magnet_interval`` is then
+    # unused). This tracks an *average* of recent policies rather than jumping to the current one,
+    # closer to R-NaD, whose fixed-point argument regularizes toward a slowly moving reference.
+    magnet_ema: float = 0.0
     # Iterations at the start that train only the value baseline (no policy update). A warm-started
     # policy with a fresh critic would otherwise take its first steps on noisy advantages, which
     # can make a strong policy worse before the critic catches up (e.g. a best-response exploiter).
@@ -458,6 +463,13 @@ class _WorkerPool:
                 proc.terminate()
 
 
+@torch.no_grad()
+def _ema_update(target: PolicyValueNet, source: PolicyValueNet, rate: float) -> None:
+    """Move ``target``'s weights a fraction ``rate`` of the way toward ``source``'s."""
+    for t, s in zip(target.parameters(), source.parameters(), strict=True):
+        t.mul_(1.0 - rate).add_(s, alpha=rate)
+
+
 def _ppo_update(
     net: PolicyValueNet,
     critic: _Critic | None,
@@ -631,7 +643,12 @@ def train_ppo(
                 batch = _collect(game, net, pooled, config.games_per_iter, rng, config, critic)
             games_seen += config.games_per_iter
             net.train()
-            if config.magnet_coef > 0 and (iteration - 1) % config.magnet_interval == 0:
+            if config.magnet_coef > 0 and config.magnet_ema > 0:
+                if magnet is None:
+                    magnet = copy.deepcopy(net).eval()
+                else:
+                    _ema_update(magnet, net, config.magnet_ema)  # slowly track the policy
+            elif config.magnet_coef > 0 and (iteration - 1) % config.magnet_interval == 0:
                 magnet = copy.deepcopy(net).eval()  # refresh the reference policy
             warm = iteration <= config.critic_warmup
             last_losses = _ppo_update(net, critic, opt, batch, config, rng, magnet, warm)

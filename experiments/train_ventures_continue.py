@@ -9,9 +9,14 @@ lower bound; see ``writeup.md``).
 Resumable: training continues from its last eval checkpoint, and finished exploiter runs are
 skipped. Stop at any time and rerun the same command.
 
+``RNAD`` is the same run with one change: the magnet is a slowly moving average of the policy's
+weights (``magnet_ema``) rather than a copy refreshed every 20 iterations. Its control is the
+plain run (``nash_g``): same start, budget and settings otherwise.
+
 Run with::
 
-    uv run python -m experiments.train_ventures_continue
+    uv run python -m experiments.train_ventures_continue       # nash_g
+    uv run python -m experiments.train_ventures_continue rnad  # the R-NaD-style variant
 """
 
 from __future__ import annotations
@@ -43,6 +48,12 @@ class Config:
     )
 
 
+RNAD = Config(
+    tag="rnad",
+    ppo=replace(nash.variant("nash", nash.Config().ppo), gamma=0.999, seed=3, magnet_ema=0.02),
+)
+
+
 def main(config: Config) -> None:
     """Train, then exploit with each seed; print the exploitability estimate (the max)."""
     ppo = replace(config.ppo, iterations=config.iterations)
@@ -61,4 +72,6 @@ def main(config: Config) -> None:
 
 
 if __name__ == "__main__":
-    main(Config())
+    import sys
+
+    main(RNAD if sys.argv[1:] == ["rnad"] else Config())
