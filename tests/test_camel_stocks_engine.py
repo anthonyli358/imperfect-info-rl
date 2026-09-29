@@ -168,3 +168,19 @@ def test_resample_keeps_the_view_and_puts_no_camels_in_hands() -> None:
         assert sum(w.hands[1 - me]) == sum(s.hands[1 - me])
         assert all(w.hands[1 - me][g] >= s.known[1 - me][g] for g in range(NUM_GOODS))
         assert G.legal_actions(w) == G.legal_actions(s)
+
+
+def test_heuristic_plays_legal_complete_games_and_beats_random() -> None:
+    from iirl.agents.heuristic import CamelStocksHeuristic
+    from iirl.agents.random_agent import RandomAgent
+    from iirl.core.runner import run_episode
+
+    rng = np.random.default_rng(5)
+    total = 0.0
+    for seat in (0, 1):
+        for _ in range(10):
+            agents = [RandomAgent(), RandomAgent()]
+            agents[seat] = CamelStocksHeuristic()
+            result = run_episode(G, agents, rng)  # raises on an illegal action
+            total += result.returns[seat]
+    assert total > 0

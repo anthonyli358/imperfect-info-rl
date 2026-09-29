@@ -137,6 +137,26 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Stage 2 begins: Camel Stocks (2026-09-29)
+
+The second game is **Camel Stocks**, an original trading card game on the mechanical skeleton of
+Jaipur (credited as inspiration; own name and theme). Two players share a five-card market: take
+one good, take all the camels, exchange several goods for cards and camels, or sell a set of one
+good for value tokens that shrink as the good sells out, with a bonus for sets of 3+.
+
+- **The interface held.** The engine implements the same `Game` contract as Ventures, and the
+  game-agnostic PIMC search agent ran on it with no changes (40/40 vs random). That was the
+  plan's test for whether the interface is real or Ventures-shaped.
+- **One design choice worth noting.** The exchange ("take any 2+ goods, give back as many cards or
+  camels") is combinatorially huge as a single action. It is split into steps: take goods one at
+  a time, stop, give cards one at a time, with legality guaranteeing every exchange can be
+  completed within the hand limit. The action space stays flat at 63 ids, which PPO needs.
+- **A strong heuristic again.** Selling early and big, favouring precious goods and trading
+  camels for goods, it beats random in every game (+53 points) and beats PIMC at 4 worlds × 60
+  simulations (PIMC scores 0.258). As on Ventures, cheap search does not beat a good heuristic.
+
+Next: train it with the Ventures recipe unchanged, and see whether Nash-seeking PPO transfers.
+
 ### Stage 1b: toward an unexploitable agent (2026-09-25 → 09-28)
 
 **The yardstick: exploitability.** A two-player zero-sum Nash strategy cannot lose in expectation

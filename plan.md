@@ -243,17 +243,32 @@ template for Jaipur and the later rungs.
 
 ---
 
-## Stage 2 — Jaipur *(second imperfect-info; then harden the spine)*
+## Stage 2 — Camel Stocks *(second imperfect-info; then harden the spine)*
+
+> **IP note:** shipped as **Camel Stocks**, an original game on the mechanical skeleton of Jaipur
+> (Sébastien Pauchon), which is credited as inspiration only. Own name, theme and goods names, no
+> assets. Package `iirl/games/camel_stocks/`, registry key `camel_stocks`. The rules data was
+> checked against the original rulebook; three deliberate simplifications are documented in
+> `cards.py` (public bonus-token values, score-difference payoff, one round per game).
 
 Goal: a second game to reveal which abstractions are real vs incidental — then refactor. The IS-MCTS agent should port **unchanged**; if it doesn't, the interface is wrong.
 
-- [ ] Engine: goods + camels, take-single / take-multiple / sell actions, token stacks + depletion, bonus tokens
-- [ ] Chance draws; information state (opponent hand hidden, market public)
-- [ ] Engine unit tests
-- [ ] Jaipur `information_state_tensor` encoder
-- [ ] Run the **existing** IS-MCTS agent with no game-specific changes (interface validation)
-- [ ] Heuristic baseline (hoard-vs-sell tempo)
-- [ ] Eval vs random / heuristic
+- [x] Engine: goods + camels, take-single / take-camels / exchange / sell, token stacks + depletion,
+  bonus tokens, hand limit, camel bonus. The exchange is split into take-then-give steps, so the
+  action space stays flat (63 ids), with legality guaranteeing every exchange can be completed.
+- [x] Chance draws (deal, market refill, bonus tokens); information state (opponent hand hidden
+  except goods seen taken from the market; market, herds and tokens public)
+- [x] Engine unit tests (`tests/test_camel_stocks_engine.py`), plus the shared conformance suite
+  (which now always covers every registered engine)
+- [x] `information_state_tensor` encoder (per-good features aligned with the action ids)
+- [x] Run the **existing** PIMC agent with no game-specific changes: ✅ it plays unchanged
+  (40/40 vs random). The interface held.
+- [x] Heuristic baseline (`agents/heuristic/camel_stocks_heuristic.py`): sell early and big,
+  precious goods first, camels as currency
+- [x] Eval vs random / heuristic: heuristic 1.000 vs random (+53); PIMC at 4 × 60 scores only
+  0.258 vs the heuristic, so the heuristic is a strong anchor, as on Ventures
+- [ ] Train with the Ventures recipe (Nash-seeking PPO) unchanged; Elo ladder and exploitability
+- [ ] Play page: a generic `player_view` hook, so the browser UI works for Camel Stocks too
 
 **Refactor block — harden the game-agnostic core:**
 
