@@ -193,6 +193,13 @@ It improves against every style, most where it was weakest, and its exploitabili
 **0.544** (max of 0.538 and 0.544). It learned to win without the gifts, rather than swapping one
 exploit for another.
 
+**A style-diverse league did not beat it.** The same run with all four non-leaky styles in the
+league (careful, tight, aggressive, hoarder; 30% of games) instead of the careful heuristic alone
+(`diverse`) came out slightly worse on both measures: weakest matchup **0.681** (vs 0.716) and
+exploitability **0.568** (max of 0.568 and 0.554, vs 0.544). Two of the four styles are weak (the
+agent beats them 0.77–0.88), so spreading the league across them diluted the signal compared with
+concentrating on the hardest opponent. `careful` remains the best Ventures agent.
+
 The practical conclusion, and the user's intuition: these agents are strong, not unbeatable. The
 next training runs should use the careful heuristic (and other non-leaky opponents) in the
 league and as the Elo anchor, and a human who simply never gifts takes away most of the Ventures

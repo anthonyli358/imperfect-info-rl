@@ -243,7 +243,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
    - [ ] Analyse recorded human games (`runs/human_games/`) with the same conditional questions.
 3c. [ ] **Approaches to try next**, in order (the leak says the bottleneck is what the agent trains
    and is measured against, more than the learning algorithm):
-   1. [~] (built; training queued as `diverse`) **Style-diverse league**: several fixed opponents with distinct habits (careful, tight,
+   1. [x] (tried as `diverse`: slightly worse than the careful-only league; weakest matchup 0.681
+      vs 0.716, exploitability 0.568 vs 0.544) **Style-diverse league**: several fixed opponents with distinct habits (careful, tight,
       aggressive, hoarder), not one heuristic. AlphaStar's lesson, and ours: one opponent with one
       habit taught a habit-specific exploit.
    2. [~] (built as a DrAC-style regularizer; queued as `diverse_sym`) **Suit-symmetry augmentation** (Ventures): the five suits are interchangeable, so train on
