@@ -289,14 +289,25 @@ game by anything our RL-based best responses can find.** That is the strongest "
 evidence this toolkit can produce; the remaining unknowns are opponents unlike these (humans) and
 edges smaller than the measurement resolves.
 
-**Endgame CFR did not help (yet).** The best policy with depth-limited Monte Carlo CFR taking over
-in the last 8 deck cards (depth 4, 300 iterations, heuristic leaf values; `experiments/endgame_cfr.py`)
-scores 0.487 ± 0.014 against the same policy without it (100 duplicate deals), and 0.710 against
-the careful heuristic, where the policy alone scores 0.716. The solver disagrees with the policy on
-more than half its endgame decisions, but not profitably: the hand-made leaf values are worse
-judges of a position than the trained policy. Better leaves (the value net, or policy rollouts to
-the end) are the lever, not more depth. The solver itself is validated on the toy game
-(`tests/test_cfr_subgame.py`).
+**Endgame CFR does not beat the trained policy.** Depth-limited Monte Carlo CFR
+(`agents/cfr/subgame.py`; validated on the toy game, `tests/test_cfr_subgame.py`) takes over from
+the policy in the last 8 deck cards (`experiments/endgame_cfr.py`). Three kinds of position value
+at the depth limit, rated on duplicate deals:
+
+| Leaf values (policy) | vs its own policy | vs careful heuristic |
+|---|:---:|:---:|
+| heuristic, points (careful.pt; depth 4) | 0.487 ± 0.014 | 0.710 (policy alone 0.716) |
+| value net, win/loss (diverse_sym; depth 2) | 0.325 ± 0.020 (−30) | 0.592 (policy alone 0.795) |
+| value net + margin blend (diverse_sym; depth 2) | 0.452 ± 0.017 (−9.4) | 0.802 (policy alone 0.795) |
+
+At best it ties the policy against the careful heuristic, and it always loses head to head. The
+failures are instructive. The solver samples only the opponent's hidden cards, so in its subgame
+the opponent effectively knows our hand; the endgame then looks worse than it is. With a pure
+win/loss value that is fatal: in a position that looks lost every move scores −1, the solver
+becomes indifferent and plays at random (−30 a game). Blending in the margin restores "lose by
+less", but the pessimism remains. The fix is structural, not tuning: reason about what each player
+can actually infer (public belief states, as in ReBeL / Student of Games, Phase E). Until then,
+the trained policy plays the endgame better than this solver.
 
 The practical conclusion, and the user's intuition: these agents are strong, not unbeatable. The
 next training runs should use the careful heuristic (and other non-leaky opponents) in the

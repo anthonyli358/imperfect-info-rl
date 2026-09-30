@@ -256,8 +256,9 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
       mixture score 0.504 / 0.514 / 0.507 / 0.514; near equilibrium within the population)
       **Proper PSRO**: a population payoff matrix, and train against its Nash mixture, not
       uniform fixed opponents (why the exploiter league failed).
-   4. [~] (built: `agents/cfr/subgame.py`, depth-limited MCCFR; no gain with heuristic leaves:
-      0.487 vs its own policy; next: value-net or rollout leaves) **Endgame search**: few cards left means a small tree; search it deeply, where a human can
+   4. [x] (negative: depth-limited MCCFR never beats the policy with heuristic, value-net or
+      blended leaves; best 0.452 head to head. Its subgame assumes the opponent knows our hand;
+      the fix is Phase E, not tuning) **Endgame search**: few cards left means a small tree; search it deeply, where a human can
       out-calculate a policy (clock management, the stall).
    5. **Human games as a test set**: where does a human beat it, and in which positions?
 4. [ ] **Decision point: go deeper on Ventures, or move to Jaipur.**
