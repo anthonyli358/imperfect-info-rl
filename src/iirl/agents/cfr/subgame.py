@@ -44,17 +44,58 @@ class SubgameConfig:
         iterations: MCCFR iterations (each one traversal per player).
         depth: Player decisions below the root before the leaf evaluator scores the position.
         sample: Play by sampling the average strategy; ``False`` plays its most likely action.
+        outcome_scale: Score terminal positions as win/loss (+1/0/-1) instead of the point
+            margin, to match a leaf evaluator on that scale (e.g. a win-probability value net).
     """
 
     iterations: int = 300
     depth: int = 4
     sample: bool = False
+    outcome_scale: bool = False
 
 
 def heuristic_leaf(game: Game, state: State, player: Player) -> float:
     """Leaf value from the game's ``heuristic_value`` (0 if it provides none)."""
     value = game.heuristic_value(state, player)
     return 0.0 if value is None else float(value)
+
+
+class ValueNetLeaf:
+    """Leaf values from a privileged value network (it sees both hands, as a sampled world does).
+
+    The network scores a position for ``player`` in ``[-1, 1]`` (win/loss), so pair it with
+    ``SubgameConfig(outcome_scale=True)``. Values are cached per position; call :meth:`clear`
+    between solves.
+    """
+
+    def __init__(self, path: str) -> None:
+        """Load the value network checkpoint (saved by ``experiments/train_ventures_value.py``)."""
+        import torch
+
+        from iirl.nn.policy_value import PolicyValueNet
+
+        ck = torch.load(path, map_location="cpu")
+        self.net = PolicyValueNet(ck["input_dim"], ck["num_actions"], tuple(ck["hidden"]), "tanh")
+        self.net.load_state_dict(ck["state_dict"])
+        self.net.eval()
+        self.cache: dict[tuple[State, Player], float] = {}
+
+    def clear(self) -> None:
+        """Forget cached values."""
+        self.cache.clear()
+
+    def __call__(self, game: Game, state: State, player: Player) -> float:
+        """Return the network's value of ``state`` for ``player``."""
+        key = (state, player)
+        if key not in self.cache:
+            import torch
+
+            from iirl.nn.policy_value import privileged_features
+
+            feats = torch.as_tensor(privileged_features(game, state, player), dtype=torch.float32)
+            with torch.no_grad():
+                self.cache[key] = float(self.net(feats.unsqueeze(0))[1].item())
+        return self.cache[key]
 
 
 class SubgameSolver:
@@ -84,7 +125,8 @@ class SubgameSolver:
     def _traverse(self, state: State, traverser: Player, depth: int, rng) -> float:  # noqa: ANN001
         game = self.game
         if game.is_terminal(state):
-            return float(game.returns(state)[traverser])
+            ret = float(game.returns(state)[traverser])
+            return float(np.sign(ret)) if self.config.outcome_scale else ret
         if game.is_chance_node(state):
             outcomes = game.chance_outcomes(state)
             i = rng.choice(len(outcomes), p=[p for _, p in outcomes])
@@ -176,6 +218,8 @@ class EndgameCFRAgent(Agent):
             sample = lambda r: self.belief.sample(state, r)  # noqa: E731
         else:
             sample = lambda r: game.resample_from_infostate(state, me, r)  # noqa: E731
+        if hasattr(self.leaf, "clear"):
+            self.leaf.clear()
         solver = SubgameSolver(game, self.config, self.leaf)
         solver.run(sample, rng)
         found = solver.policy_at(game.information_state_string(state, me))
