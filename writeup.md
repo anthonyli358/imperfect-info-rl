@@ -69,6 +69,10 @@ has the most evidence behind it; "nothing else could beat it" is not established
 | Belief-weighted search on top | Better beliefs, no gain in play at 64 sims × 4 worlds |
 | Exploiters as fixed league opponents | Worse on both counts |
 
+> **Correction (2026-09-30).** On a small version of Ventures solved exactly, our trained-exploiter
+> yardstick found only ~4% of an agent's true exploitability. The exploitability figures below are
+> lower bounds, not evidence of near-equilibrium play; see "Ground truth" in the findings log.
+>
 > **Update (2026-09-30).** The best Ventures agent is now `diverse_sym` (a four-style league plus
 > suit-symmetry regularization): exploitability **0.512** (max of three exploiter runs, up to 600
 > iterations), weakest matchup vs any opponent style 0.795. See the findings log.
@@ -145,6 +149,47 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Ground truth: our exploitability yardstick badly underestimates (2026-09-30)
+
+**The most important correction in this log.** Every "near-unexploitable" claim above rests on a
+*trained* exploiter, which can only give a lower bound. Mini-Ventures (Ventures' mechanics shrunk
+to 2 suits × {backing, 2, 3, 4}, 2-card hands, a 4-card deck; `games/mini_ventures`) is small
+enough (2.3M states, 333k information sets) to compute everything exactly:
+
+- **Its exact equilibrium**, by vectorized CFR+ over the whole state graph
+  (`agents/cfr/graph_cfr.py`): exploitability **0.0011 points per game** after 100 iterations
+  (0.4 s each). Game value for the first player ≈ −0.033.
+- **Exact best responses** to any policy (`eval/exact_br.py`; 30 s each, and matching the old
+  tree-walking calculator exactly on the toy game).
+
+Then the usual recipe (PPO, then Nash-seeking PPO) was trained on it and measured
+(`experiments/mini_ground_truth.py`):
+
+| Against the final PPO agent | Points per game gained |
+|---|:---:|
+| **Exact best response** | **4.13** |
+| The CFR+ equilibrium, simply playing its own strategy | 3.56 |
+| **Our trained-exploiter yardstick** (max of 2 runs) | **0.18** (score 0.514) |
+| (Uniform random play, for scale: its exact exploitability) | 3.74 |
+
+**The yardstick found about 4% of the true weakness** and reported the agent as essentially
+unexploitable (0.514). Even the equilibrium, which is not trying to exploit anyone, gains twenty
+times more. The recipe was made deliberately conservative after an early failure (warm-started from
+the target, learning rate 3e-5, no entropy bonus), and here it barely moves off the agent it
+attacks.
+
+Two caveats. First, this PPO agent is a weak one: training did not work well on Mini-Ventures
+(0.44–0.67 vs random play, cycling rather than converging; Nash-seeking PPO did not reduce its
+exact exploitability, 4.1–4.4 throughout), so this is not yet a verdict on the recipe at its best.
+Second, the yardstick's weakness may be smaller on a well-trained agent. But the direction is
+clear: **the exploitability numbers reported for Ventures (0.512) and Camel Stocks (0.509) are
+lower bounds of unknown looseness, not evidence of near-equilibrium play.** The robustness panels,
+head-to-head results and held-out opponents stand; the "unexploitable" framing does not.
+
+Next: calibrate a stronger exploiter recipe on Mini-Ventures until it recovers most of the exact
+best response, re-measure the Ventures and Camel Stocks agents with it, and retrain PPO properly
+on Mini-Ventures to see how close the recipe can get to the true equilibrium.
 
 ### The agents are strong, but much of the Ventures edge was a leaky opponent (2026-09-29)
 

@@ -212,12 +212,16 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   hidden 8-card hand has ~10^8 possibilities, so exact public belief states are out of reach.
   ReBeL's published results are on small private-info spaces. So build it first on a small game,
   where it is exact and every claim can be checked:
-  1. [ ] **Mini-Ventures** (`games/mini_ventures`): the same mechanics, 2 suits × (backing, 2–5),
+  1. [x] **Mini-Ventures** (`games/mini_ventures`): the same mechanics, 2 suits × (backing, 2–5),
      3-card hands (≤ 120 possible hands per player).
-  2. [ ] **Scalable exact exploitability** (enumerate each state once; forward reach, backward
+  2. [x] **Scalable exact exploitability** (enumerate each state once; forward reach, backward
      values) and a policy-network → strategy-table converter.
-  3. [ ] **Ground truth for our methods:** Nash-seeking PPO on mini-Ventures, its *exact*
-     exploitability, and how far our trained-exploiter yardstick is from it.
+  3. [~] **Ground truth for our methods:** exact equilibrium solved (CFR+, 0.0011 points/game).
+     **Finding: the trained-exploiter yardstick found ~4% of the true exploitability** (0.18 vs
+     4.13 points/game) of the PPO agent, which itself trained poorly (0.44–0.67 vs random).
+     Next: (a) calibrate a stronger exploiter recipe here until it recovers most of the exact
+     best response, and re-measure the Ventures / Camel Stocks agents; (b) retrain PPO properly
+     on Mini-Ventures.
   4. [ ] **ReBeL:** public belief states, CFR over depth-limited subgames with value-net leaves,
      self-play value training; exact exploitability vs step 3.
   5. [ ] **E1:** scale to full Ventures with factored (per-card) beliefs; judge vs `diverse_sym`.
