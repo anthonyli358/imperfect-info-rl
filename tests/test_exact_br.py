@@ -43,3 +43,15 @@ def test_mini_ventures_graph_and_uniform_play_is_exploitable() -> None:
     assert 1_000_000 < len(graph.states) < 5_000_000
     result = exploitability(game, uniform_policy, graph)
     assert result["exploitability"] > 1.0  # random play gives away points
+
+
+def test_graph_cfr_converges_on_the_toy_game() -> None:
+    from iirl.agents.cfr.graph_cfr import GraphCFR
+
+    game = make("toy_showdown")
+    cfr = GraphCFR(game)
+    cfr.iterate(20)
+    early = exploitability(game, cfr.average_policy())["exploitability"]
+    cfr.iterate(1000)
+    late = exploitability(game, cfr.average_policy())["exploitability"]
+    assert late < early and late < 0.005
