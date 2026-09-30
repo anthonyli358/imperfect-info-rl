@@ -377,7 +377,7 @@ Goal: adopt the framework where it earns its place — CFR at scale, with verifi
 
 - [ ] **PPO** in `agents/ppo/` — foundational algorithm to own (also the RLHF/post-training bridge to day-job + SLM work)
 - [ ] **Headline experiment:** PPO self-play vs CFR on Liar's Dice — measure the **exploitability gap**. Make "why the field uses regret minimisation, not vanilla policy gradients" something I've *watched happen*.
-- [ ] **NFSP** — the bridge that targets equilibrium with RL-style best-response; compare against CFR and PPO
+- [x] **NFSP** (PPO best response; Camel Stocks, vs Nash PPO at equal budget: exploitability 0.515 vs 0.509, but weaker: 0.456 head to head) — the bridge that targets equilibrium with RL-style best-response; compare against CFR and PPO
 - [ ] **No-limit Hold'em (scoped)** — blueprint agent over a small fixed action abstraction, explicitly "functional, not frontier"; explore action/card abstraction + the translation problem. *Not* aimed at strength.
 - [ ] **Hanabi (OpenSpiel)** — cooperative, imperfect-info; self-play coordination, reaching toward the open zero-shot / cross-play problem. The highest-ceiling rung the framework makes cheap.
 - [ ] Short writeup / notebook per experiment

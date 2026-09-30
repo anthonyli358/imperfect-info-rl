@@ -426,6 +426,28 @@ careful player avoids (losing routes; a lost camel bonus) to get more of what sc
 (long wagered routes; big, early precious sales), and it is careful exactly where a human is
 careless: what it hands the opponent.
 
+### NFSP vs Nash-seeking PPO on Camel Stocks (2026-09-30)
+
+Two equilibrium-seeking methods at equal budget, both from `camel_ppo` for 400 iterations of 256
+games with the same PPO settings (`experiments/nfsp_camel.py`, `iirl.selfplay.nfsp`):
+
+* **Nash-seeking PPO** (`camel_nash`): a KL "magnet" toward a slowly refreshed copy of the policy.
+* **NFSP** (`camel_nfsp`): a PPO best response trained against the anticipatory mix (90% the
+  average policy, 10% itself), and a supervised average policy imitating the best response's
+  decisions from a reservoir buffer. The average policy is the deployed agent.
+
+| | Nash PPO | NFSP |
+|---|:---:|:---:|
+| Exploitability (max of 2 exploiter runs) | 0.509 | 0.515 |
+| vs heuristic (1000 duplicate deals) | **0.940** | 0.927 ± 0.006 |
+| Head to head (NFSP's score) | | **0.456 ± 0.010** (−1.3 a game) |
+
+Both are near-unexploitable by our exploiters (the difference is within noise), but NFSP's average
+policy is measurably weaker: it loses head to head and does worse against the heuristic. That fits
+the usual picture: NFSP learns its deployed policy second-hand, by imitating a moving best
+response, which lags and blurs it, while the magnet trains the deployed policy directly. On these
+games, the MMD / R-NaD family is the better equilibrium method.
+
 ### Stage 2 begins: Camel Stocks (2026-09-29)
 
 The second game is **Camel Stocks**, an original trading card game on the mechanical skeleton of
