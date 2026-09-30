@@ -252,7 +252,9 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
       checkpoint) **Suit-symmetry augmentation** (Ventures): the five suits are interchangeable, so train on
       randomly relabelled positions (feature and action permutations). Up to 120× the effective
       data, and no accidental suit preferences.
-   3. **Proper PSRO**: a population payoff matrix, and train against its Nash mixture, not
+   3. [x] (4 rounds from {diverse_sym, careful, league_control}: best responses vs the Nash
+      mixture score 0.504 / 0.514 / 0.507 / 0.514; near equilibrium within the population)
+      **Proper PSRO**: a population payoff matrix, and train against its Nash mixture, not
       uniform fixed opponents (why the exploiter league failed).
    4. [~] (built: `agents/cfr/subgame.py`, depth-limited MCCFR; no gain with heuristic leaves:
       0.487 vs its own policy; next: value-net or rollout leaves) **Endgame search**: few cards left means a small tree; search it deeply, where a human can

@@ -261,6 +261,34 @@ exploiter (which detects edges of roughly +3 to +5 points a game) finds essentia
 three exploiter runs the estimate is **0.512**, level with Camel Stocks (0.509) and down from
 0.545–0.56 for every earlier Ventures agent.
 
+**PSRO agrees: near equilibrium within this population.** Policy-Space Response Oracles
+(`experiments/psro_ventures.py`, `iirl.eval.psro`) starts from {`diverse_sym`, `careful`,
+`league_control`}, and each round solves the population's payoff matrix for its Nash mixture,
+trains a best response to that mixture (the exploiter recipe with the mixture's weights as opponent
+sampling weights), rates it on 1000 fresh duplicate deals, and adds it. Four rounds:
+
+| Round | Mixture (Nash of the population so far) | Best response vs the mixture |
+|:---:|---|:---:|
+| 0 | diverse_sym 100% | 0.504 ± 0.009 |
+| 1 | br_r0 100% | 0.514 ± 0.009 |
+| 2 | br_r1 100% | 0.507 ± 0.010 |
+| 3 | br_r1 100% | 0.514 ± 0.009 |
+
+No round found more than about +1.5 points a game. `diverse_sym` and the four best responses form a
+tight cluster (all within about ±0.03 of each other, 300-deal pairs), and every member of it beats
+`careful` and `league_control` clearly. The mixture settles on `br_r1` because it measures at or
+above 0.5 against everyone, but checked properly it is a narrow counter to `diverse_sym`
+(0.515 ± 0.009, +1.6, over 1000 deals) that does slightly *worse* against the careful heuristic
+(0.780 vs 0.795), so `diverse_sym` stays the best general agent. The meta-solver goes all-in on
+whichever near-tied member measures a hair ahead; with near-identical members that is noise, not
+a flaw in the conclusion.
+
+Taken together with the three direct exploiter runs (up to 600 iterations; max 0.512), four PSRO
+best responses (max 0.514): **the best Ventures agent is exploitable by at most about 1.5 points a
+game by anything our RL-based best responses can find.** That is the strongest "unbeatable"
+evidence this toolkit can produce; the remaining unknowns are opponents unlike these (humans) and
+edges smaller than the measurement resolves.
+
 **Endgame CFR did not help (yet).** The best policy with depth-limited Monte Carlo CFR taking over
 in the last 8 deck cards (depth 4, 300 iterations, heuristic leaf values; `experiments/endgame_cfr.py`)
 scores 0.487 ± 0.014 against the same policy without it (100 duplicate deals), and 0.710 against
