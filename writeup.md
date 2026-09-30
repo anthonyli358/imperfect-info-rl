@@ -1,108 +1,98 @@
 # Findings — imperfect-info-rl
 
-A living log of what we've learned building and pitting agents against each other. Newest findings at
-the top of the log. Numbers are Elo anchored to **random = 1000**; the hand-tuned **heuristic = 1676**
-(measured by its score vs random). "vs heuristic" is head-to-head win/score rate.
+A living log of what we've learned building and pitting agents against each other. The headline and
+"Where we stand" summarize the current state; the findings log below has the details, newest first.
+Scores are head-to-head score rates (win 1, draw 0.5) over duplicate deals unless noted; Ventures Elo
+is anchored on random = 1000 and the plain heuristic = 1676.
 
 > Written for: contributors and readers of this repo — engineers/researchers who want the *why*, not
 > just the scores.
 
 ---
 
-## The headline
+## The headline (as of 2026-09-30)
 
-On **Ventures** (an original ~150-move, high-variance, imperfect-information card game), we ran the
-whole agent ladder against a strong hand-tuned heuristic. Each method wins or fails for its **own
-characteristic reason** — which is the point of the exercise.
+**The best approach: Nash-seeking PPO self-play, trained against non-leaky opponents, with suit
+symmetry where the game has it.** No search at play time. It won on both games built so far:
 
-| Agent | Elo | vs heuristic | One-line why |
-|------:|:---:|:---:|:---|
-| **Nash-seeking PPO** (`league_control`, no search) | **~1970** | **85% — beats it** | PPO v2 + magnet KL toward a slow copy + league, ~350k more games |
-| Nash-seeking PPO (`nash_long`) | ~1940 | 82% | equally exploitable (0.545, max of 2 runs) |
-| **Net-guided PIMC** (learned priors + honest leaf) | **~1855** | **74% — beats it** | learn the *search priors*, keep an honest leaf value |
-| **PPO self-play** (v2 recipe, no search) | **~1800** | **67% — beats it** | card-relative features, shaped rewards, privileged critic, 150k games |
-| PIMC (determinized search, no learning) | ~1700 | +10 / ~52% | explicit lookahead with an honest leaf estimate |
-| **Heuristic** (hand-tuned) | **1676** | — | deck-clock + wager discipline |
-| REINFORCE (linear policy gradient) | ~1420 | ~0% | model-free learning, capacity-capped |
-| PPO v1 (terminal reward, raw features, 1.3k games) | ~1340 (peak 1431) | 0–5% | under-trained, credit smeared over ~75 moves |
-| AlphaZero (net value + search) | ~1140 | 0% | learned value poisoned by variance |
-| Random | 1000 | — | baseline |
+1. **Game setup.** An information-state encoding that spells out the card relations the policy
+   needs (card-relative features were Ventures' largest early gain), and a hand-tuned heuristic
+   that supplies reward shaping, a league opponent and an Elo anchor.
+2. **PPO self-play from scratch** (~150k games): a privileged critic (the value baseline sees the
+   opponent's hand, training only), potential-based reward shaping from the heuristic, a win bonus,
+   and past snapshots as opponents.
+3. **Nash-seeking PPO** (400–1000 more iterations): a KL "magnet" toward a slowly refreshed copy
+   of the policy, which damps the strategy cycling of plain self-play.
+4. **Train against non-leaky opponents.** The single most important lesson of the project: an
+   agent trained against a heuristic that hands over playable cards learned to depend on those
+   gifts. Replacing it with a *careful* heuristic lifted Ventures' weakest matchup from 0.574 to
+   0.716.
+5. **Suit symmetry** (Ventures): a DrAC-style regularizer pulls the policy on a suit-relabelled
+   position toward the policy on the original. With a four-style opponent league it took the
+   weakest matchup to 0.795, and the league alone had not helped.
 
-**The lesson:** on a long-horizon, high-variance, imperfect-info game, a first-pass reactive
-learner plateaus below strong lookahead play — but that plateau was an engineering artifact, not a
-ceiling. With features that spell out card/route relations, dense potential-shaped rewards, a
-privileged critic and ~100× more games, **pure PPO self-play beats the heuristic (67%) and crushes
-plain PIMC search (88%)** with no search at all.
-AlphaZero's *learned value* is swamped by the deal's variance and actively hurts its search. CFR is
-horizon-intractable here. The search-side route to beating the heuristic with learning is
-**net-guided PIMC**: learn only the search **priors** (AlphaZero's policy-improvement idea) while
-keeping the honest, hand-crafted leaf value that made plain search strong. (The AlphaZero and
-net-guided numbers predate the v2 information-state encoding; they have not been re-run on it.)
+| | Ventures (`diverse_sym`) | Camel Stocks (`camel_nash`) |
+|---|:---:|:---:|
+| Beats the previous best agent | 0.569 vs `careful` | (first recipe run) |
+| Weakest matchup vs any heuristic style | **0.795** (careful) | **0.940** (plain; careful 0.966) |
+| Held-out search opponent (PIMC) | not re-run | **0.950** |
+| Best trained exploiter's score (lower bound) | 0.512 (3 runs) | 0.509 (2 runs) |
+| Best PSRO best response vs the Nash mixture | 0.514 (4 rounds) | not run |
 
-**Since then (Stage 1b):** the goal moved from "beat the heuristic" to *unexploitable*, measured
-by how much a best-response exploiter trained against the frozen agent can win. Nash-seeking
-training (a KL "magnet" toward a slowly refreshed copy of the policy, plus a league) gave the
-strongest agents so far, **~1940–1970 Elo with no search**, and far less exploitable: the best
-exploiter scores about 0.545 (+4 points/game, max of two exploiter runs), down from 0.628 (+12.6)
-against PPO v2.
-Adding dedicated exploiters to the league made things worse, not better. With a policy
-this strong, determinized search at 64 sims × 4 worlds no longer helps, with or without a
-Bayesian belief over the opponent's hand.
+**How far to trust the "unexploitable" column.** Every exploitability number comes from a
+*trained* exploiter, so it is a lower bound. How loose is being measured on Mini-Ventures, a version
+of Ventures small enough to solve exactly. A first attempt there was flawed and is retracted (see
+the findings log); the rerun was working and is paused near the end of training. Until it
+finishes: **nothing our RL-based exploiters or PSRO can find beats these agents by more than about
+1.5 points a game, but that is not yet proof of near-equilibrium play.** The head-to-head,
+robustness-panel and held-out results are direct measurements and stand.
+
+**The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
+PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
+~1855 → Nash-seeking PPO ~1940–1970. These Elo figures are anchored on the plain heuristic, which
+turned out to leak (against the careful heuristic, PPO v2 *loses*, 0.441), so read them as ordering,
+not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal's luck.
 
 ---
 
-## Where we stand (2026-09-29)
+## Where we stand (2026-09-30)
 
-We have tried most of the families that apply to a long, luck-heavy, imperfect-information card
-game, and one is clearly best **so far**: **Nash-seeking PPO, with no search at play time.** It
-has the most evidence behind it; "nothing else could beat it" is not established.
+**Tried, and the verdict** (details in the findings log below):
 
-| Approach | Verdict on Ventures |
+| Approach | Verdict |
 |---|---|
-| Heuristic, PIMC search | Solid baselines (~1676–1700 Elo) |
+| Heuristics, PIMC search | Solid baselines; the heuristics also taught us about leaks |
 | REINFORCE, PPO v1 | Beat random, plateau below the heuristic |
 | AlphaZero (learned value + search) | Fails: the deal's luck swamps the value net |
-| Tabular CFR | Exact on toy games; the game is far too long for it |
-| Net-guided PIMC | ~1855, but from 40 games, before the current features |
+| Net-guided PIMC | Beat the old heuristic (~1855), before today's features; not re-run since |
 | Expert iteration (search distilled into the policy) | Fragile, no gain |
-| **PPO v2 → Nash-seeking PPO** | **Best: ~1970 Elo; exploiter edge down from +12.6 to about +4 points/game** |
-| Belief-weighted search on top | Better beliefs, no gain in play at 64 sims × 4 worlds |
-| Exploiters as fixed league opponents | Worse on both counts |
+| **PPO v2 → Nash-seeking PPO** | **The winning recipe, on both games** |
+| Belief-weighted search on top (particle filter) | Better beliefs, no gain in play at 64 sims × 4 worlds |
+| Exploiters as fixed league opponents | Worse on both exploitability and Elo |
+| R-NaD-style moving-average magnet | No gain over the plain magnet |
+| **Careful heuristic in the league** | **Big gain: weakest matchup 0.574 → 0.716** |
+| Four-style league alone | Slightly worse than careful-only (0.681) |
+| **+ suit symmetry (DrAC)** | **Best: weakest matchup 0.795; beats `careful` 0.569** |
+| PSRO (4 rounds) | Found nothing beyond ~+1.5 points a game; confirms `diverse_sym` |
+| Endgame CFR (depth-limited MCCFR) | Never beats the policy (best 0.452); its subgame assumes the opponent sees our hand |
+| NFSP (PPO best response) | Equally unexploitable as Nash PPO on Camel Stocks, but weaker (0.456 head to head) |
+| Tabular / vectorized CFR+ | Exact on toy games and on Mini-Ventures (0.002 points a game); far too big for the real games |
 
-> **Note (2026-09-30).** The exploitability figures below come from trained exploiters, so they are
-> lower bounds; how loose is being measured on an exactly solvable Mini-Ventures (a first attempt
-> was flawed and is retracted; see the findings log).
->
-> **Update (2026-09-30).** The best Ventures agent is now `diverse_sym` (a four-style league plus
-> suit-symmetry regularization): exploitability **0.512** (max of three exploiter runs, up to 600
-> iterations), weakest matchup vs any opponent style 0.795. See the findings log.
->
-> **Caveat (2026-09-29).** The Ventures Elo figures are anchored on a heuristic that leaks: it
-> hands over playable cards. Against a careful version that never does, the best agent scores only
-> 0.570 (+6.8 points a game), and PPO v2 loses. See the findings log. Read the Ventures Elo
-> numbers as "vs a leaky opponent"; exploitability is the honest measure.
+**What's left, in order:**
 
-**Why "best" and not "done":**
-- **Not unexploitable yet.** The best exploiter still scores 0.545 (+4 points/game). Small, but
-  clearly above even.
-- **Search was only tested small.** It adds nothing at 64 × 4 on top of the Nash policy, but
-  earlier, more search kept helping up to 256 × 8, and the Python engine makes big budgets too
-  slow to test properly.
-- **One stale number.** Net-guided PIMC's ~1855 predates the current features and was never
-  played against today's agents.
-
-**Not yet tried:**
-1. **Cheap variants of what worked:** a proper PSRO league, where a meta-solver mixes the
-   opponents (fixed exploiters played uniformly are what failed); full R-NaD, which periodically
-   resets the magnet to the average policy; a bigger network, or simply longer training.
-2. **A fast engine and batched GPU search** (Rust core). This is the only way to learn whether
-   search helps the Nash policy at scale, and a prerequisite for the next item.
-3. **ReBeL / Student of Games:** search over what both players can infer, with CFR at each step.
-   It is the principled route to real unexploitability, and by far the most work.
-4. **Deep CFR / NFSP:** equilibrium methods too, but they tend to struggle at this game length.
-   More useful as the Stage 6 comparison than as contenders.
-
-The ordered plan is in `plan.md` (Stage 1b, "Next steps").
+1. **Finish the Mini-Ventures ground truth** (resumable, near the end). How much of an agent's
+   *exact* exploitability does our trained exploiter find? That says how much to trust every
+   exploitability number above.
+2. **If the yardstick is loose, calibrate a stronger exploiter** on Mini-Ventures (where the right
+   answer is known) and re-measure the Ventures and Camel Stocks agents with it.
+3. **ReBeL on Mini-Ventures (E0, step 4).** Search over public belief states with CFR at each step:
+   the principled fix for why endgame CFR failed (it reasons about what each player can actually
+   infer, instead of assuming the opponent sees our hand). Exact ground truth makes it checkable.
+4. **Scale it to full Ventures (E1)** with factored per-card beliefs. Exact beliefs are out of reach
+   (the hidden 8-card hand has ~10^8 possibilities), so this is the research part.
+5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
+6. **Human play.** The one opponent type never measured; games are recorded by the play page.
+7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
 
 ## Why each method lands where it does
 
@@ -721,7 +711,7 @@ REINFORCE ~1420, PPO ~1340 (peak 1431); both ~0.97–1.00 vs random, 0–5% vs t
 
 ```bash
 uv sync
-uv run pytest                                   # 67 tests
+uv run pytest                                   # 97 tests
 uv run python -m experiments.ventures_tournament   # random < heuristic < PIMC
 uv run python -m experiments.train_ventures        # REINFORCE Elo curve
 uv run python -m experiments.train_ventures_az     # AlphaZero (negative result)
