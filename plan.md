@@ -238,8 +238,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
    - [ ] Re-anchor the Ventures ladder on the careful heuristic (report both anchors).
    - [ ] Continue Nash training with the careful heuristic in the league instead of the plain
      one; judge by score vs careful and by exploitability (max of ≥ 2 runs).
-   - [ ] A "careful" Camel Stocks heuristic (e.g. contests the camel majority, never leaves
-     precious goods in the market), to check whether that agent has a similar dependence.
+   - [x] A "careful" Camel Stocks heuristic (`camel_stocks_careful`): no dependence found. The
+     agent beats it 0.966, more than the plain one (0.940).
    - [ ] Analyse recorded human games (`runs/human_games/`) with the same conditional questions.
 3c. [ ] **Approaches to try next**, in order (the leak says the bottleneck is what the agent trains
    and is measured against, more than the learning algorithm):

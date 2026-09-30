@@ -46,13 +46,15 @@ _BIG_SET = 4  # sell a non-precious set of this size outright
 class CamelStocksHeuristic(Agent):
     """Greedy Camel Stocks policy: sell early and big, favour precious goods, trade camels."""
 
-    def __init__(self, name: str = "heuristic") -> None:
+    def __init__(self, name: str = "heuristic", careful: bool = False) -> None:
         """Create the heuristic agent.
 
         Args:
             name: Label used in standings and error messages.
+            careful: Watch the opponent (see :class:`CarefulCamelStocksHeuristic`).
         """
         self.name = name
+        self.careful = careful
         self._plan: list[int] = []
 
     def reset(self, game: Game, player: Player) -> None:
@@ -97,7 +99,7 @@ class CamelStocksHeuristic(Agent):
             urgent = (
                 ending
                 or sum(hand) >= HAND_LIMIT
-                or state.known[opp][g] >= 2  # they are collecting it too: sell first
+                or state.known[opp][g] >= (1 if self.careful else 2)  # they collect it: sell first
                 or len(state.tokens[g]) <= n  # this sale takes the last good tokens
                 or (g in PRECIOUS and n >= 3)
                 or n >= _BIG_SET
@@ -126,6 +128,17 @@ class CamelStocksHeuristic(Agent):
         camels = state.market[CAMEL]
         if TAKE_CAMELS in legal and (best_take is None or (camels >= 3 and best_take_value < 4)):
             return TAKE_CAMELS
+        # Careful: the rulebook's tip. With the opponent's hand full, a refreshed market is no use
+        # to them (they would have to exchange for it), so take the camels now.
+        opp_full = sum(state.hands[opp]) >= HAND_LIMIT - 1
+        if (
+            self.careful
+            and TAKE_CAMELS in legal
+            and opp_full
+            and camels >= 2
+            and best_take_value < 8
+        ):
+            return TAKE_CAMELS
         if best_take is not None:
             return TAKE_OFFSET + best_take
 
@@ -139,14 +152,19 @@ class CamelStocksHeuristic(Agent):
             return max(sales)[1]
         return TAKE_CAMELS
 
-    @staticmethod
-    def _take_value(state: CamelStocksState, good: int) -> float:
-        """How much taking one ``good`` is worth: its top token, more if it builds a set."""
+    def _take_value(self, state: CamelStocksState, good: int) -> float:
+        """How much taking one ``good`` is worth: its top token, more if it builds a set.
+
+        Careful: more again if the opponent is seen collecting it (taking it denies them).
+        """
         pile = state.tokens[good]
         if not pile:
             return 0.0
         held = state.hands[state.to_move][good]
-        return pile[0] + (2.0 if held >= 1 else 0.0) + (1.0 if good in PRECIOUS else 0.0)
+        value = pile[0] + (2.0 if held >= 1 else 0.0) + (1.0 if good in PRECIOUS else 0.0)
+        if self.careful and state.known[1 - state.to_move][good] >= 1:
+            value += 3.0
+        return value
 
     @staticmethod
     def _give(state: CamelStocksState, legal: set[int]) -> Action | None:
@@ -159,3 +177,20 @@ class CamelStocksHeuristic(Agent):
         return EX_GIVE_OFFSET + min(
             goods, key=lambda g: (state.tokens[g][0] if state.tokens[g] else 0, -g)
         )
+
+
+class CarefulCamelStocksHeuristic(CamelStocksHeuristic):
+    """The heuristic, but it watches the opponent (``careful=True``).
+
+    Three habits of a careful player that the plain heuristic lacks: sell a good as soon as the
+    opponent is seen collecting it (race for the top tokens); value taking a good more when the
+    opponent is collecting it (deny them); and take the camels when the opponent's hand is full, so
+    the refreshed market is no use to them (the rulebook's own tip).
+    """
+
+    def __init__(self, name: str = "careful") -> None:
+        """Create the careful heuristic."""
+        super().__init__(name, careful=True)
+
+
+register_heuristic("camel_stocks_careful")(CarefulCamelStocksHeuristic)

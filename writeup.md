@@ -174,7 +174,15 @@ played the plain heuristic, the careful one, and itself (`experiments/analyze_op
 - **Why training produced this.** The heuristic was a permanent member of the Nash training
   league, and the agent learned its weakness. Self-play opponents gift too (9.5% in agent-vs-agent
   games), so the lesson never had to be unlearned.
-- **Camel Stocks shows no sign of the same problem so far.** In self-play the agent is balanced
+- **Camel Stocks: checked, no leak.** A careful Camel Stocks heuristic (`camel_stocks_careful`:
+  sells a good as soon as the opponent is seen collecting it, values denying them that good, and
+  takes camels when the opponent's hand is full, the rulebook's tip) is if anything slightly
+  weaker than the plain one (0.475 ± 0.011 head to head), and the agent beats it *more*:
+  **0.966 ± 0.004** (+22.9) vs 0.940 (+19.5) against the plain heuristic, 1000 duplicate deals
+  each. A careful variant only tests the habits one thinks to fix, but together with the validated
+  exploitability (0.509), the held-out PIMC result (0.95) and balanced self-play, there is no sign
+  of a Ventures-style dependence.
+- **Before that check, Camel Stocks showed no sign of the same problem.** In self-play the agent is balanced
   (49% wins; camel bonus split 49/51), and its style is similar against itself and the heuristic.
   Its herd is bigger against itself (4.2 vs 2.0), since the opponent competes for camels too. A
   similar "careful" variant for Camel Stocks has not been built yet.
