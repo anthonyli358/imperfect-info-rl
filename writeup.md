@@ -193,6 +193,23 @@ It improves against every style, most where it was weakest, and its exploitabili
 **0.544** (max of 0.538 and 0.544). It learned to win without the gifts, rather than swapping one
 exploit for another.
 
+**What it changed in its play** (both agents vs the careful heuristic, 400 games each, the same
+conditional questions as below; ± one standard error):
+
+| Question | league_control | careful run |
+|---|:---:|:---:|
+| Win rate | 0.57 | **0.72** |
+| Opening late (under 20 cards left): holds 20+ in that suit? | 43% ± 5 | **59% ± 4** |
+| Opening early: holds 20+ in that suit? | 16% ± 1 | 17% ± 1 |
+| No discard pile offers a playable card: takes a dead card anyway? | 47% ± 1 | **35% ± 1** |
+| Wagered routes that end positive | 62% ± 2 | **68% ± 2** |
+| Routes opened / wagers played per game | 4.7 / 4.0 | 4.5 / 3.7 |
+| Average route value | +5.0 | **+7.6** |
+
+It kept its signature style (opening early and wide, wagering heavily) but tightened up exactly
+where the missing gifts exposed it: late openings are now mostly routes it can pay for, it wastes
+fewer draws on dead cards to slow the clock, and more of its wagers pay off.
+
 **A style-diverse league did not beat it.** The same run with all four non-leaky styles in the
 league (careful, tight, aggressive, hoarder; 30% of games) instead of the careful heuristic alone
 (`diverse`) came out slightly worse on both measures: weakest matchup **0.681** (vs 0.716) and
