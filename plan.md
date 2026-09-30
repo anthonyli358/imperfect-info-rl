@@ -247,12 +247,14 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
       vs 0.716, exploitability 0.568 vs 0.544) **Style-diverse league**: several fixed opponents with distinct habits (careful, tight,
       aggressive, hoarder), not one heuristic. AlphaStar's lesson, and ours: one opponent with one
       habit taught a habit-specific exploit.
-   2. [~] (built as a DrAC-style regularizer; queued as `diverse_sym`) **Suit-symmetry augmentation** (Ventures): the five suits are interchangeable, so train on
+   2. [x] (DrAC-style regularizer, `diverse_sym`: **best agent**; exploitability 0.504, weakest
+      matchup 0.795; validation pending) **Suit-symmetry augmentation** (Ventures): the five suits are interchangeable, so train on
       randomly relabelled positions (feature and action permutations). Up to 120× the effective
       data, and no accidental suit preferences.
    3. **Proper PSRO**: a population payoff matrix, and train against its Nash mixture, not
       uniform fixed opponents (why the exploiter league failed).
-   4. **Endgame search**: few cards left means a small tree; search it deeply, where a human can
+   4. [~] (built: `agents/cfr/subgame.py`, depth-limited MCCFR; no gain with heuristic leaves:
+      0.487 vs its own policy; next: value-net or rollout leaves) **Endgame search**: few cards left means a small tree; search it deeply, where a human can
       out-calculate a policy (clock management, the stall).
    5. **Human games as a test set**: where does a human beat it, and in which positions?
 4. [ ] **Decision point: go deeper on Ventures, or move to Jaipur.**

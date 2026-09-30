@@ -215,7 +215,35 @@ league (careful, tight, aggressive, hoarder; 30% of games) instead of the carefu
 (`diverse`) came out slightly worse on both measures: weakest matchup **0.681** (vs 0.716) and
 exploitability **0.568** (max of 0.568 and 0.554, vs 0.544). Two of the four styles are weak (the
 agent beats them 0.77–0.88), so spreading the league across them diluted the signal compared with
-concentrating on the hardest opponent. `careful` remains the best Ventures agent.
+concentrating on the hardest opponent.
+
+**Suit symmetry changes that.** The same diverse league plus the suit-symmetry regularizer
+(`diverse_sym`; `symmetry_coef = 0.1`: the policy and critic on a suit-relabelled position are
+pulled toward the fixed policy on the original, DrAC-style) is the best agent on every measure:
+
+| | careful | diverse | **diverse_sym** |
+|---|:---:|:---:|:---:|
+| Exploitability (max of 2 exploiter runs) | 0.544 | 0.568 | **0.504** |
+| vs plain heuristic | 0.853 | 0.859 | **0.887** |
+| vs careful | 0.716 | 0.681 | **0.795** |
+| vs hoarder | 0.736 | 0.706 | **0.812** |
+| vs aggressive | 0.765 | 0.770 | **0.823** |
+| vs tight | 0.892 | 0.884 | **0.934** |
+| **Weakest matchup** | 0.716 | 0.681 | **0.795** |
+
+An exploitability of 0.504 means the exploiters found essentially nothing, which is exactly the
+result that needs validating (a yardstick can fail silently). *Pending:* head-to-head against
+`careful`, an exploiter against the same run's 100-iteration checkpoint (does the yardstick find
+an edge on a symmetry-trained network at all?), and an exploiter started from a different network.
+
+**Endgame CFR did not help (yet).** The best policy with depth-limited Monte Carlo CFR taking over
+in the last 8 deck cards (depth 4, 300 iterations, heuristic leaf values; `experiments/endgame_cfr.py`)
+scores 0.487 ± 0.014 against the same policy without it (100 duplicate deals), and 0.710 against
+the careful heuristic, where the policy alone scores 0.716. The solver disagrees with the policy on
+more than half its endgame decisions, but not profitably: the hand-made leaf values are worse
+judges of a position than the trained policy. Better leaves (the value net, or policy rollouts to
+the end) are the lever, not more depth. The solver itself is validated on the toy game
+(`tests/test_cfr_subgame.py`).
 
 The practical conclusion, and the user's intuition: these agents are strong, not unbeatable. The
 next training runs should use the careful heuristic (and other non-leaky opponents) in the
