@@ -70,6 +70,9 @@ class PPOConfig:
     # best-response exploiter against a deployed greedy agent: the exploiter must face the policy
     # as it is actually played.
     opponent_greedy: bool = False
+    # Sampling weights over fixed ``opponents`` (same order), e.g. a PSRO meta-strategy. Empty
+    # means uniform. Ignored when the pool also holds learner snapshots.
+    opponent_weights: tuple[float, ...] = ()
     # Magnetic regularization (MMD / R-NaD-style): add ``magnet_coef * KL(pi || magnet)`` to the
     # loss, where the magnet is a frozen copy of the policy refreshed every ``magnet_interval``
     # iterations. Pulling each update toward a slowly moving reference damps the strategy cycling
@@ -343,7 +346,11 @@ def _collect(
                 seats = (net, opp) if seat == 0 else (opp, net)
                 learn = (seat == 0, seat == 1)
             elif pool and rng.random() < config.past_opponent_frac:
-                past = pool[int(rng.integers(len(pool)))]
+                weights = config.opponent_weights
+                if weights and len(weights) == len(pool):
+                    past = pool[int(rng.choice(len(pool), p=np.asarray(weights) / sum(weights)))]
+                else:
+                    past = pool[int(rng.integers(len(pool)))]
                 seat = int(rng.integers(2))
                 seats = (net, past) if seat == 0 else (past, net)
                 learn = (seat == 0, seat == 1)
