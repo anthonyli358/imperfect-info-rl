@@ -208,6 +208,19 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   batched search over hundreds of games with GPU leaf inference (CUDA torch in the venv), kept
   game-agnostic. Target: 50–100× more searched positions per hour. Prerequisite for E and for
   search-based learning on bigger games.
+- [ ] **E0. ReBeL where it is exact (started 2026-09-30).** Correction to E below: Ventures'
+  hidden 8-card hand has ~10^8 possibilities, so exact public belief states are out of reach.
+  ReBeL's published results are on small private-info spaces. So build it first on a small game,
+  where it is exact and every claim can be checked:
+  1. [ ] **Mini-Ventures** (`games/mini_ventures`): the same mechanics, 2 suits × (backing, 2–5),
+     3-card hands (≤ 120 possible hands per player).
+  2. [ ] **Scalable exact exploitability** (enumerate each state once; forward reach, backward
+     values) and a policy-network → strategy-table converter.
+  3. [ ] **Ground truth for our methods:** Nash-seeking PPO on mini-Ventures, its *exact*
+     exploitability, and how far our trained-exploiter yardstick is from it.
+  4. [ ] **ReBeL:** public belief states, CFR over depth-limited subgames with value-net leaves,
+     self-play value training; exact exploitability vs step 3.
+  5. [ ] **E1:** scale to full Ventures with factored (per-card) beliefs; judge vs `diverse_sym`.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero
