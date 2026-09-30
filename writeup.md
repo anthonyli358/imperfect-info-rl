@@ -69,6 +69,10 @@ has the most evidence behind it; "nothing else could beat it" is not established
 | Belief-weighted search on top | Better beliefs, no gain in play at 64 sims × 4 worlds |
 | Exploiters as fixed league opponents | Worse on both counts |
 
+> **Update (2026-09-30).** The best Ventures agent is now `diverse_sym` (a four-style league plus
+> suit-symmetry regularization): exploitability **0.512** (max of three exploiter runs, up to 600
+> iterations), weakest matchup vs any opponent style 0.795. See the findings log.
+>
 > **Caveat (2026-09-29).** The Ventures Elo figures are anchored on a heuristic that leaks: it
 > hands over playable cards. Against a careful version that never does, the best agent scores only
 > 0.570 (+6.8 points a game), and PPO v2 loses. See the findings log. Read the Ventures Elo
@@ -242,8 +246,12 @@ result that needs validating (a yardstick can fail silently). Three checks:
 
 Verdict: `diverse_sym` is clearly the least exploitable Ventures agent built so far, and this
 exploiter (which detects edges of roughly +3 to +5 points a game) finds essentially none. That is
-"near-unexploitable against this exploiter budget", not a proof of equilibrium; a longer or
-stronger exploiter is the stricter test.
+"near-unexploitable against this exploiter budget", not a proof of equilibrium.
+
+**The stricter test agrees.** An exploiter with twice the training (600 iterations) scores
+**0.512 ± 0.010** (+1.8 points a game), and never climbed meaningfully during training. Over all
+three exploiter runs the estimate is **0.512**, level with Camel Stocks (0.509) and down from
+0.545–0.56 for every earlier Ventures agent.
 
 **Endgame CFR did not help (yet).** The best policy with depth-limited Monte Carlo CFR taking over
 in the last 8 deck cards (depth 4, 300 iterations, heuristic leaf values; `experiments/endgame_cfr.py`)
