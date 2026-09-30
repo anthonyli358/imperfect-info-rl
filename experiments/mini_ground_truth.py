@@ -49,18 +49,20 @@ class Config:
     exploit_seeds: tuple[int, ...] = (0, 1)
     ppo: PPOConfig = field(
         default_factory=lambda: PPOConfig(
-            games_per_iter=512,
-            num_envs=64,
+            # A Mini-Ventures game has ~4 decisions per player (Ventures: ~70), so each iteration
+            # needs ~16x the games for the same number of decisions per update.
+            games_per_iter=4096,
+            num_envs=256,
             num_workers=10,
             epochs=4,
             minibatch_size=1024,
             lr=3e-4,
             hidden=(256, 256),
             privileged_critic=True,
-            win_bonus=5.0,
-            reward_scale=10.0,
+            win_bonus=1.0,
+            reward_scale=5.0,
             eval_interval=25,
-            eval_games=400,
+            eval_games=2000,
             feature_sample_games=100,
             seed=0,
         )
@@ -140,14 +142,22 @@ def main(config: Config) -> None:
                     target=final,
                     name=name,
                     game="mini_ventures",
-                    ppo=replace(ex.ppo, seed=seed, hidden=config.ppo.hidden),
+                    ppo=replace(
+                        ex.ppo,
+                        seed=seed,
+                        hidden=config.ppo.hidden,
+                        games_per_iter=config.ppo.games_per_iter,
+                        num_envs=config.ppo.num_envs,
+                        eval_games=2000,
+                    ),
                 )
             )
         final_rec = json.loads(record.read_text("utf-8"))["final"]
         trained[name] = {"score": final_rec["score"], "margin": final_rec["margin"]}
     _save(data)
     best = max(v["margin"] for v in trained.values())
-    truth = exact.get(final.replace("\\", "/"), exact.get(final, {})).get("greedy")
+    last = f"runs/mini/mini_nash_{config.nash_iterations}.pt"
+    truth = exact.get(last, {}).get("greedy")
     print(
         f"\nfinal agent: exact exploitability {truth} points/game; "
         f"trained exploiter finds {best:+.3f} (max of {len(trained)} runs)"
