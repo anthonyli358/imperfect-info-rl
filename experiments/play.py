@@ -41,6 +41,8 @@ class Config:
     agents: dict[str, tuple[tuple[str, str], ...]] = field(
         default_factory=lambda: {
             "ventures": (
+                ("Best: symmetry + diverse league (diverse_sym)", "runs/diverse_sym.pt"),
+                ("Careful-league PPO (careful)", "runs/careful.pt"),
                 ("Nash PPO (league_control), 1973 Elo", "runs/league_control.pt"),
                 ("Nash PPO (nash_g), ~1970 Elo", "runs/nash_g.pt"),
                 ("Nash PPO (nash_long), 1941 Elo", "runs/nash_long.pt"),

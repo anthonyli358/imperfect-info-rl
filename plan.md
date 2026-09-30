@@ -248,7 +248,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
       aggressive, hoarder), not one heuristic. AlphaStar's lesson, and ours: one opponent with one
       habit taught a habit-specific exploit.
    2. [x] (DrAC-style regularizer, `diverse_sym`: **best agent**; exploitability 0.504, weakest
-      matchup 0.795; validation pending) **Suit-symmetry augmentation** (Ventures): the five suits are interchangeable, so train on
+      matchup 0.795; beats careful 0.569; validated: the exploiter finds 0.530 on its 100-iteration
+      checkpoint) **Suit-symmetry augmentation** (Ventures): the five suits are interchangeable, so train on
       randomly relabelled positions (feature and action permutations). Up to 120× the effective
       data, and no accidental suit preferences.
    3. **Proper PSRO**: a population payoff matrix, and train against its Nash mixture, not

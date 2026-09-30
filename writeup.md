@@ -232,9 +232,18 @@ pulled toward the fixed policy on the original, DrAC-style) is the best agent on
 | **Weakest matchup** | 0.716 | 0.681 | **0.795** |
 
 An exploitability of 0.504 means the exploiters found essentially nothing, which is exactly the
-result that needs validating (a yardstick can fail silently). *Pending:* head-to-head against
-`careful`, an exploiter against the same run's 100-iteration checkpoint (does the yardstick find
-an edge on a symmetry-trained network at all?), and an exploiter started from a different network.
+result that needs validating (a yardstick can fail silently). Three checks:
+
+1. **Head to head it beats `careful`: 0.569 ± 0.010** (+8.1 points a game, 1000 duplicate deals).
+2. **The yardstick does find edges on a symmetry-trained network:** against the same run's
+   100-iteration checkpoint it finds **0.530** (+3.2), clearly above the final agent's 0.504.
+3. **An exploiter started from a different network** (`league_control`) cannot catch up in its
+   budget at all (0.479): no hidden weakness there either.
+
+Verdict: `diverse_sym` is clearly the least exploitable Ventures agent built so far, and this
+exploiter (which detects edges of roughly +3 to +5 points a game) finds essentially none. That is
+"near-unexploitable against this exploiter budget", not a proof of equilibrium; a longer or
+stronger exploiter is the stricter test.
 
 **Endgame CFR did not help (yet).** The best policy with depth-limited Monte Carlo CFR taking over
 in the last 8 deck cards (depth 4, 300 iterations, heuristic leaf values; `experiments/endgame_cfr.py`)
