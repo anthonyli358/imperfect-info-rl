@@ -46,12 +46,20 @@ class SubgameConfig:
         sample: Play by sampling the average strategy; ``False`` plays its most likely action.
         outcome_scale: Score terminal positions as win/loss (+1/0/-1) instead of the point
             margin, to match a leaf evaluator on that scale (e.g. a win-probability value net).
+        margin_weight: With ``outcome_scale``, blend in the margin: terminal values become
+            ``(1 - w) * sign(m) + w * tanh(m / margin_scale)``. Without it a pessimistic solver
+            finds every move in a losing position worth -1 and plays at random; the margin term
+            keeps "lose by less" better than "lose by more". Pair with :class:`ValueNetLeaf`'s
+            matching blend.
+        margin_scale: Points scale of the margin term.
     """
 
     iterations: int = 300
     depth: int = 4
     sample: bool = False
     outcome_scale: bool = False
+    margin_weight: float = 0.0
+    margin_scale: float = 40.0
 
 
 def heuristic_leaf(game: Game, state: State, player: Player) -> float:
@@ -68,8 +76,13 @@ class ValueNetLeaf:
     between solves.
     """
 
-    def __init__(self, path: str) -> None:
-        """Load the value network checkpoint (saved by ``experiments/train_ventures_value.py``)."""
+    def __init__(self, path: str, margin_weight: float = 0.0, margin_scale: float = 40.0) -> None:
+        """Load the value network checkpoint (saved by ``experiments/train_ventures_value.py``).
+
+        With ``margin_weight``, the value is blended with ``tanh(heuristic_value / margin_scale)``,
+        matching :class:`SubgameConfig`'s terminal blend.
+        """
+        self.margin_weight, self.margin_scale = margin_weight, margin_scale
         import torch
 
         from iirl.nn.policy_value import PolicyValueNet
@@ -94,7 +107,13 @@ class ValueNetLeaf:
 
             feats = torch.as_tensor(privileged_features(game, state, player), dtype=torch.float32)
             with torch.no_grad():
-                self.cache[key] = float(self.net(feats.unsqueeze(0))[1].item())
+                value = float(self.net(feats.unsqueeze(0))[1].item())
+            if self.margin_weight:
+                margin = heuristic_leaf(game, state, player)
+                value = (1 - self.margin_weight) * value + self.margin_weight * float(
+                    np.tanh(margin / self.margin_scale)
+                )
+            self.cache[key] = value
         return self.cache[key]
 
 
@@ -126,7 +145,12 @@ class SubgameSolver:
         game = self.game
         if game.is_terminal(state):
             ret = float(game.returns(state)[traverser])
-            return float(np.sign(ret)) if self.config.outcome_scale else ret
+            if not self.config.outcome_scale:
+                return ret
+            w = self.config.margin_weight
+            return (1 - w) * float(np.sign(ret)) + w * float(
+                np.tanh(ret / self.config.margin_scale)
+            )
         if game.is_chance_node(state):
             outcomes = game.chance_outcomes(state)
             i = rng.choice(len(outcomes), p=[p for _, p in outcomes])

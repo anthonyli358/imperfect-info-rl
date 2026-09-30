@@ -33,6 +33,7 @@ class Config:
     policy: str = "runs/diverse_sym.pt"
     leaf: str = "value"  # "value" (privileged value net, win/loss scale) or "heuristic" (points)
     value_net: str = "runs/value_nash_long_priv.pt"
+    margin_weight: float = 0.5  # blend the margin into win/loss values (see SubgameConfig)
     deck_threshold: int = 8
     depth: int = 4
     iterations: int = 300
@@ -53,15 +54,26 @@ class DeckTrigger:
 
 
 def endgame_agent(
-    path: str, threshold: int, depth: int, iterations: int, leaf: str, value_net: str
+    path: str,
+    threshold: int,
+    depth: int,
+    iterations: int,
+    leaf: str,
+    value_net: str,
+    margin_weight: float = 0.0,
 ) -> EndgameCFRAgent:
     """Build the policy-plus-endgame-CFR agent (a picklable factory for worker processes)."""
     if leaf == "value":
         return EndgameCFRAgent(
             PPOAgent.from_checkpoint(path),
             DeckTrigger(threshold),
-            SubgameConfig(iterations=iterations, depth=depth, outcome_scale=True),
-            ValueNetLeaf(value_net),
+            SubgameConfig(
+                iterations=iterations,
+                depth=depth,
+                outcome_scale=True,
+                margin_weight=margin_weight,
+            ),
+            ValueNetLeaf(value_net, margin_weight=margin_weight),
         )
     return EndgameCFRAgent(
         PPOAgent.from_checkpoint(path),
@@ -82,6 +94,7 @@ def main(config: Config) -> None:
             "iterations": config.iterations,
             "leaf": config.leaf,
             "value_net": config.value_net,
+            "margin_weight": config.margin_weight,
         },
     )
     opponents = {
