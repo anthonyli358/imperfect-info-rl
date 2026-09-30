@@ -267,3 +267,39 @@ def test_ppo_with_symmetry_regularizer_runs() -> None:
     )
     _, history = train_ppo(game, {"heuristic": VenturesHeuristic()}, config)
     assert np.isfinite(history[-1].policy_loss) and np.isfinite(history[-1].value_loss)
+
+
+def test_nfsp_trains_an_average_policy() -> None:
+    import torch
+
+    from iirl.agents.heuristic import CamelStocksHeuristic
+    from iirl.nn.policy_value import PolicyValueNet
+    from iirl.selfplay.nfsp import NFSPConfig, ReservoirBuffer, train_nfsp
+
+    rng = np.random.default_rng(0)
+    buf = ReservoirBuffer(5, 2, 3, rng)
+    buf.add(np.ones((12, 2)), np.ones((12, 3)), np.arange(12) % 3)
+    assert len(buf) == 5 and buf.seen == 12
+
+    game = make("camel_stocks")
+    probe = game.new_initial_state()
+    while game.is_chance_node(probe):
+        probe = game.apply_action(probe, game.chance_outcomes(probe)[0][0])
+    dim = len(game.information_state_tensor(probe, 0))
+    init = PolicyValueNet(dim, game.num_distinct_actions(), (32,), value_activation="linear")
+    before = [p.clone() for p in init.parameters()]
+    evals = []
+    config = NFSPConfig(
+        ppo=PPOConfig(
+            iterations=2, games_per_iter=8, num_envs=8, hidden=(32,), eval_interval=2, eval_games=4
+        ),
+        sl_steps=3,
+        sl_batch=16,
+        eval_interval=2,
+        eval_games=4,
+    )
+    avg = train_nfsp(
+        game, {"heuristic": CamelStocksHeuristic()}, config, init, lambda i, s: evals.append(s)
+    )
+    assert evals and 0.0 <= evals[-1]["heuristic"] <= 1.0
+    assert any(not torch.equal(a, b) for a, b in zip(avg.parameters(), before, strict=True))

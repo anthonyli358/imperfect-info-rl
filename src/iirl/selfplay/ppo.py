@@ -602,6 +602,7 @@ def train_ppo(
     on_checkpoint: Callable[[PolicyValueNet, PPOEvalPoint], None] | None = None,
     init_net: PolicyValueNet | None = None,
     opponents: list[PolicyValueNet] | None = None,
+    on_iteration: Callable[[int, PolicyValueNet, dict], list[PolicyValueNet] | None] | None = None,
 ) -> tuple[PolicyValueNet, list[PPOEvalPoint]]:
     """Train a policy/value net by PPO self-play; return it with its Elo history.
 
@@ -612,6 +613,10 @@ def train_ppo(
     ``opponents`` fixes the opponent pool to those frozen nets: no learner snapshots are added, and
     ``past_opponent_frac`` of games are played against them. With ``past_opponent_frac = 1`` this
     trains a best response (an *exploiter*) to the given opponents.
+
+    ``on_iteration(iteration, net, batch)`` runs after every update with the learner's batch (its
+    decisions: ``feat``, ``mask``, ``action``, ...). If it returns a list of nets, they replace the
+    fixed opponents from the next iteration on (e.g. NFSP's refreshed average policy).
     """
     torch.manual_seed(config.seed)
     rng = np.random.default_rng(config.seed)
@@ -693,6 +698,13 @@ def train_ppo(
             net.eval()
             if critic is not None:
                 critic.eval()
+            if on_iteration is not None:
+                replacement = on_iteration(iteration, net, batch)
+                if replacement is not None:
+                    for pid in [p for p in pool if p < 0]:
+                        del pool[pid]
+                    for i, op in enumerate(replacement):  # fresh ids, so workers reload them
+                        pool[-(iteration * 1000 + i + 1)] = op
             snapshot = config.past_opponent_frac > 0 and opponents is None
             if snapshot and iteration % config.snapshot_interval == 0:
                 pool[iteration] = copy.deepcopy(net)
