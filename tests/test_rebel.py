@@ -80,6 +80,12 @@ def test_single_actor_last_slab_best_response_matches_cfr() -> None:
     assert mask.any() and np.allclose(exact[mask], iterated[mask], atol=0.01)
 
 
+def test_sampled_selfplay_keeps_the_requested_number_of_public_states() -> None:
+    config = ReBeLConfig(boundaries=(2, 3, 5), cfr_iterations=10, sample_public=7)
+    data = FullWidthReBeL(PublicToy(), config).selfplay()
+    assert [len(part) for part in data[3]] == [7, 7, 7]
+
+
 def test_selfplay_with_a_best_response_last_slab() -> None:
     rebel = FullWidthReBeL(PublicToy(), ReBeLConfig(boundaries=(2, 3, 4, 5), cfr_iterations=10))
     data = rebel.selfplay()

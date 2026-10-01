@@ -54,6 +54,10 @@ state, such as which cards a hand holds):
   probability that each card is in the hand) instead of the probability of every hand.
 * ``per_hand_values``: the network takes one private state's features as input and returns that
   state's value, instead of returning every private state's value at once.
+* ``sample_public``: a self-play pass keeps training examples for only that many public states
+  per boundary, drawn as games would visit them (in proportion to reach, with
+  ``sample_explore`` of uniform), instead of for every public state. The subgames are still all
+  solved, so this prices the *data* a sampled self-play run would see, not its compute.
 """
 
 from __future__ import annotations
@@ -87,8 +91,8 @@ class ReBeLConfig:
     (drawn in proportion to their weight); ``None`` branches from every iteration, which is exact
     but costs a solve of the next slab per iteration.
 
-    ``factored_beliefs`` and ``per_hand_values`` switch on the large-game approximations described
-    in the module docstring.
+    ``factored_beliefs``, ``per_hand_values`` and ``sample_public`` switch on the large-game
+    approximations described in the module docstring.
     """
 
     boundaries: tuple[int, ...]
@@ -108,6 +112,8 @@ class ReBeLConfig:
     value_scale: float = 5.0
     factored_beliefs: bool = False
     per_hand_values: bool = False
+    sample_public: int | None = None
+    sample_explore: float = 0.25
 
 
 class PublicLevel:
@@ -307,6 +313,7 @@ class FullWidthReBeL:
         self._reach = np.zeros((c.n, 6))
         self._value = np.zeros((c.n, 2))
         self.root_reach = self._chance_reach(b[0])
+        self._track_own = config.sample_public is not None  # sampling needs the joint reach
         self.epoch = 0
 
     def _slab(self, a: int, b: int) -> SimpleNamespace:
@@ -463,7 +470,7 @@ class FullWidthReBeL:
         reach, value = self._reach, self._value
         for t in range(1, iterations + 1):
             sigma = self._current(slab)
-            played = self._forward(slab, sigma, root, own=bool(weight))
+            played = self._forward(slab, sigma, root, own=bool(weight) or self._track_own)
             self._backward(slab, played)
             cfv = np.bincount(
                 slab.slot,
@@ -561,6 +568,8 @@ class FullWidthReBeL:
                 level = self.levels[slab.a]
                 ranges, defined = level.ranges(root)
                 rows = defined.all(axis=0)
+                if cfg.sample_public is not None:
+                    rows = self._visited(level, root, rows)
                 data[slab.a] = (
                     level.net_input(ranges)[rows],
                     (level._mover_order(values)[rows] / cfg.value_scale).astype(np.float32),
@@ -568,6 +577,16 @@ class FullWidthReBeL:
                 )
             root = leaves[0] if leaves else root  # the last slab hands nothing on
         return data
+
+    def _visited(self, level: PublicLevel, root: np.ndarray, usable: np.ndarray) -> np.ndarray:
+        """Draw the public states a batch of self-play games would visit (with repeats)."""
+        cfg = self.config
+        joint = root[level.idx, 0] * root[level.idx, 2]  # everyone's reach of each state
+        mass = np.bincount(level.pub, weights=joint, minlength=level.num_public) * usable
+        p = (
+            1.0 - cfg.sample_explore
+        ) * mass / mass.sum() + cfg.sample_explore * usable / usable.sum()
+        return self.rng.choice(level.num_public, size=cfg.sample_public, p=p / p.sum())
 
     def fit(self) -> dict[int, float]:
         """Train each network on its buffer; returns the last minibatches' mean loss."""

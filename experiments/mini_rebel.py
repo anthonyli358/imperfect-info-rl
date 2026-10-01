@@ -16,11 +16,13 @@ Progress is saved after every epoch (``runs/mini/rebel.pt``; the curve in
 
 Variants test, against the same ground truth, the approximations full Ventures will need
 (its hidden hand has ~10^8 possibilities): ``factored`` shows the network only per-card belief
-marginals; ``factored_hand`` also makes it return one hand's value at a time.
+marginals; ``factored_hand`` also makes it return one hand's value at a time; ``sampled_N``
+trains on only N sampled public states per boundary per pass (as N self-play games would visit),
+on top of the other two.
 
 Run with::
 
-    uv run python -m experiments.mini_rebel [factored | factored_hand]
+    uv run python -m experiments.mini_rebel [factored | factored_hand | sampled_256]
 """
 
 from __future__ import annotations
@@ -105,8 +107,11 @@ def variant(name: str) -> Config:
     """The config for a named variant (results go to ``runs/mini/rebel_<name>.*``)."""
     base = Config()
     rebel = replace(base.rebel, factored_beliefs=True)
-    if name == "factored_hand":  # one network row per hand: slower, so branch from fewer solves
+    if name == "factored_hand" or name.startswith("sampled_"):
+        # One network row per hand: slower, so the evaluation branches from fewer solves.
         rebel = replace(rebel, per_hand_values=True, eval_samples=(8, 2, 16))
+        if name.startswith("sampled_"):
+            rebel = replace(rebel, sample_public=int(name.split("_")[1]))
     elif name != "factored":
         raise SystemExit(f"unknown variant {name!r}")
     stem = f"runs/mini/rebel_{name}"
