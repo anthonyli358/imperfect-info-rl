@@ -343,6 +343,13 @@ class MiniVentures(Game):
         """Number of distinct full hands (a player's private state at the start of a turn)."""
         return len(_HAND_INDEX)
 
+    def private_state_features(self) -> np.ndarray:
+        """Per full hand, which cards it holds: (hands, cards)."""
+        out = np.zeros((len(_HAND_INDEX), NUM_CARDS), dtype=np.float32)
+        for hand, i in _HAND_INDEX.items():
+            out[i, list(hand)] = 1.0
+        return out
+
     def private_state_index(self, state: State, player: Player) -> int:
         """Index of ``player``'s hand among all full hands (start-of-turn states only)."""
         assert isinstance(state, MiniVenturesState)

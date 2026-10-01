@@ -45,6 +45,15 @@ Bookkeeping, per state ``i`` in a slab and player ``p``:
 
 The game must provide ``public_state_string``, ``public_state_tensor`` (from the mover's point of
 view), ``private_state_index`` and ``num_private_states``, valid at the boundary depths.
+
+**Approximations a large game needs**, which can be switched on here to measure what they cost
+against ground truth (they also need ``private_state_features``: a feature vector per private
+state, such as which cards a hand holds):
+
+* ``factored_beliefs``: the network sees each range only through its feature marginals (the
+  probability that each card is in the hand) instead of the probability of every hand.
+* ``per_hand_values``: the network takes one private state's features as input and returns that
+  state's value, instead of returning every private state's value at once.
 """
 
 from __future__ import annotations
@@ -77,6 +86,9 @@ class ReBeLConfig:
     ``eval_samples[k]`` is how many of slab ``k``'s iterations the evaluated policy branches from
     (drawn in proportion to their weight); ``None`` branches from every iteration, which is exact
     but costs a solve of the next slab per iteration.
+
+    ``factored_beliefs`` and ``per_hand_values`` switch on the large-game approximations described
+    in the module docstring.
     """
 
     boundaries: tuple[int, ...]
@@ -94,13 +106,25 @@ class ReBeLConfig:
     batch_size: int = 512
     steps_per_epoch: int = 400
     value_scale: float = 5.0
+    factored_beliefs: bool = False
+    per_hand_values: bool = False
 
 
 class PublicLevel:
     """The public states at one boundary depth, and each state's place in them."""
 
-    def __init__(self, game: Game, cfr: GraphCFR, depth: int) -> None:
+    def __init__(
+        self,
+        game: Game,
+        cfr: GraphCFR,
+        depth: int,
+        factored_beliefs: bool = False,
+        per_hand_values: bool = False,
+    ) -> None:
         """Group the depth's non-terminal states by public state and private-state indices."""
+        self.factored, self.per_hand = factored_beliefs, per_hand_values
+        if factored_beliefs or per_hand_values:
+            self.private_features = np.asarray(game.private_state_features(), dtype=np.float32)
         lo, hi = cfr.level_ranges[depth]
         self.lo, self.hi = int(lo), int(hi)
         self.num_private = game.num_private_states()
@@ -129,6 +153,17 @@ class PublicLevel:
         size = self.num_public * self.num_private
         self.group = [self.pub * self.num_private + self.hand[:, p] for p in (0, 1)]
         self.count = [np.bincount(g, minlength=size) for g in self.group]
+        belief = self.private_features.shape[1] if factored_beliefs else self.num_private
+        self.n_in = self.features.shape[1] + 2 * belief
+        self.n_out = 2 * self.num_private
+        if per_hand_values:
+            # One network row per (public state, mover or other, private state possible there).
+            possible = self._mover_order(
+                np.stack([n.reshape(self.num_public, -1) > 0 for n in self.count])
+            )
+            self.rows = np.nonzero(possible)
+            self.n_in += self.private_features.shape[1] + 1
+            self.n_out = 1
 
     def _table(self, player: int, weights: np.ndarray) -> np.ndarray:
         """Sum ``weights`` over states into a (public state, ``player``'s private state) table."""
@@ -161,16 +196,40 @@ class PublicLevel:
         return np.stack([mover, other], axis=1)
 
     def net_input(self, ranges: np.ndarray) -> np.ndarray:
-        """Public features, then the mover's range, then the other player's."""
-        r = self._mover_order(ranges).reshape(self.num_public, -1)
-        return np.concatenate([self.features, r.astype(np.float32)], axis=1)
+        """Public features, then the mover's beliefs, then the other player's.
+
+        Beliefs are the range itself, or with ``factored_beliefs`` its feature marginals.
+        """
+        r = self._mover_order(ranges).astype(np.float32)
+        if self.factored:
+            r = r @ self.private_features
+        return np.concatenate([self.features, r.reshape(self.num_public, -1)], axis=1)
+
+    def hand_rows(self, x: torch.Tensor, pub, role, hand) -> torch.Tensor:  # noqa: ANN001
+        """Per-hand network input: a public state's input, a hand's features, and whose it is."""
+        features = torch.as_tensor(self.private_features)[hand]
+        whose = torch.as_tensor(role, dtype=torch.float32).reshape(-1, 1)
+        return torch.cat([x[pub], features, whose], dim=1)
+
+    def predict(self, net: nn.Module, x: np.ndarray) -> np.ndarray:
+        """Network values as (public, [mover, other], private), unscaled, for inputs ``x``."""
+        with torch.no_grad():
+            if not self.per_hand:
+                out = net(torch.as_tensor(x)).numpy()
+                return out.reshape(len(x), 2, self.num_private).astype(float)
+            out = np.zeros((len(x), 2, self.num_private))
+            xt = torch.as_tensor(x)
+            pub, role, hand = self.rows
+            for k in range(0, len(pub), 65536):
+                part = slice(k, k + 65536)
+                rows = self.hand_rows(xt, pub[part], role[part], hand[part])
+                out[pub[part], role[part], hand[part]] = net(rows)[:, 0].numpy()
+            return out
 
     def values(self, net: nn.Module, reach: np.ndarray, scale: float) -> np.ndarray:
         """Network values of both players' private states, per non-terminal state: (states, 2)."""
         ranges, _ = self.ranges(reach)
-        with torch.no_grad():
-            out = net(torch.as_tensor(self.net_input(ranges))).numpy().astype(float) * scale
-        out = out.reshape(self.num_public, 2, self.num_private)
+        out = self.predict(net, self.net_input(ranges)) * scale
         first = self.first[:, None]
         per_player = (np.where(first, out[:, 0], out[:, 1]), np.where(first, out[:, 1], out[:, 0]))
         return np.stack([per_player[p][self.pub, self.hand[:, p]] for p in (0, 1)], axis=1)
@@ -233,14 +292,14 @@ class FullWidthReBeL:
         c, b = self.cfr, config.boundaries
         if b[-1] != len(c.level_ranges) - 1 or list(b) != sorted(set(b)):
             raise ValueError("boundaries must increase and end at the game's last depth")
-        self.levels = {d: PublicLevel(game, c, d) for d in b[:-1]}
+        options = (config.factored_beliefs, config.per_hand_values)
+        self.levels = {d: PublicLevel(game, c, d, *options) for d in b[:-1]}
         self.nets: dict[int, nn.Sequential] = {}
         self.optimizers: dict[int, torch.optim.Optimizer] = {}
         self.buffers: dict[int, deque] = {}
         for d in b[1:-1]:
             level = self.levels[d]
-            n_in = level.features.shape[1] + 2 * level.num_private
-            self.nets[d] = _mlp(n_in, 2 * level.num_private, config.hidden, config.layers)
+            self.nets[d] = _mlp(level.n_in, level.n_out, config.hidden, config.layers)
             self.optimizers[d] = torch.optim.Adam(self.nets[d].parameters(), lr=config.lr)
             per_epoch = 1 if d == b[-2] else config.passes
             self.buffers[d] = deque(maxlen=config.buffer_epochs * per_epoch)
@@ -517,12 +576,20 @@ class FullWidthReBeL:
             if not buffer:
                 continue
             x, y, m = (torch.as_tensor(np.concatenate(part)) for part in zip(*buffer, strict=True))
-            y, m = y.flatten(1), m.flatten(1).float()
-            net, opt = self.nets[d], self.optimizers[d]
+            net, opt, level = self.nets[d], self.optimizers[d], self.levels[d]
+            if cfg.per_hand_values:
+                known = m.nonzero()  # (example, mover or other, private state) with a target
+            else:
+                y, m = y.flatten(1), m.flatten(1).float()
             recent = []
             for step in range(cfg.steps_per_epoch):
-                rows = torch.randint(len(x), (cfg.batch_size,))
-                loss = (((net(x[rows]) - y[rows]) ** 2) * m[rows]).sum() / m[rows].sum()
+                if cfg.per_hand_values:
+                    i, role, hand = known[torch.randint(len(known), (cfg.batch_size,))].T
+                    pred = net(level.hand_rows(x, i, role, hand))[:, 0]
+                    loss = ((pred - y[i, role, hand]) ** 2).mean()
+                else:
+                    rows = torch.randint(len(x), (cfg.batch_size,))
+                    loss = (((net(x[rows]) - y[rows]) ** 2) * m[rows]).sum() / m[rows].sum()
                 opt.zero_grad()
                 loss.backward()
                 opt.step()

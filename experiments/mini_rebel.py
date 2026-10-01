@@ -14,16 +14,21 @@ of the full expectation in practice.
 Progress is saved after every epoch (``runs/mini/rebel.pt``; the curve in
 ``runs/mini/rebel.json``), so the run can be stopped and resumed.
 
+Variants test, against the same ground truth, the approximations full Ventures will need
+(its hidden hand has ~10^8 possibilities): ``factored`` shows the network only per-card belief
+marginals; ``factored_hand`` also makes it return one hand's value at a time.
+
 Run with::
 
-    uv run python -m experiments.mini_rebel
+    uv run python -m experiments.mini_rebel [factored | factored_hand]
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import torch
@@ -96,5 +101,17 @@ def main(config: Config) -> None:
     rebel.train(on_epoch)
 
 
+def variant(name: str) -> Config:
+    """The config for a named variant (results go to ``runs/mini/rebel_<name>.*``)."""
+    base = Config()
+    rebel = replace(base.rebel, factored_beliefs=True)
+    if name == "factored_hand":  # one network row per hand: slower, so branch from fewer solves
+        rebel = replace(rebel, per_hand_values=True, eval_samples=(8, 2, 16))
+    elif name != "factored":
+        raise SystemExit(f"unknown variant {name!r}")
+    stem = f"runs/mini/rebel_{name}"
+    return replace(base, rebel=rebel, state=f"{stem}.pt", curve=f"{stem}.json")
+
+
 if __name__ == "__main__":
-    main(Config())
+    main(variant(sys.argv[1]) if len(sys.argv) > 1 else Config())

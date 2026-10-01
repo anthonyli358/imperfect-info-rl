@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 import toy_game
 from iirl.eval.exact_br import exploitability, uniform_policy
@@ -10,6 +11,9 @@ class PublicToy(toy_game.ToyShowdown):
 
     def num_private_states(self) -> int:  # noqa: D102
         return 3
+
+    def private_state_features(self) -> np.ndarray:  # noqa: D102
+        return np.eye(3, dtype=np.float32)
 
     def private_state_index(self, state, player) -> int:  # noqa: ANN001, D102
         return state.cards[player]
@@ -39,9 +43,12 @@ def test_ranges_are_the_opponents_reach() -> None:
     assert defined.all() and np.allclose(ranges, 1 / 3)  # the deal is uniform
 
 
-def test_learned_leaf_values_give_a_near_equilibrium_policy() -> None:
+@pytest.mark.parametrize("approximate", [False, True])
+def test_learned_leaf_values_give_a_near_equilibrium_policy(approximate: bool) -> None:
     game = PublicToy()
     config = ReBeLConfig(
+        factored_beliefs=approximate,
+        per_hand_values=approximate,
         boundaries=(2, 3, 5),
         cfr_iterations=50,
         eval_iterations=60,
