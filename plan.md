@@ -230,6 +230,20 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      public belief states, CFR over depth-limited subgames with value-net leaves,
      self-play value training; exact exploitability vs step 3.
   5. [ ] **E1:** scale to full Ventures with factored (per-card) beliefs; judge vs `diverse_sym`.
+     - [x] **Price the approximations on Mini-Ventures** (2026-10-01): factored beliefs 0.0037,
+       + per-hand values 0.0028, + 256 sampled public states per pass 0.0035 (exact: 0.0025;
+       PPO 0.07). Sampling needs data: 0.093 at 2.5k last-turn examples, 0.006 at 5k.
+     - [x] **One-position solver** over candidate hands through the game interface
+       (`selfplay/rebel_turn.py`), validated against the full-width solver; Ventures hooks added.
+       Cost on Ventures: ~2 s per decision at 16 candidates × 20 iterations.
+     - [ ] **Sampled deck draws** in the turn solver (most rows are draw outcomes): target ~5×.
+     - [ ] **Ventures value network**: (public features, both players' per-card beliefs, a hand) →
+       value. Pre-train on `diverse_sym` self-play outcomes, since ReBeL self-play from scratch is
+       unaffordable at this speed.
+     - [ ] **Public belief tracking**: candidate hands and weights for both players, updated from
+       each solve's strategy (the particle filter in `agents/belief.py` is the starting point).
+     - [ ] **Agent + match** vs `diverse_sym` on duplicate deals; then ReBeL self-play fine-tuning
+       if the search helps. A fast engine (Phase D) if the Python engine is the limit.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero

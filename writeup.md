@@ -56,6 +56,10 @@ exactly, ReBeL (CFR over public belief states with a learned value network at ea
 reaches **0.002 points a game** of exact exploitability, level with the full-game equilibrium and
 about 30× closer than Nash-seeking PPO's 0.07, in 21 minutes of training. It is not yet a Ventures
 agent: there a hidden hand has ~10^8 possibilities, so the beliefs must be approximated (step E1).
+The three approximations Ventures forces (per-card beliefs, one hand valued at a time, training
+on sampled positions) have each been priced on Mini-Ventures: all three together still reach
+0.0035. What stands between this and a Ventures agent is speed: a one-turn solve on a real
+Ventures position takes about 2 seconds in the current Python engine.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -97,8 +101,11 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    they found nothing more (0.500 / 0.498 on Ventures, 0.500 / 0.505 on Camel Stocks).
 3. ~~ReBeL on Mini-Ventures (E0, step 4).~~ Done: exact exploitability 0.002 points a game, level
    with the full-game equilibrium (PPO: 0.07).
-4. **Scale it to full Ventures (E1)** with factored per-card beliefs. Exact beliefs are out of reach
-   (the hidden 8-card hand has ~10^8 possibilities), so this is the research part.
+4. **Scale it to full Ventures (E1).** Done so far: the approximations Ventures needs survive
+   ground truth (0.0035 with all three), and the solver that works on one position through the
+   game interface is built and validated. Still to build, in order: sampled deck draws (speed), a
+   belief-conditioned value network for Ventures, public belief tracking through a game, then the
+   agent and its match against `diverse_sym`.
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
 6. **Human play.** The one opponent type never measured; games are recorded by the play page.
 7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
@@ -148,6 +155,50 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### E1, stage 1: the approximations Ventures needs survive ground truth (2026-10-01)
+
+ReBeL on Mini-Ventures used three things full Ventures cannot have: a belief vector with one
+entry per possible hand (Ventures: ~10^8), a network output per hand, and a solve of every public
+state on every pass. Each replacement was switched on in the same code
+(`selfplay/rebel.py`; `experiments/mini_rebel.py factored | factored_hand | sampled_256`) and
+measured exactly. Exploitability, points a game:
+
+| Variant | Epoch 10 | 20 | 30 | 40 |
+|---|:---:|:---:|:---:|:---:|
+| Nothing approximated | 0.0048 | 0.0024 | 0.0020 | 0.0025 |
+| **Factored beliefs:** the network sees each card's probability of being in the hand (8 numbers), not the probability of each hand (28) | 0.0042 | 0.0032 | 0.0026 | 0.0037 |
+| + **per-hand values:** the network takes one hand and returns its value, instead of returning all hands' values | 0.0084 | 0.0069 | 0.0071 | 0.0028 |
+| + **sampled positions:** each pass keeps training examples for 256 public states per turn boundary, drawn as games would visit them, instead of all 16 / 736 / 14,856 | 0.093 | 0.0063 | 0.0039 | 0.0035 |
+
+(Nash-seeking PPO: 0.07. Random play: 2.71. Differences of ~0.002 between entries are within
+the evaluation's own sampling noise; the last two rows branch from fewer iterations.)
+
+- **The belief and value representations Ventures needs cost nothing measurable.** Per-card
+  marginals lose the correlations between cards in a hand, and that loss does not show.
+- **Sampling costs data, not accuracy.** With 2,560 last-turn examples (epoch 10) the sampled run
+  is at PPO's level (0.093); with 5,120 it is at 0.006; with 10,240 at 0.0035, where full-width
+  training had used 594,000. So on Ventures the question is how many self-play positions can be
+  afforded, which makes speed the critical path.
+- Caveat: Mini-Ventures hands are 2 cards of 8. Ventures hands are 8 cards of 60 with far more
+  structure for marginals to lose, so this is evidence for the design, not proof.
+
+**The solver for one position** (`selfplay/rebel_turn.py`). The full-width code works on an
+enumerated game. Ventures needs a solver given only the public state, a set of candidate hands per
+player with range weights, and a value function for the positions one turn ahead. It expands the
+mover's turn through the ordinary game interface and runs the same CFR+ with the same
+trembling-hand beliefs. Checked against the full-width solver on Mini-Ventures with every hand as
+a candidate: root values agree to 1e-9 at the opening; at the two later turns 1,876 of 2,365 leaf
+beliefs are identical and the other 489 are all leaves that several public histories share
+(Mini-Ventures' public state does not record who discarded which card, so the full-width solver
+pools histories there and a one-position solver cannot).
+
+**What a solve costs on real Ventures positions** (Python, CPU, a 512×3 network, 16 candidate
+hands per player): 0.2 s to enumerate the turn, then 85 ms per CFR iteration (6,300 network rows),
+so ~2 s per decision and ~5 minutes per game at 20 iterations. With 32 candidates early in a game
+it is 0.9 s + 330 ms per iteration. Nearly all rows are deck-draw outcomes (each candidate hand ×
+each discard or play × each unseen card), so sampling a few draws per action is the first
+speed-up; after that the Python engine itself is the limit.
 
 ### ReBeL reaches the equilibrium on Mini-Ventures (2026-10-01)
 
