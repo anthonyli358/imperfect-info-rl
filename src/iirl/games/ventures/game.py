@@ -470,6 +470,90 @@ class Ventures(Game):
             ]
         )
 
+    # --- Public / private split (for public-belief-state search: selfplay.rebel_turn) ----------
+    def private_hand(self, state: State, player: Player) -> tuple[int, ...]:
+        """``player``'s hand as counts per card type."""
+        assert isinstance(state, VenturesState)
+        return state.hands[player]
+
+    def unseen_cards(self, state: State) -> tuple[int, ...]:
+        """Counts of the cards in the deck or in a hand: public knowledge."""
+        assert isinstance(state, VenturesState)
+        return tuple(d + a + b for d, a, b in zip(state.deck, *state.hands, strict=True))
+
+    def with_hands(
+        self, state: State, player: Player, hand: tuple[int, ...], other_hand: tuple[int, ...]
+    ) -> VenturesState:
+        """The same public position, ``player`` holding ``hand`` and the other ``other_hand``."""
+        assert isinstance(state, VenturesState)
+        unseen = self.unseen_cards(state)
+        deck = tuple(u - a - b for u, a, b in zip(unseen, hand, other_hand, strict=True))
+        if min(deck) < 0:
+            raise ValueError("the hands do not fit the public position")
+        hands = (hand, other_hand) if player == 0 else (other_hand, hand)
+        return _replace(state, deck=deck, hands=hands)
+
+    def chance_is_private(self, state: State) -> bool:
+        """Whether the pending chance outcome is seen only by the mover (always: a deck draw)."""
+        return True
+
+    def public_state_tensor(self, state: State) -> np.ndarray:
+        """The public position as features, from the point of view of the player to move.
+
+        Everything both players can see: which cards each could still play, the cards not yet
+        visible (deck or a hand), cards known to be in each hand, the discard piles, the routes
+        and the clock. No hand and no deck contents.
+        """
+        assert isinstance(state, VenturesState)
+        me, opp = state.to_move, 1 - state.to_move
+        playable = np.zeros((2, NUM_CARD_TYPES), dtype=np.float32)
+        suit_feats: list[float] = []
+        for i, pp in enumerate((me, opp)):
+            for s in range(NUM_SUITS):
+                r = state.routes[pp][s]
+                max_num = route_max_number(r)
+                base = s * len(RANKS)
+                playable[i, base] = float(max_num == 0)
+                playable[i, base + 1 : base + len(RANKS)] = _NUMBER_RANKS > max_num
+                value = (route_number_sum(r) - START_COST) * (1 + route_backing_count(r))
+                suit_feats += [
+                    float(len(r) > 0),
+                    route_backing_count(r),
+                    len(r) / 8.0,
+                    route_number_sum(r) / 20.0,
+                    max_num / 10.0,
+                    value / 20.0 if r else 0.0,
+                ]
+        disc_counts = np.zeros(NUM_CARD_TYPES, dtype=np.float32)
+        tops = np.zeros(NUM_CARD_TYPES, dtype=np.float32)
+        for s in range(NUM_SUITS):
+            for c in state.discards[s]:
+                disc_counts[c] += 1.0
+            if state.discards[s]:
+                tops[state.discards[s][-1]] = 1.0
+            suit_feats.append(len(state.discards[s]) / 8.0)
+        deck_left = sum(state.deck)
+        scalars = [
+            deck_left / DECK_SIZE,
+            (self._score(state, me) - self._score(state, opp)) / 20.0,
+            self._score(state, me) / 20.0,
+            self._score(state, opp) / 20.0,
+            state.turn / MAX_TURNS,
+        ]
+        return np.concatenate(
+            [
+                playable[0],
+                playable[1],
+                np.asarray(self.unseen_cards(state), dtype=np.float32),
+                np.asarray(state.known[me], dtype=np.float32),
+                np.asarray(state.known[opp], dtype=np.float32),
+                disc_counts,
+                tops,
+                np.asarray(suit_feats, dtype=np.float32),
+                np.asarray(scalars, dtype=np.float32),
+            ]
+        )
+
     def symmetries(self) -> list[tuple[np.ndarray, np.ndarray]]:
         """Return the 119 non-identity suit permutations (the five suits are interchangeable)."""
         return _suit_symmetries()
