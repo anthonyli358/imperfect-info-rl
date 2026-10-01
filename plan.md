@@ -223,7 +223,11 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      (A first version, "the yardstick finds ~4%", was retracted: a degenerate game and starved PPO.)
   3b. [x] **Re-measure `diverse_sym` and `camel_nash`** with the stronger recipes: nothing more
      found (0.500 / 0.498 and 0.500 / 0.505), so the estimates stay 0.512 and 0.509.
-  4. [ ] **ReBeL:** public belief states, CFR over depth-limited subgames with value-net leaves,
+  4. [x] **ReBeL** (done 2026-10-01, `selfplay/rebel.py`): exact exploitability **0.002**
+     points/game after 20–40 epochs (21 min), level with full-game CFR+ (0.0022); PPO 0.07.
+     Needed: random-iteration play (not unsafe re-solving), trembling-hand beliefs (first run
+     scored 1.30 without them), best-response last turn. Original item:
+     public belief states, CFR over depth-limited subgames with value-net leaves,
      self-play value training; exact exploitability vs step 3.
   5. [ ] **E1:** scale to full Ventures with factored (per-card) beliefs; judge vs `diverse_sym`.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states

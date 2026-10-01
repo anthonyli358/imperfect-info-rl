@@ -51,6 +51,12 @@ recipes can see. It does not rule out a small one: no recipe finds much of a wea
 Mini-Ventures' final 0.07. The head-to-head, robustness-panel and held-out results are direct
 measurements and stand.
 
+**The most promising next method: ReBeL.** On Mini-Ventures, where everything can be checked
+exactly, ReBeL (CFR over public belief states with a learned value network at each turn boundary)
+reaches **0.002 points a game** of exact exploitability, level with the full-game equilibrium and
+about 30× closer than Nash-seeking PPO's 0.07, in 21 minutes of training. It is not yet a Ventures
+agent: there a hidden hand has ~10^8 possibilities, so the beliefs must be approximated (step E1).
+
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
 ~1855 → Nash-seeking PPO ~1940–1970. These Elo figures are anchored on the plain heuristic, which
@@ -81,6 +87,7 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 | Endgame CFR (depth-limited MCCFR) | Never beats the policy (best 0.452); its subgame assumes the opponent sees our hand |
 | NFSP (PPO best response) | Equally unexploitable as Nash PPO on Camel Stocks, but weaker (0.456 head to head) |
 | Tabular / vectorized CFR+ | Exact on toy games and on Mini-Ventures (0.002 points a game); far too big for the real games |
+| **ReBeL (CFR over public belief states + value nets)** | **Works where it can be checked: 0.002 on Mini-Ventures vs PPO's 0.07. Not yet scaled to the real games** |
 
 **What's left, in order:**
 
@@ -88,9 +95,8 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    exploitability; the standard exploiter misses moderate weaknesses.
 2. ~~Re-measure the Ventures and Camel Stocks agents with the stronger exploiter recipes.~~ Done:
    they found nothing more (0.500 / 0.498 on Ventures, 0.500 / 0.505 on Camel Stocks).
-3. **ReBeL on Mini-Ventures (E0, step 4).** Search over public belief states with CFR at each step:
-   the principled fix for why endgame CFR failed (it reasons about what each player can actually
-   infer, instead of assuming the opponent sees our hand). Exact ground truth makes it checkable.
+3. ~~ReBeL on Mini-Ventures (E0, step 4).~~ Done: exact exploitability 0.002 points a game, level
+   with the full-game equilibrium (PPO: 0.07).
 4. **Scale it to full Ventures (E1)** with factored per-card beliefs. Exact beliefs are out of reach
    (the hidden 8-card hand has ~10^8 possibilities), so this is the research part.
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
@@ -142,6 +148,64 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### ReBeL reaches the equilibrium on Mini-Ventures (2026-10-01)
+
+`selfplay/rebel.py`, `experiments/mini_rebel.py`. ReBeL (Brown et al. 2020) searches over **public
+belief states**: the public position plus, for each player, how likely each hidden hand is given
+the strategy played so far. Here each of the game's four turns is a subgame solved with CFR+ (64
+iterations). Where a subgame is cut off, at the start of the next turn, a value network gives the
+value of every possible hand *as a function of the beliefs there*. The networks (one per turn
+boundary: 16, 736 and 14,856 public states; 28 possible hands per player) are trained on the root
+values of subgames solved in self-play, bottom turn first. The implementation is "full width":
+every public state is solved on every pass, which only a small game allows, and which is what
+lets the complete policy be measured exactly.
+
+**Result.** Exact exploitability of the policy ReBeL plays, in points a game:
+
+| | Exploitability | Best response as 1st / 2nd player |
+|---|:---:|:---:|
+| Uniform random play | 2.71 | |
+| Nash-seeking PPO (the recipe) | 0.07 | |
+| **ReBeL, 10 epochs (5 min)** | **0.0048** | −0.041 / +0.051 |
+| **ReBeL, 20 epochs** | **0.0024** | −0.045 / +0.049 |
+| **ReBeL, 30 epochs** | **0.0020** | −0.045 / +0.049 |
+| **ReBeL, 40 epochs (21 min)** | **0.0025** | −0.045 / +0.050 |
+| Full-game CFR+ (the reference equilibrium) | 0.0022 | (game value −0.047) |
+
+- ReBeL matches the equilibrium found by solving the whole game at once, while only ever solving
+  one turn at a time with learned values beyond it. That is the property that could scale:
+  full-game CFR cannot run on Ventures, one-turn subgames can.
+- It is about 30× closer to equilibrium than PPO, on a game where PPO had plateaued.
+- The figure is an upper bound in one respect: the evaluated policy branches from a sample of
+  CFR iterations per turn (8, 4, 16) instead of all 64, because full branching is too slow.
+
+**Three things had to be right, each found by measuring against ground truth:**
+
+1. **Play a random iteration, not the average.** Re-solving each later subgame from the beliefs
+   of the *average* strategy above it ("unsafe re-solving") stalls at 0.085 on Kuhn poker (random
+   play: 0.458): a subgame's equilibrium given fixed beliefs need not be part of a full-game
+   equilibrium (the queen's call is exactly indifferent). ReBeL's rule is to stop CFR at a random
+   iteration, play that iteration's strategy and re-solve from *its* beliefs; in expectation that
+   is the average strategy of CFR on the whole game. Evaluating that expectation: 0.016.
+2. **Beliefs must be defined after a deviation.** The first Mini-Ventures run scored **1.30**.
+   The fault was one-sided: a best responder gained 0.05 as second player and 2.0 as first. CFR+
+   iterates are near-pure, so under one iterate only 12–22% of last-turn public states had any
+   modelled reach; when the opponent deviated into one of the rest, the re-solve had no beliefs
+   and played an arbitrary action. Fix: the beliefs handed to the value network and to the next
+   subgame assume a trembling hand (each player's strategy mixed with 5% uniform play). CFR
+   inside a subgame stays exact and the policy played is unmixed. This also put the network's
+   queries on the distribution it trains on (its error at the beliefs it met had been 2.5 points,
+   against 0.1 in training). Result: 1.30 → 0.0048 at the same point in training.
+3. **The last turn is a best response.** Only the mover acts in the last turn and then the game
+   ends, so its subgame is solved by one backward pass instead of 64 CFR iterations (60× cheaper,
+   and exact).
+
+**What this does not show.** Mini-Ventures has 28 possible hands per player, so beliefs are exact
+vectors and every public state is enumerated. Ventures has ~10^8 possible hands and cannot be
+enumerated: beliefs must be approximated (factored per card, or sampled), public states must be
+visited by sampled self-play, and subgame CFR needs a fast engine. Whether ReBeL keeps its edge
+over PPO under those approximations is the open question (E1).
 
 ### The stronger exploiters find nothing more on the real agents (2026-10-01)
 
