@@ -40,12 +40,13 @@ symmetry where the game has it.** No search at play time. It won on both games b
 | Best PSRO best response vs the Nash mixture | 0.514 (4 rounds) | not run |
 
 **How far to trust the "unexploitable" column.** Every exploitability number comes from a
-*trained* exploiter, so it is a lower bound. How loose is being measured on Mini-Ventures, a version
-of Ventures small enough to solve exactly. A first attempt there was flawed and is retracted (see
-the findings log); the rerun was working and is paused near the end of training. Until it
-finishes: **nothing our RL-based exploiters or PSRO can find beats these agents by more than about
-1.5 points a game, but that is not yet proof of near-equilibrium play.** The head-to-head,
-robustness-panel and held-out results are direct measurements and stand.
+*trained* exploiter, so it is a lower bound. On Mini-Ventures (Ventures shrunk until it can be
+solved exactly) two things were measured against ground truth: the recipe itself gets within 0.07
+points a game of the true equilibrium (97% of the way from random play), but the *standard
+exploiter recipe* used for the numbers above finds only large weaknesses (61% of a big one, 1% of a
+moderate one). More aggressive exploiter recipes find 55–92%. So the figures in this row are being
+re-measured with those; until then read them as "the standard exploiter found nothing", not as
+proof. The head-to-head, robustness-panel and held-out results are direct measurements and stand.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -80,11 +81,10 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 
 **What's left, in order:**
 
-1. **Finish the Mini-Ventures ground truth** (resumable, near the end). How much of an agent's
-   *exact* exploitability does our trained exploiter find? That says how much to trust every
-   exploitability number above.
-2. **If the yardstick is loose, calibrate a stronger exploiter** on Mini-Ventures (where the right
-   answer is known) and re-measure the Ventures and Camel Stocks agents with it.
+1. ~~Finish the Mini-Ventures ground truth.~~ Done: the recipe reaches 0.07 points a game of exact
+   exploitability; the standard exploiter misses moderate weaknesses.
+2. **Re-measure the Ventures and Camel Stocks agents** with the stronger exploiter recipes
+   calibrated on Mini-Ventures, reporting the maximum over recipes.
 3. **ReBeL on Mini-Ventures (E0, step 4).** Search over public belief states with CFR at each step:
    the principled fix for why endgame CFR failed (it reasons about what each player can actually
    infer, instead of assuming the opponent sees our hand). Exact ground truth makes it checkable.
@@ -140,28 +140,63 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
-### Ground truth on Mini-Ventures: first attempt retracted (2026-09-30)
+### Ground truth on Mini-Ventures: the recipe is near equilibrium; the yardstick was too gentle (2026-10-01)
 
-A first ground-truth experiment on Mini-Ventures (Ventures' mechanics shrunk until exactly
-solvable; `games/mini_ventures`) seemed to show the trained-exploiter yardstick finding only ~4% of
-an agent's exact exploitability (0.18 vs 4.13 points a game). **That result is retracted**; two
-flaws in the experiment explain it:
+Mini-Ventures (`games/mini_ventures`) is Ventures' mechanics shrunk until it can be solved exactly:
+2 suits × {backing, 2, 3, 4}, 2-card hands, a 4-card deck; one-slot discard piles, and taking a
+discard burns the top deck card, so a game is exactly four turns. 2.3M states, 333k information
+sets. Two exact tools make everything on it checkable:
 
-1. **The game was degenerate.** With ranks 2–4, a start cost of 5 and only two plays per player,
-   almost any route lost points: a "play whenever you can" policy lost to random play (0.351). The
-   exact best response "won" mostly by not playing. Fixed: start cost 3 ("play only 3s and 4s" now
-   beats random 0.771, "never play" only 0.587).
-2. **PPO was starved of updates.** Its settings came from Ventures, where a game has ~70 decisions
-   per player; a Mini-Ventures game has ~4, so the same batch meant ~16× fewer samples per update.
-   Neither the agent nor the exploiters learned much. With enough updates, PPO trained against
-   random play reaches +2.67 points a game, 98% of the exact best response's +2.71.
+- **Vectorized CFR+ over the whole state graph** (`agents/cfr/graph_cfr.py`) finds its equilibrium:
+  exploitability **0.002 points a game** after 100 iterations (0.4 s each). First-player value −0.047.
+- **Exact best responses** to any policy in 30 s (`eval/exact_br.py`; it matches the old
+  tree-walking calculator exactly on the toy game).
 
-What stands from the attempt: the tools. Mini-Ventures' exact equilibrium comes out of vectorized
-CFR+ over its 2.3M-state graph (`agents/cfr/graph_cfr.py`, exploitability 0.001 points a game in
-100 iterations), and exact best responses take 30 s (`eval/exact_br.py`, matching the old
-calculator exactly on the toy game). The ground-truth comparison is being rerun on the fixed game
-with PPO settings scaled to the game's length. Until then, **how loose the Ventures and Camel Stocks
-exploitability numbers are is unknown**: they remain lower bounds, as they always were.
+**1. The recipe gets close to the true equilibrium** (`experiments/mini_ground_truth.py`; PPO then
+Nash-seeking PPO, batches scaled to the game's length). Exact exploitability, points a game:
+
+| Checkpoint | Greedy (deployed) | Sampled |
+|---|:---:|:---:|
+| PPO 50 | 1.54 | 2.30 |
+| PPO 100 | 0.36 | 0.46 |
+| PPO 150 | 0.074 | 0.076 |
+| PPO 200 | 0.073 | 0.074 |
+| Nash 50 / 100 / 150 / 200 | 0.072 / 0.070 / 0.070 / 0.074 | 0.076 / 0.076 / 0.081 / 0.093 |
+| Uniform random play | 2.71 | |
+| CFR+ equilibrium | 0.002 | |
+
+PPO self-play covers about 97% of the distance from random play to equilibrium, then plateaus at
+~0.07. The Nash phase holds it there but adds nothing on this game (it may be too small for
+self-play's cycling to matter).
+
+**2. Our standard exploiter recipe misses moderate weaknesses**
+(`experiments/calibrate_exploiter.py`). The share of the exact best response's gain that each
+trained-exploiter recipe finds (1000 duplicate deals each):
+
+| Target (exact exploitability) | A: standard (warm start, lr 3e-5, no entropy) | B: warm start, lr 3e-4, entropy 0.01 | C: from scratch, lr 3e-4 |
+|---|:---:|:---:|:---:|
+| PPO 50 (1.54) | 61% | **92%** | 90% |
+| PPO 100 (0.36) | **1%** | 55% | **68%** |
+| PPO 200 (0.073) | 7% | 20% | −7% |
+
+- The standard recipe (the one behind every exploitability number in this log) sees only large
+  weaknesses: 61% of a big one, 1% of a moderate one. Against the final agent it scored exactly
+  0.500: its play never diverged from the target's.
+- The more aggressive recipes recover 55–92% of moderate and large weaknesses.
+- All recipes have a floor: none finds much of a 0.07 weakness (~3% of what random play gives up).
+- Each recipe gives a lower bound, so **the maximum over several recipes is the estimate to
+  report.**
+
+**What this changes.** The Ventures (0.512) and Camel Stocks (0.509) exploitability figures used
+the standard recipe, so they could hide moderate weaknesses. They need re-measuring with recipes
+B and C. What it does not change: the recipe demonstrably approaches a true equilibrium where that
+can be checked.
+
+**A retraction on the way here.** A first version of this experiment reported that "the yardstick
+finds ~4% of the true exploitability" of a PPO agent that was itself no better than random. Both
+came from flaws in the setup: the first Mini-Ventures had a start cost of 5, which made almost any
+play lose points (so the best response "won" by not playing), and PPO used Ventures' batch size on
+a game with ~16× fewer decisions per game, so nothing learned. Both are fixed above.
 
 ### The agents are strong, but much of the Ventures edge was a leaky opponent (2026-09-29)
 

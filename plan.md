@@ -216,11 +216,12 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      3-card hands (≤ 120 possible hands per player).
   2. [x] **Scalable exact exploitability** (enumerate each state once; forward reach, backward
      values) and a policy-network → strategy-table converter.
-  3. [~] **Ground truth for our methods:** exact equilibrium via vectorized CFR+ works. A first
-     comparison ("the yardstick finds ~4%") was **retracted**: the game was degenerate (start cost
-     5 made almost every play lose) and PPO was starved (Ventures batch sizes on ~4-decision games).
-     Fixed (start cost 3; with enough updates PPO reaches 98% of the exact best response vs
-     random). Rerunning with PPO settings scaled to the game's length.
+  3. [x] **Ground truth for our methods.** PPO (then Nash PPO) reaches **0.07 points/game** of
+     exact exploitability (random 2.71, equilibrium 0.002). Exploiter calibration vs exact best
+     responses: the standard recipe finds 61% / 1% / 7% of weaknesses of 1.54 / 0.36 / 0.07;
+     warm start + lr 3e-4 + entropy finds 92% / 55% / 20%; from scratch 90% / 68% / −7%.
+     (A first version, "the yardstick finds ~4%", was retracted: a degenerate game and starved PPO.)
+  3b. [ ] **Re-measure `diverse_sym` and `camel_nash`** with the stronger recipes (max over recipes).
   4. [ ] **ReBeL:** public belief states, CFR over depth-limited subgames with value-net leaves,
      self-play value training; exact exploitability vs step 3.
   5. [ ] **E1:** scale to full Ventures with factored (per-card) beliefs; judge vs `diverse_sym`.
