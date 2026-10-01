@@ -90,3 +90,31 @@ def test_selfplay_with_a_best_response_last_slab() -> None:
     rebel = FullWidthReBeL(PublicToy(), ReBeLConfig(boundaries=(2, 3, 4, 5), cfr_iterations=10))
     data = rebel.selfplay()
     assert set(data) == {3, 4} and all(len(x) for x, _, _ in data.values())
+
+
+def test_turn_solver_matches_the_full_width_solve_on_mini_ventures() -> None:
+    import torch
+
+    import iirl.games  # noqa: F401
+    from iirl.core.registry import make
+    from iirl.selfplay.rebel_turn import TurnSolver
+
+    game = make("mini_ventures")
+    config = ReBeLConfig(boundaries=(4, 7, 10, 13, 16), factored_beliefs=True, per_hand_values=True)
+    rebel = FullWidthReBeL(game, config)
+    full, mask = rebel._solve(rebel.slabs[0], rebel.root_reach, 20)
+    net = rebel.nets[7]
+
+    def value_fn(x: np.ndarray) -> np.ndarray:
+        with torch.no_grad():
+            return net(torch.as_tensor(x))[:, 0].numpy().astype(float) * config.value_scale
+
+    hands = np.asarray(game.private_state_features(), dtype=int)
+    weights = np.ones(len(hands))
+    opening = rebel.cfr.graph.states[rebel.cfr.level_ranges[4][0]]
+    solution = TurnSolver(game, config.explore).solve(
+        opening, (hands, hands), (weights, weights), value_fn, 20
+    )
+    for p in (0, 1):
+        assert (mask[p, 0] == solution.defined[p]).all()
+        assert np.allclose(full[p, 0], solution.values[p], atol=1e-6)

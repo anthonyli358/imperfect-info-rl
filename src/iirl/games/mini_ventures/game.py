@@ -339,6 +339,33 @@ class MiniVentures(Game):
             f"|jd{state.just_discarded_suit}"
         )
 
+    def private_hand(self, state: State, player: Player) -> Counts:
+        """``player``'s hand as counts per card."""
+        assert isinstance(state, MiniVenturesState)
+        return state.hands[player]
+
+    def unseen_cards(self, state: State) -> Counts:
+        """Counts of the cards in the deck or in a hand: public knowledge."""
+        assert isinstance(state, MiniVenturesState)
+        return tuple(d + a + b for d, a, b in zip(state.deck, *state.hands, strict=True))
+
+    def with_hands(
+        self, state: State, player: Player, hand: Counts, other_hand: Counts
+    ) -> MiniVenturesState:
+        """The same public position, ``player`` holding ``hand`` and the other ``other_hand``."""
+        assert isinstance(state, MiniVenturesState)
+        unseen = self.unseen_cards(state)
+        deck = tuple(u - a - b for u, a, b in zip(unseen, hand, other_hand, strict=True))
+        if min(deck) < 0:
+            raise ValueError("the hands do not fit the public position")
+        hands = (hand, other_hand) if player == 0 else (other_hand, hand)
+        return replace(state, deck=deck, hands=hands)
+
+    def chance_is_private(self, state: State) -> bool:
+        """Whether the pending chance outcome is seen only by the mover (a deck draw)."""
+        assert isinstance(state, MiniVenturesState)
+        return state.phase == Phase.DRAW_DECK
+
     def num_private_states(self) -> int:
         """Number of distinct full hands (a player's private state at the start of a turn)."""
         return len(_HAND_INDEX)
