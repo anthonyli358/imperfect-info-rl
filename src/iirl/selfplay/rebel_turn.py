@@ -264,12 +264,6 @@ class TurnSolver:
                 held = np.zeros((n_leaf, hm.shape[1]))
                 np.add.at(held, leaf_p, rho[:, None] * new_p)
                 total = np.bincount(leaf_p, weights=rho, minlength=n_leaf)
-                self.debug = (
-                    leaf_states,
-                    live,
-                    belief_o,
-                    held / np.maximum(total, 1e-300)[:, None],
-                )
                 x[:, belief_m] = (held / np.maximum(total, 1e-300)[:, None])[live][row_leaf]
                 out = value_fn(x)
                 value_p = value_p.copy()
