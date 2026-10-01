@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from enum import IntEnum
+from itertools import combinations
 
 import numpy as np
 
@@ -51,6 +52,7 @@ NUM_ACTIONS = TAKE_DISCARD_OFFSET + NUM_SUITS
 Counts = tuple[int, ...]
 Route = tuple[int, ...]
 _NONE: Counts = (0,) * NUM_CARDS
+_HAND_INDEX = {hand: i for i, hand in enumerate(combinations(range(NUM_CARDS), HAND_SIZE))}
 
 
 def suit_of(card: int) -> int:
@@ -335,6 +337,48 @@ class MiniVentures(Game):
             f"P{player}|h{state.hands[player]}|r{state.routes}|d{state.discards}|g{state.gone}"
             f"|k{sum(state.deck)}|kn{state.known}|tm{state.to_move}|ph{int(state.phase)}"
             f"|jd{state.just_discarded_suit}"
+        )
+
+    def num_private_states(self) -> int:
+        """Number of distinct full hands (a player's private state at the start of a turn)."""
+        return len(_HAND_INDEX)
+
+    def private_state_index(self, state: State, player: Player) -> int:
+        """Index of ``player``'s hand among all full hands (start-of-turn states only)."""
+        assert isinstance(state, MiniVenturesState)
+        return _HAND_INDEX[tuple(c for c, n in enumerate(state.hands[player]) if n)]
+
+    def public_state_string(self, state: State) -> str:
+        """What both players observe: everything except the hands and the deck's contents."""
+        assert isinstance(state, MiniVenturesState)
+        return (
+            f"r{state.routes}|d{state.discards}|g{state.gone}|k{sum(state.deck)}|kn{state.known}"
+            f"|tm{state.to_move}|ph{int(state.phase)}|jd{state.just_discarded_suit}"
+        )
+
+    def public_state_tensor(self, state: State) -> np.ndarray:
+        """The public state as features, from the point of view of the player to move."""
+        assert isinstance(state, MiniVenturesState)
+        me, opp = state.to_move, 1 - state.to_move
+
+        def per_card(pred) -> list[float]:  # noqa: ANN001
+            return [float(pred(c)) for c in range(NUM_CARDS)]
+
+        return np.asarray(
+            [
+                *per_card(lambda c: any(c in r for r in state.routes[me])),
+                *per_card(lambda c: any(c in r for r in state.routes[opp])),
+                *per_card(lambda c: can_play(state.routes[me][suit_of(c)], c)),
+                *per_card(lambda c: can_play(state.routes[opp][suit_of(c)], c)),
+                *per_card(lambda c: c in state.discards),
+                *state.gone,
+                *state.known[me],
+                *state.known[opp],
+                sum(state.deck) / DECK_AFTER_DEAL,
+                self.score(state, me) / 10.0,
+                self.score(state, opp) / 10.0,
+            ],
+            dtype=np.float32,
         )
 
     def resample_from_infostate(
