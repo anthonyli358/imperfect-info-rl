@@ -24,6 +24,15 @@ iterations this is the average strategy of CFR on the whole game, which is what 
 :meth:`FullWidthReBeL.evaluate` builds that expected policy explicitly, branching into the next
 slab from every iteration (or a weighted sample of them), so its exploitability can be measured.
 
+**Beliefs assume a trembling hand.** CFR+ iterates are close to pure strategies, so under one
+iterate most public states have no reach at all, and a subgame there has no beliefs to solve
+against: when the real opponent deviates into one, the re-solve would play arbitrarily (measured
+on Mini-Ventures: a best responder gained 2 points a game this way). So the beliefs at a slab's
+bottom, which go to the value network and on to the next slab, are computed as if each player
+had played the slab's strategy mixed with ``explore`` of uniform play. Beliefs are then defined
+everywhere, and the network is queried on the same kind of beliefs it is trained on. Inside a
+slab CFR is exact (regrets use the unmixed strategies), and the policy played is not mixed.
+
 Bookkeeping, per state ``i`` in a slab and player ``p``:
 
 * ``reach[i, p]``: the product of everyone's probabilities *except p's* on the way to ``i``
@@ -63,6 +72,7 @@ class ReBeLConfig:
     passes are made per epoch; only the first includes the last slab (usually by far the largest,
     and it needs no network), so the upper boundaries see ``passes`` belief samples per epoch.
     A boundary's network starts training ``warmup_epochs`` after the one below it.
+    ``explore`` is the probability of uniform play assumed when computing beliefs.
 
     ``eval_samples[k]`` is how many of slab ``k``'s iterations the evaluated policy branches from
     (drawn in proportion to their weight); ``None`` branches from every iteration, which is exact
@@ -75,7 +85,7 @@ class ReBeLConfig:
     eval_samples: tuple[int | None, ...] | None = None
     epochs: int = 30
     passes: int = 4
-    explore: float = 0.1
+    explore: float = 0.05
     warmup_epochs: int = 2
     buffer_epochs: int = 8
     hidden: int = 256
@@ -235,8 +245,7 @@ class FullWidthReBeL:
             per_epoch = 1 if d == b[-2] else config.passes
             self.buffers[d] = deque(maxlen=config.buffer_epochs * per_epoch)
         self.slabs = [self._slab(b[k], b[k + 1]) for k in range(len(b) - 1)]
-        # Per state: reach of all but player 0, all but player 1, player 0's own, player 1's own.
-        self._reach = np.zeros((c.n, 4))
+        self._reach = np.zeros((c.n, 6))
         self._value = np.zeros((c.n, 2))
         self.root_reach = self._chance_reach(b[0])
         self.epoch = 0
@@ -272,6 +281,13 @@ class FullWidthReBeL:
             uniform=1.0 / np.bincount(infoset, minlength=i1 - i0)[infoset],
         )
 
+    def _edge_sigma(self, slab: SimpleNamespace, sigma: np.ndarray) -> tuple[np.ndarray, ...]:
+        """Per-edge action probabilities: as played, and with the trembles beliefs assume."""
+        played = np.where(slab.acting, sigma[slab.slot], 1.0)
+        eps = self.config.explore
+        trembling = (1.0 - eps) * sigma + eps * slab.uniform
+        return played, np.where(slab.acting, trembling[slab.slot], 1.0)
+
     def _chance_reach(self, depth: int) -> np.ndarray:
         """Root reaches: chance's probability of each state at ``depth``, and own reaches of 1."""
         c = self.cfr
@@ -289,6 +305,10 @@ class FullWidthReBeL:
         ones = np.ones(hi - lo)
         return np.stack([reach[lo:hi], reach[lo:hi], ones, ones], axis=1)
 
+    # Columns of ``self._reach``: all-but-0 and all-but-1 (exact within the slab), the same two
+    # with trembles (the beliefs at the slab's bottom), then each player's own reach. A slab's
+    # root and what it hands on are (states, 4): the two belief columns and the two own reaches.
+
     def _current(self, slab: SimpleNamespace) -> np.ndarray:
         """The slab's regret-matching strategy per slot (uniform with no positive regret)."""
         pos = self.cfr.regret[slab.s0 : slab.s1]
@@ -298,21 +318,25 @@ class FullWidthReBeL:
     def _forward(
         self, slab: SimpleNamespace, sigma: np.ndarray, root: np.ndarray, own: bool = True
     ) -> np.ndarray:
-        """Push reaches from the slab's top to its bottom under ``sigma``; returns edge sigma.
+        """Push reaches from the slab's top to its bottom under ``sigma``.
 
         ``own`` False skips the players' own reaches, which only building a policy needs.
+        Returns the per-edge probabilities as played.
         """
         c, reach = self.cfr, self._reach
         reach[c.level_ranges[slab.a][0] : c.level_ranges[slab.b][1]] = 0.0
         lo, hi = c.level_ranges[slab.a]
-        reach[lo:hi] = root
-        edge_sigma = np.where(slab.acting, sigma[slab.slot], 1.0)
+        reach[lo:hi, :2] = root[:, :2]
+        reach[lo:hi, 2:] = root
+        played, trembling = self._edge_sigma(slab, sigma)
         others = np.where(slab.kind == -1, slab.chance, 1.0)
         weights = (
-            np.where(slab.kind == 1, edge_sigma, others),
-            np.where(slab.kind == 0, edge_sigma, others),
-            np.where(slab.kind == 0, edge_sigma, 1.0),
-            np.where(slab.kind == 1, edge_sigma, 1.0),
+            np.where(slab.kind == 1, played, others),
+            np.where(slab.kind == 0, played, others),
+            np.where(slab.kind == 1, trembling, others),
+            np.where(slab.kind == 0, trembling, others),
+            np.where(slab.kind == 0, played, 1.0),
+            np.where(slab.kind == 1, played, 1.0),
         )
         for lvl in range(slab.a, slab.b):
             lo_e, hi_e = c.edge_bounds[lvl] - slab.e0, c.edge_bounds[lvl + 1] - slab.e0
@@ -320,13 +344,13 @@ class FullWidthReBeL:
                 continue
             lo, hi = c.level_ranges[lvl + 1]
             par, ch = slab.parent[lo_e:hi_e], slab.child[lo_e:hi_e] - lo
-            for k, w in enumerate(weights if own else weights[:2]):
+            for k, w in enumerate(weights if own else weights[:4]):
                 reach[lo:hi, k] += np.bincount(
                     ch, weights=reach[par, k] * w[lo_e:hi_e], minlength=hi - lo
                 )
-        return edge_sigma
+        return played
 
-    def _backward(self, slab: SimpleNamespace, edge_sigma: np.ndarray) -> None:
+    def _backward(self, slab: SimpleNamespace, played: np.ndarray) -> None:
         """Fill both players' state values from the slab's bottom (network or terminal) up."""
         c, value = self.cfr, self._value
         lo_s, hi_s = c.level_ranges[slab.a][0], c.level_ranges[slab.b][1]
@@ -335,9 +359,9 @@ class FullWidthReBeL:
         if slab.b in self.nets:
             leaf = self.levels[slab.b]
             value[leaf.lo + leaf.idx] = leaf.values(
-                self.nets[slab.b], self._reach[leaf.lo : leaf.hi], self.config.value_scale
+                self.nets[slab.b], self._reach[leaf.lo : leaf.hi, 2:4], self.config.value_scale
             )
-        edge_w = np.where(slab.acting, edge_sigma, slab.chance)
+        edge_w = np.where(slab.acting, played, slab.chance)
         for lvl in range(slab.b - 1, slab.a - 1, -1):
             lo_e, hi_e = c.edge_bounds[lvl] - slab.e0, c.edge_bounds[lvl + 1] - slab.e0
             if lo_e == hi_e:
@@ -357,7 +381,6 @@ class FullWidthReBeL:
         weight: float = 0.0,
         picks: dict[int, float] | None = None,
         branch: Callable[[np.ndarray, float], None] | None = None,
-        explore: float = 0.0,
     ) -> tuple[np.ndarray, np.ndarray]:
         """CFR+ on one slab from the root reaches ``root`` (a (states, 4) array).
 
@@ -366,7 +389,7 @@ class FullWidthReBeL:
         added to the policy being built (``cfr.strategy_sum``), weighted by ``weight``, the
         iteration's weight and the own reach carried in ``root``. After each iteration ``t`` in
         ``picks``, ``branch`` is called with the reaches at the slab's bottom under that
-        iteration's strategy (mixed with ``explore`` of uniform) and ``picks[t]``.
+        iteration's strategy and ``picks[t]``.
         """
         if slab.actor is not None:
             return self._best_response(slab, root, weight)
@@ -381,8 +404,8 @@ class FullWidthReBeL:
         reach, value = self._reach, self._value
         for t in range(1, iterations + 1):
             sigma = self._current(slab)
-            edge_sigma = self._forward(slab, sigma, root, own=bool(weight))
-            self._backward(slab, edge_sigma)
+            played = self._forward(slab, sigma, root, own=bool(weight))
+            self._backward(slab, played)
             cfv = np.bincount(
                 slab.slot,
                 weights=np.where(
@@ -395,17 +418,14 @@ class FullWidthReBeL:
                 c.regret[slab.s0 : slab.s1] + cfv - node[slab.infoset], 0.0
             )
             if weight:
-                own = np.where(slab.acting, reach[slab.parent, 2 + slab.who] * edge_sigma, 0.0)
+                own = np.where(slab.acting, reach[slab.parent, 4 + slab.who] * played, 0.0)
                 c.strategy_sum[slab.s0 : slab.s1] += (weight * t / norm) * np.bincount(
                     slab.slot, weights=own, minlength=n_slots
                 )
             values, mask = level.root_values(reach[lo:hi, :2], value[lo:hi])
             total += t * values
             if picks and t in picks:
-                if explore:
-                    mixed = (1.0 - explore) * sigma + explore * slab.uniform
-                    self._forward(slab, mixed, root, own=bool(weight))
-                branch(reach[lo_b:hi_b].copy(), picks[t])
+                branch(reach[lo_b:hi_b, 2:].copy(), picks[t])
         return total / norm, mask
 
     def _best_response(
@@ -452,8 +472,8 @@ class FullWidthReBeL:
                 value[lo:hi, p] = np.where(live, up, value[lo:hi, p])
         lo, hi = c.level_ranges[slab.a]
         if weight:
-            edge_sigma = self._forward(slab, sigma, root)
-            own = np.where(slab.acting, reach[slab.parent, 2 + slab.who] * edge_sigma, 0.0)
+            played = self._forward(slab, sigma, root)
+            own = np.where(slab.acting, reach[slab.parent, 4 + slab.who] * played, 0.0)
             c.strategy_sum[slab.s0 : slab.s1] += weight * np.bincount(
                 slab.slot, weights=own, minlength=slab.s1 - slab.s0
             )
@@ -463,8 +483,7 @@ class FullWidthReBeL:
         """One self-play pass down the slabs; returns training data per inner boundary.
 
         Each slab is solved from the beliefs left by a random iteration of the slab above (drawn
-        in proportion to the iteration's weight, with ``explore`` of uniform play mixed in so
-        that every public state keeps some reach).
+        in proportion to the iteration's weight).
         """
         cfg = self.config
         steps = np.arange(1, cfg.cfr_iterations + 1)
@@ -478,7 +497,6 @@ class FullWidthReBeL:
                 cfg.cfr_iterations,
                 picks={stop: 1.0},
                 branch=lambda leaf, _: leaves.append(leaf),  # noqa: B023 - called inside _solve
-                explore=cfg.explore,
             )
             if slab.a in self.nets:
                 level = self.levels[slab.a]
@@ -489,7 +507,7 @@ class FullWidthReBeL:
                     (level._mover_order(values)[rows] / cfg.value_scale).astype(np.float32),
                     level._mover_order(mask)[rows],
                 )
-            root = leaves[0]
+            root = leaves[0] if leaves else root  # the last slab hands nothing on
         return data
 
     def fit(self) -> dict[int, float]:
@@ -572,6 +590,6 @@ class FullWidthReBeL:
             total = np.bincount(slab.infoset, weights=sigma, minlength=slab.num_infosets)
             self._forward(slab, sigma / total[slab.infoset], root)
             lo, hi = self.cfr.level_ranges[slab.b]
-            root = self._reach[lo:hi].copy()
+            root = self._reach[lo:hi, 2:].copy()
             worst = max(worst, self.levels[slab.b].range_spread(root))
         return worst

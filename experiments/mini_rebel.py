@@ -42,7 +42,7 @@ class Config:
             boundaries=(4, 7, 10, 13, 16),  # the start of each of the four turns, and the end
             cfr_iterations=64,
             eval_iterations=64,
-            eval_samples=(8, 2, 2),
+            eval_samples=(8, 4, 16),
             epochs=40,
             passes=3,
         )

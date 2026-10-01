@@ -71,3 +71,9 @@ def test_single_actor_last_slab_best_response_matches_cfr() -> None:
     slab.actor = None  # force CFR on the same subgame
     iterated, _ = rebel._solve(slab, root, 2000)
     assert mask.any() and np.allclose(exact[mask], iterated[mask], atol=0.01)
+
+
+def test_selfplay_with_a_best_response_last_slab() -> None:
+    rebel = FullWidthReBeL(PublicToy(), ReBeLConfig(boundaries=(2, 3, 4, 5), cfr_iterations=10))
+    data = rebel.selfplay()
+    assert set(data) == {3, 4} and all(len(x) for x, _, _ in data.values())
