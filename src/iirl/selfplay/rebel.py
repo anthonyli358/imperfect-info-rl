@@ -251,7 +251,10 @@ class FullWidthReBeL:
         s0, s1 = int(slots.min()), int(slots.max()) + 1
         i0, i1 = int(c.slot_infoset[s0]), int(c.slot_infoset[s1 - 1]) + 1
         infoset = c.slot_infoset[s0:s1] - i0
+        actors = np.unique(kind[acting])
         return SimpleNamespace(
+            # One player acts and the leaves are terminal: a best response solves it exactly.
+            actor=int(actors[0]) if len(actors) == 1 and b not in self.nets else None,
             a=a,
             b=b,
             e0=e0,
@@ -365,6 +368,8 @@ class FullWidthReBeL:
         ``picks``, ``branch`` is called with the reaches at the slab's bottom under that
         iteration's strategy (mixed with ``explore`` of uniform) and ``picks[t]``.
         """
+        if slab.actor is not None:
+            return self._best_response(slab, root, weight)
         c, level = self.cfr, self.levels[slab.a]
         c.regret[slab.s0 : slab.s1] = 0.0
         n_slots = slab.s1 - slab.s0
@@ -402,6 +407,57 @@ class FullWidthReBeL:
                     self._forward(slab, mixed, root, own=bool(weight))
                 branch(reach[lo_b:hi_b].copy(), picks[t])
         return total / norm, mask
+
+    def _best_response(
+        self, slab: SimpleNamespace, root: np.ndarray, weight: float
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """Solve a slab where only one player acts before the game ends: one backward pass.
+
+        With nobody to respond, the subgame's equilibrium is the actor's best response to the
+        root beliefs, which is also what CFR would converge to. Returns and adds to the policy
+        as :meth:`_solve` does.
+        """
+        c, level, m = self.cfr, self.levels[slab.a], slab.actor
+        reach, value = self._reach, self._value
+        sigma = slab.uniform.copy()
+        self._forward(slab, sigma, root, own=False)  # the actor's column ignores its own sigma
+        lo_s, hi_s = c.level_ranges[slab.a][0], c.level_ranges[slab.b][1]
+        value[lo_s:hi_s, 0] = c.value0_terminal[lo_s:hi_s]
+        value[lo_s:hi_s, 1] = -c.value0_terminal[lo_s:hi_s]
+        for lvl in range(slab.b - 1, slab.a - 1, -1):
+            lo_e, hi_e = c.edge_bounds[lvl] - slab.e0, c.edge_bounds[lvl + 1] - slab.e0
+            if lo_e == hi_e:
+                continue
+            lo, hi = c.level_ranges[lvl]
+            par, ch = slab.parent[lo_e:hi_e], slab.child[lo_e:hi_e]
+            acting = slab.acting[lo_e:hi_e]
+            if acting.any():
+                slot = slab.slot[lo_e:hi_e][acting]
+                s_lo, s_hi = int(slot.min()), int(slot.max()) + 1
+                cfv = np.bincount(
+                    slot - s_lo,
+                    weights=reach[par[acting], m] * value[ch[acting], m],
+                    minlength=s_hi - s_lo,
+                )
+                infoset = slab.infoset[s_lo:s_hi] - slab.infoset[s_lo]
+                starts = np.flatnonzero(np.r_[True, infoset[1:] != infoset[:-1]])
+                best = cfv >= np.maximum.reduceat(cfv, starts)[infoset]
+                rank = np.cumsum(best)
+                first = rank - (rank - best)[starts][infoset] == 1  # break ties: first action
+                sigma[s_lo:s_hi] = best & first
+            edge_w = np.where(acting, sigma[slab.slot[lo_e:hi_e]], slab.chance[lo_e:hi_e])
+            live = ~c.is_terminal[lo:hi]
+            for p in (0, 1):
+                up = np.bincount(par - lo, weights=edge_w * value[ch, p], minlength=hi - lo)
+                value[lo:hi, p] = np.where(live, up, value[lo:hi, p])
+        lo, hi = c.level_ranges[slab.a]
+        if weight:
+            edge_sigma = self._forward(slab, sigma, root)
+            own = np.where(slab.acting, reach[slab.parent, 2 + slab.who] * edge_sigma, 0.0)
+            c.strategy_sum[slab.s0 : slab.s1] += weight * np.bincount(
+                slab.slot, weights=own, minlength=slab.s1 - slab.s0
+            )
+        return level.root_values(root[:, :2], value[lo:hi])
 
     def selfplay(self, last_slab: bool = True) -> dict[int, tuple[np.ndarray, ...]]:
         """One self-play pass down the slabs; returns training data per inner boundary.

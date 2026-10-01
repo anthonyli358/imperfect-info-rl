@@ -59,3 +59,15 @@ def test_learned_leaf_values_give_a_near_equilibrium_policy() -> None:
     trained = rebel.evaluate()["exploitability"]
     random_play = exploitability(game, uniform_policy)["exploitability"]
     assert trained < untrained and trained < 0.1 * random_play
+
+
+def test_single_actor_last_slab_best_response_matches_cfr() -> None:
+    rebel = FullWidthReBeL(PublicToy(), ReBeLConfig(boundaries=(2, 3, 4, 5)))
+    slab = rebel.slabs[-1]
+    assert slab.actor == 0  # only player 0 (facing a bet after checking) acts, then the game ends
+    lo, hi = rebel.cfr.level_ranges[4]
+    root = np.random.default_rng(0).random((hi - lo, 4)) + 0.1
+    exact, mask = rebel._solve(slab, root, 1)
+    slab.actor = None  # force CFR on the same subgame
+    iterated, _ = rebel._solve(slab, root, 2000)
+    assert mask.any() and np.allclose(exact[mask], iterated[mask], atol=0.01)

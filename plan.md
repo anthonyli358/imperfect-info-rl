@@ -221,7 +221,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      responses: the standard recipe finds 61% / 1% / 7% of weaknesses of 1.54 / 0.36 / 0.07;
      warm start + lr 3e-4 + entropy finds 92% / 55% / 20%; from scratch 90% / 68% / −7%.
      (A first version, "the yardstick finds ~4%", was retracted: a degenerate game and starved PPO.)
-  3b. [ ] **Re-measure `diverse_sym` and `camel_nash`** with the stronger recipes (max over recipes).
+  3b. [x] **Re-measure `diverse_sym` and `camel_nash`** with the stronger recipes: nothing more
+     found (0.500 / 0.498 and 0.500 / 0.505), so the estimates stay 0.512 and 0.509.
   4. [ ] **ReBeL:** public belief states, CFR over depth-limited subgames with value-net leaves,
      self-play value training; exact exploitability vs step 3.
   5. [ ] **E1:** scale to full Ventures with factored (per-card) beliefs; judge vs `diverse_sym`.

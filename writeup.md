@@ -10,7 +10,7 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 ---
 
-## The headline (as of 2026-09-30)
+## The headline (as of 2026-10-01)
 
 **The best approach: Nash-seeking PPO self-play, trained against non-leaky opponents, with suit
 symmetry where the game has it.** No search at play time. It won on both games built so far:
@@ -36,7 +36,7 @@ symmetry where the game has it.** No search at play time. It won on both games b
 | Beats the previous best agent | 0.569 vs `careful` | (first recipe run) |
 | Weakest matchup vs any heuristic style | **0.795** (careful) | **0.940** (plain; careful 0.966) |
 | Held-out search opponent (PIMC) | not re-run | **0.950** |
-| Best trained exploiter's score (lower bound) | 0.512 (3 runs) | 0.509 (2 runs) |
+| Best trained exploiter's score (lower bound) | 0.512 (5 runs, 3 recipes) | 0.509 (4 runs, 3 recipes) |
 | Best PSRO best response vs the Nash mixture | 0.514 (4 rounds) | not run |
 
 **How far to trust the "unexploitable" column.** Every exploitability number comes from a
@@ -44,9 +44,12 @@ symmetry where the game has it.** No search at play time. It won on both games b
 solved exactly) two things were measured against ground truth: the recipe itself gets within 0.07
 points a game of the true equilibrium (97% of the way from random play), but the *standard
 exploiter recipe* used for the numbers above finds only large weaknesses (61% of a big one, 1% of a
-moderate one). More aggressive exploiter recipes find 55–92%. So the figures in this row are being
-re-measured with those; until then read them as "the standard exploiter found nothing", not as
-proof. The head-to-head, robustness-panel and held-out results are direct measurements and stand.
+moderate one). More aggressive exploiter recipes find 55–92% of those, so both agents were
+re-measured with them: **neither recipe found more than the standard one** (best 0.500 and 0.505),
+so the row stands at 0.512 and 0.509. That rules out a moderate or large weakness of the kind those
+recipes can see. It does not rule out a small one: no recipe finds much of a weakness the size of
+Mini-Ventures' final 0.07. The head-to-head, robustness-panel and held-out results are direct
+measurements and stand.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -83,8 +86,8 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 
 1. ~~Finish the Mini-Ventures ground truth.~~ Done: the recipe reaches 0.07 points a game of exact
    exploitability; the standard exploiter misses moderate weaknesses.
-2. **Re-measure the Ventures and Camel Stocks agents** with the stronger exploiter recipes
-   calibrated on Mini-Ventures, reporting the maximum over recipes.
+2. ~~Re-measure the Ventures and Camel Stocks agents with the stronger exploiter recipes.~~ Done:
+   they found nothing more (0.500 / 0.498 on Ventures, 0.500 / 0.505 on Camel Stocks).
 3. **ReBeL on Mini-Ventures (E0, step 4).** Search over public belief states with CFR at each step:
    the principled fix for why endgame CFR failed (it reasons about what each player can actually
    infer, instead of assuming the opponent sees our hand). Exact ground truth makes it checkable.
@@ -139,6 +142,31 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### The stronger exploiters find nothing more on the real agents (2026-10-01)
+
+The calibration below showed the standard exploiter recipe misses moderate weaknesses, so the two
+best agents were re-attacked with the recipes that do find them
+(`experiments/remeasure_exploitability.py`; 300 iterations each, warm start from the target,
+best checkpoint judged on 1000 fresh duplicate deals):
+
+| Target | A: standard (lr 3e-5, no entropy) | B: lr 3e-4, entropy 0.01 | B2: lr 1e-4, entropy 0.003 |
+|---|:---:|:---:|:---:|
+| Ventures `diverse_sym` | 0.512 (max of 3 runs) | 0.500 | 0.498 |
+| Camel Stocks `camel_nash` | 0.509 (max of 2 runs) | 0.500 | 0.505 |
+
+- **The estimates do not move:** 0.512 and 0.509, the maximum over recipes.
+- A score of exactly 0.500 means no checkpoint beat the exploiter's starting point (a copy of the
+  target). On Ventures recipe B drifted well below it during training (0.35–0.39) and never
+  recovered; B2 hovered around 0.47–0.53.
+- **What this does and does not show.** On Mini-Ventures recipe B found 55% of a 0.36-point
+  weakness and 92% of a 1.5-point one, so a weakness of that relative size in these agents would
+  probably have shown. It found only 20% of the 0.07 one, and looked just like this (a flat 0.500)
+  when the standard recipe met it. So: no moderate or large weakness visible to gradient-trained
+  exploiters; a small one cannot be excluded.
+- Caveat on transfer: recipe B was calibrated on a four-turn game. On ~150-move Ventures the same
+  learning rate may simply be too disruptive (the drift suggests so), which is why B2 was added.
+  From-scratch exploiters (recipe C) were not run: 300 iterations is far too few to learn Ventures.
 
 ### Ground truth on Mini-Ventures: the recipe is near equilibrium; the yardstick was too gentle (2026-10-01)
 
