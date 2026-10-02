@@ -236,14 +236,18 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      - [x] **One-position solver** over candidate hands through the game interface
        (`selfplay/rebel_turn.py`), validated against the full-width solver; Ventures hooks added.
        Cost on Ventures: ~2 s per decision at 16 candidates × 20 iterations.
-     - [ ] **Sampled deck draws** in the turn solver (most rows are draw outcomes): target ~5×.
-     - [ ] **Ventures value network**: (public features, both players' per-card beliefs, a hand) →
-       value. Pre-train on `diverse_sym` self-play outcomes, since ReBeL self-play from scratch is
-       unaffordable at this speed.
-     - [ ] **Public belief tracking**: candidate hands and weights for both players, updated from
-       each solve's strategy (the particle filter in `agents/belief.py` is the starting point).
-     - [ ] **Agent + match** vs `diverse_sym` on duplicate deals; then ReBeL self-play fine-tuning
-       if the search helps. A fast engine (Phase D) if the Python engine is the limit.
+     - [x] **Sampled deck draws** + no opponent rows at play time: ~7× fewer network rows.
+     - [x] **Public belief tracking** (`selfplay/public_belief.py`): overlap with the true hand
+       0.354 vs 0.296 without the policy model.
+     - [x] **Ventures value network** (`selfplay/rebel_value.py`), trained on `diverse_sym`
+       self-play with one random move in 60% of games: held-out R² 0.46, RMSE 32 points; beliefs
+       add nothing.
+     - [x] **Agent + match** (2026-10-02): **loses.** Plain search 0.050 (−110 points a game);
+       anchored to the blueprint 0.435 / 0.405. Cause: value error ~10 points vs ~1-point gaps
+       between moves; the search picks the maximum of noise.
+     - [ ] **Open decision.** (a) A value signal ~100× cleaner: paired rollouts that share future
+       cards (learn move differences), or far more data via a fast engine. (b) Take ReBeL to a
+       game it suits (small private states, low outcome luck): Liar's Dice or a small poker.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero

@@ -10,7 +10,7 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 ---
 
-## The headline (as of 2026-10-01)
+## The headline (as of 2026-10-02)
 
 **The best approach: Nash-seeking PPO self-play, trained against non-leaky opponents, with suit
 symmetry where the game has it.** No search at play time. It won on both games built so far:
@@ -58,8 +58,14 @@ about 30× closer than Nash-seeking PPO's 0.07, in 21 minutes of training. It is
 agent: there a hidden hand has ~10^8 possibilities, so the beliefs must be approximated (step E1).
 The three approximations Ventures forces (per-card beliefs, one hand valued at a time, training
 on sampled positions) have each been priced on Mini-Ventures: all three together still reach
-0.0035. What stands between this and a Ventures agent is speed: a one-turn solve on a real
-Ventures position takes about 2 seconds in the current Python engine.
+0.0035.
+
+**On Ventures itself the first ReBeL agent loses to the policy it searches from** (0.05 unaided;
+0.41-0.44 when anchored to that policy). The search machinery is not the reason: the value network
+is. It is off by about 10 points per position, the real gaps between moves are a point or two, and
+a search that takes the maximum of noisy values picks the noise. This is the fifth search built on
+this game that fails to beat the reactive policy, each time for the same reason. Nash-seeking PPO
+remains the best Ventures agent.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -91,7 +97,7 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 | Endgame CFR (depth-limited MCCFR) | Never beats the policy (best 0.452); its subgame assumes the opponent sees our hand |
 | NFSP (PPO best response) | Equally unexploitable as Nash PPO on Camel Stocks, but weaker (0.456 head to head) |
 | Tabular / vectorized CFR+ | Exact on toy games and on Mini-Ventures (0.002 points a game); far too big for the real games |
-| **ReBeL (CFR over public belief states + value nets)** | **Works where it can be checked: 0.002 on Mini-Ventures vs PPO's 0.07. Not yet scaled to the real games** |
+| **ReBeL (CFR over public belief states + value nets)** | **Reaches equilibrium where values can be exact: 0.002 on Mini-Ventures vs PPO's 0.07.** On Ventures the first agent loses to its own blueprint (0.05; 0.41-0.44 anchored): the learned value is too noisy to search on |
 
 **What's left, in order:**
 
@@ -101,11 +107,14 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    they found nothing more (0.500 / 0.498 on Ventures, 0.500 / 0.505 on Camel Stocks).
 3. ~~ReBeL on Mini-Ventures (E0, step 4).~~ Done: exact exploitability 0.002 points a game, level
    with the full-game equilibrium (PPO: 0.07).
-4. **Scale it to full Ventures (E1).** Done so far: the approximations Ventures needs survive
-   ground truth (0.0035 with all three), and the solver that works on one position through the
-   game interface is built and validated. Still to build, in order: sampled deck draws (speed), a
-   belief-conditioned value network for Ventures, public belief tracking through a game, then the
-   agent and its match against `diverse_sym`.
+4. **ReBeL on full Ventures (E1): built, and it loses.** Every piece exists and is validated
+   (beliefs, one-position solver, value network, agent), and the agent scores 0.05 against
+   `diverse_sym`, 0.41-0.44 when anchored to it. The limit is value accuracy (~10 points of error
+   against ~1-point gaps between moves). Making it work needs a value signal about two orders of
+   magnitude cleaner, which means either far more data than this machine can generate in Python
+   or learning move *differences* directly from paired rollouts. Open decision: invest there, or
+   take ReBeL to a game where values are learnable (a small-hand game such as Liar's Dice or
+   poker, the settings it was designed for).
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
 6. **Human play.** The one opponent type never measured; games are recorded by the play page.
 7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
@@ -155,6 +164,72 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### ReBeL on full Ventures: every part works, and the agent loses to its blueprint (2026-10-02)
+
+`experiments/rebel_ventures.py`; `selfplay/public_belief.py`, `selfplay/rebel_value.py`,
+`selfplay/rebel_turn.py`, `agents/rebel.py`. The agent, at the start of each of its turns, solves
+that turn's subgame over candidate hands for both players, with a value network at the positions
+one turn ahead, and plays the solved strategy for the hand it holds. `diverse_sym` is the
+*blueprint*: it supplies the likelihoods that update the beliefs, and its self-play games are the
+value network's training data.
+
+**The parts, each checked on its own:**
+
+- **Public beliefs** (48 candidate hands per player, updated only from public events). Their
+  per-card marginals overlap the true hand by 0.354 ± 0.004 with the policy model and
+  0.296 ± 0.004 without it (every turn start of 12 games, both players); ~7 ms per move. 128 candidates: no better.
+- **Solver speed.** Sampling 6 deck draws per action and skipping the opponent's leaf rows at
+  play time cut a solve from ~17,000 to ~2,400 network rows per iteration; the top action was
+  unchanged for all 16 test hands. A game takes 7-10 s.
+- **Value network** (public features, both beliefs, one hand, card-relative hand features → final
+  margin). Held-out R² 0.46, RMSE 32 points against a margin spread of 45, from 885,520 positions
+  of 23,792 games, 60% of them containing one random move so that off-policy positions are
+  covered. A first version without the hand features and the off-policy games reached R² 0.33.
+  It overfits after one epoch either way. **The belief inputs add nothing** (R² 0.457 with,
+  0.460 without).
+
+**The match** (100 paired deals each, against `diverse_sym` playing greedily):
+
+| Agent | Score | Margin, points a game |
+|---|:---:|:---:|
+| Plain search | 0.050 ± 0.015 | −109.8 ± 4.2 |
+| Blueprint policy × exp(search value / 3 points) | 0.435 ± 0.032 | −12.7 ± 3.1 |
+| Blueprint policy × exp(search value / 8 points) | 0.405 ± 0.026 | −6.3 ± 2.1 |
+
+The more the agent defers to the blueprint, the less it loses on margin; nothing gains.
+
+**Why, measured** (119 turn starts from blueprint self-play, the search run alongside):
+
+- The pipeline is consistent: the solver's value of the blueprint's own move matches the
+  network's direct value of the position on average (bias +1.9 points, correlation 0.89).
+- But the two differ by **11 points (sd)** for the same hand one move apart. That is the
+  network's noise per evaluation.
+- The search claims a move **9.6 points better than the blueprint's on the average turn** (median
+  8.5), and would change the move on 84% of turns. Gains that size do not exist against a strong
+  policy: it is what the maximum over ~16 noisy evaluations looks like.
+- A plain-search game ends with routes of length [1, 2, 0, 1, 7] against the blueprint's
+  [5, 6, 7, 6, 3]: it opens routes on optimistic noise and never finishes them.
+
+**What this means.**
+
+- ReBeL's logic is sound (it reached the equilibrium on Mini-Ventures, with exact values at the
+  end of the game). It needs values accurate to well under the gap between moves. On Ventures a
+  single game's margin has ~45 points of luck, the gap between reasonable moves is a point or
+  two, and 24,000 games give a network that is ~10 points off.
+- This is the same wall every search on this game has hit: AlphaZero's value, belief search,
+  expert iteration, endgame CFR, and now ReBeL. The reactive policy wins because policy-gradient
+  training averages that luck over ~10^7 decisions; a value network trained on outcomes cannot
+  catch up at any data size this machine can generate.
+- The beliefs, which are what ReBeL adds over plain search, carry no measurable value
+  information here. Hidden information matters less in Ventures than the luck of the draw.
+- Anchoring to the blueprint bounds the damage; it cannot create a gain the values do not
+  contain.
+
+**What would change the answer:** a value signal ~100× cleaner. Either that many more games
+(needs the fast engine), or learning move *differences* from paired rollouts that share the same
+future cards, which cancels the luck directly. Or a game where ReBeL's strengths apply: small
+private states and outcomes that follow from decisions, as in Liar's Dice or poker.
 
 ### E1, stage 1: the approximations Ventures needs survive ground truth (2026-10-01)
 
