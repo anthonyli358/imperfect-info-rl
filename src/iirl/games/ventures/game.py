@@ -559,6 +559,39 @@ class Ventures(Game):
             ]
         )
 
+    def hand_features(self, state: State, player: Player, hands: np.ndarray) -> np.ndarray:
+        """Card-relative features of candidate hands for ``player`` at this public position.
+
+        ``hands`` is (n, card types) counts. Per suit: how many number cards the hand could still
+        add to the route, their sum, the backing cards it could add, the route's value if all of
+        them were played, and the better of that and what the route is worth now. Then the sum of
+        those bests and the share of the hand that can no longer be played anywhere.
+        """
+        assert isinstance(state, VenturesState)
+        hands = np.asarray(hands, dtype=np.float32)
+        out = np.zeros((len(hands), 5 * NUM_SUITS + 2), dtype=np.float32)
+        usable = np.zeros(len(hands), dtype=np.float32)
+        for s in range(NUM_SUITS):
+            route = state.routes[player][s]
+            max_num, backs = route_max_number(route), route_backing_count(route)
+            base = s * len(RANKS)
+            live = (_NUMBER_RANKS > max_num).astype(np.float32)
+            numbers = hands[:, base + 1 : base + len(RANKS)] * live
+            count, total = numbers.sum(axis=1), numbers @ _NUMBER_RANKS
+            backing = hands[:, base] if max_num == 0 else np.zeros(len(hands), dtype=np.float32)
+            projected = (route_number_sum(route) + total - START_COST) * (1 + backs + backing)
+            projected += BONUS_POINTS * (len(route) + count + backing >= BONUS_CARDS)
+            now = (route_number_sum(route) - START_COST) * (1 + backs) if route else 0.0
+            now += BONUS_POINTS * (len(route) >= BONUS_CARDS)
+            best = np.maximum(projected, now)
+            out[:, 5 * s : 5 * s + 5] = np.stack(
+                [count / 8.0, total / 20.0, backing, projected / 20.0, best / 20.0], axis=1
+            )
+            out[:, -2] += best / 20.0
+            usable += count + backing
+        out[:, -1] = 1.0 - usable / np.maximum(hands.sum(axis=1), 1.0)
+        return out
+
     def symmetries(self) -> list[tuple[np.ndarray, np.ndarray]]:
         """Return the 119 non-identity suit permutations (the five suits are interchangeable)."""
         return _suit_symmetries()

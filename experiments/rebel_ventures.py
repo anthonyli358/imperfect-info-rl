@@ -41,8 +41,9 @@ class Config:
 
     game: str = "ventures"
     blueprint: str = "runs/diverse_sym.pt"
-    out: str = "runs/rebel_v"
-    games: int = 8000
+    out: str = "runs/rebel_v2"
+    games: int = 24000
+    deviate: float = 0.6  # share of games with one random move (off-policy positions)
     games_per_shard: int = 100
     workers: int = 10
     value: ValueConfig = field(default_factory=ValueConfig)
@@ -61,7 +62,7 @@ def data(config: Config) -> None:
             seeds = list(
                 range(shard * config.games_per_shard, (shard + 1) * config.games_per_shard)
             )
-            jobs.append((path, (config.game, config.blueprint, seeds, belief)))
+            jobs.append((path, (config.game, config.blueprint, seeds, belief, config.deviate)))
     print(f"{len(jobs)} shards of {config.games_per_shard} games to collect", flush=True)
     t0 = time.perf_counter()
     with mp.get_context("spawn").Pool(config.workers) as pool:
@@ -98,6 +99,7 @@ def value(config: Config) -> None:
                     "state_dict": net.state_dict(),
                     "n_public": net.n_public,
                     "n_cards": net.n_cards,
+                    "n_extra": net.n_extra,
                     "hidden": cfg.hidden,
                     "layers": cfg.layers,
                     "scale": cfg.scale,

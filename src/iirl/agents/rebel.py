@@ -35,6 +35,11 @@ class ReBeLAgentConfig:
     ``candidates`` is how many of its own candidate hands the solve keeps (drawn by weight; the
     solve's cost grows with it), ``draws`` how many unseen draws it follows per action sequence.
     ``greedy`` plays the solved strategy's most likely action instead of sampling from it.
+
+    ``anchor`` (points) switches the choice of action from the solved strategy to the blueprint's
+    policy reweighted by the solve's action values: ``blueprint(a) * exp(value(a) / anchor)``.
+    The search then overrides the blueprint only where it sees a difference that is large next
+    to ``anchor``, which should sit near the size of the value network's errors.
     """
 
     blueprint: str
@@ -44,6 +49,7 @@ class ReBeLAgentConfig:
     draws: int | None = 6
     explore: float = 0.05
     greedy: bool = True
+    anchor: float | None = None
     belief: PublicBeliefConfig = field(default_factory=default_belief_config)
     seed: int = 0
 
@@ -51,7 +57,9 @@ class ReBeLAgentConfig:
 def load_value(path: str) -> HandValueNet:
     """Load a value network saved by ``experiments/rebel_ventures.py``."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
-    net = HandValueNet(ck["n_public"], ck["n_cards"], ck["hidden"], ck["layers"], ck["scale"])
+    net = HandValueNet(
+        ck["n_public"], ck["n_cards"], ck["n_extra"], ck["hidden"], ck["layers"], ck["scale"]
+    )
     net.load_state_dict(ck["state_dict"])
     net.eval()
     return net
@@ -69,6 +77,7 @@ class ReBeLAgent(Agent):
         self.rng = np.random.default_rng(config.seed)
         self.solves = 0
         self.fallbacks = 0
+        self.changed = 0  # anchored choices that differ from the blueprint's
 
     def reset(self, game: Game, player: Player) -> None:
         """Start a new game: fresh beliefs, no plan."""
@@ -84,14 +93,26 @@ class ReBeLAgent(Agent):
             seed=int(self.rng.integers(2**31)),
         )
         self.previous: State = game.new_initial_state()
-        self.plan: tuple[list[int], np.ndarray] | None = None
+        self.plan: tuple[list[int], np.ndarray, np.ndarray] | None = None
 
     def observe(self, game: Game, state: State, action: Action | None) -> None:
         """Update the public beliefs on every transition."""
         self.belief.observe(self.previous, action, state)
         self.previous = state
 
-    def _choose(self, actions: list[int], probs: np.ndarray, rng: np.random.Generator) -> int:
+    def _choose(
+        self,
+        game: Game,
+        state: State,
+        actions: list[int],
+        probs: np.ndarray,
+        worth: np.ndarray,
+        rng: np.random.Generator,
+    ) -> int:
+        if self.config.anchor is not None:
+            prior = np.asarray(self.model(game, [state])[0])[actions]
+            probs = prior * np.exp((worth - worth.max()) / self.config.anchor)
+            self.changed += int(np.argmax(probs) != np.argmax(prior))
         if self.config.greedy:
             return int(actions[int(np.argmax(probs))])
         return int(actions[int(rng.choice(len(actions), p=probs / probs.sum()))])
@@ -101,10 +122,10 @@ class ReBeLAgent(Agent):
         legal = game.legal_actions(state)
         me = self.player
         if self.plan is not None:  # the second decision of a turn already solved
-            actions, probs = self.plan
+            actions, probs, worth = self.plan
             self.plan = None
             if set(actions) == set(legal):
-                return self._choose(actions, probs, rng)
+                return self._choose(game, state, actions, probs, worth, rng)
         mine = np.asarray(game.private_hand(state, me))
         other = sum(game.private_hand(state, 1 - me))
         if self.belief.hands is None or mine.sum() < other:
@@ -126,13 +147,16 @@ class ReBeLAgent(Agent):
         solution = self.solver.solve(
             state, hands, ranges, self.value.value_fn, self.config.iterations
         )
-        if not solution.actions[0]:  # no opponent candidate is compatible with my real hand
+        if not solution.actions[0] or (0, solution.actions[0][0]) not in solution.follow_ups:
+            # No opponent candidate is compatible with my real hand.
             self.fallbacks += 1
             return self.blueprint.step(game, state, rng)
         self.solves += 1
-        action = self._choose(solution.actions[0], solution.average[0], rng)
-        follow, probs, _ = solution.follow_ups[(0, action)]
-        self.plan = (list(follow), np.asarray(probs))
+        action = self._choose(
+            game, state, solution.actions[0], solution.average[0], solution.action_values[0], rng
+        )
+        follow, probs, _, worth = solution.follow_ups[(0, action)]
+        self.plan = (list(follow), np.asarray(probs), np.asarray(worth))
         return action
 
 

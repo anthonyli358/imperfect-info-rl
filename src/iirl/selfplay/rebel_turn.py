@@ -25,13 +25,15 @@ hidden hand; the solver weights each (hand, outcome) by the opponent mass compat
 
 The value function takes rows of ``[public features, beliefs of the player to move at the leaf,
 beliefs of the other, a hand, whose hand (0: the player to move)]`` and returns that hand's
-expected payoff: the per-hand, factored-belief network of ``selfplay.rebel``.
+expected payoff: the per-hand, factored-belief network of ``selfplay.rebel``. If the game has
+``hand_features(state, player, hands)`` (card-relative features of hands at a public position),
+they are inserted after the hand.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -46,7 +48,8 @@ class TurnSolution:
 
     ``actions[i]`` lists hand ``i``'s first-decision actions with ``average[i]`` /
     ``sampled[i]`` their probabilities (the average strategy, and the strategy of the iteration
-    the caller asked to stop at). ``follow_ups[(i, action)]`` is the same for the second decision
+    the caller asked to stop at), and ``action_values[i]`` what each is worth to that hand
+    (averaged over iterations). ``follow_ups[(i, action)]`` is the same for the second decision
     after ``action``: ``(actions, average, sampled)``. ``values[p]`` are the root values of
     player ``p``'s candidate hands and ``defined[p]`` says which have any compatible opponent.
     """
@@ -54,9 +57,10 @@ class TurnSolution:
     actions: list[list[int]]
     average: list[np.ndarray]
     sampled: list[np.ndarray]
-    follow_ups: dict[tuple[int, int], tuple[list[int], np.ndarray, np.ndarray]]
+    follow_ups: dict[tuple[int, int], tuple[list[int], np.ndarray, np.ndarray, np.ndarray]]
     values: tuple[np.ndarray, np.ndarray]
     defined: tuple[np.ndarray, np.ndarray]
+    action_values: list[np.ndarray] = field(default_factory=list)
 
 
 def _match(regret: np.ndarray, infoset: np.ndarray, n: int, uniform: np.ndarray) -> np.ndarray:
@@ -123,8 +127,10 @@ class TurnSolver:
         actions: list[list[int]] = [[] for _ in range(n)]
         average = [np.zeros(0) for _ in range(n)]
         sampled = [np.zeros(0) for _ in range(n)]
+        worth = [np.zeros(0) for _ in range(n)]
         for k, i in enumerate(mover):
             actions[i], average[i], sampled[i] = sol.actions[k], sol.average[k], sol.sampled[k]
+            worth[i] = sol.action_values[k]
         values, defined = [], []
         for p in (0, 1):
             full = np.zeros(len(ranges[p]))
@@ -135,7 +141,13 @@ class TurnSolver:
             defined.append(there)
         follow_ups = {(int(mover[k]), a): v for (k, a), v in sol.follow_ups.items()}
         return TurnSolution(
-            actions, average, sampled, follow_ups, (values[0], values[1]), (defined[0], defined[1])
+            actions,
+            average,
+            sampled,
+            follow_ups,
+            (values[0], values[1]),
+            (defined[0], defined[1]),
+            worth,
         )
 
     def _solve(
@@ -230,6 +242,11 @@ class TurnSolver:
                             scale[n] * in_deck[:, n] / size,
                         )
 
+        if not p_hand:  # nothing can be played out (no candidates fit together): no solution
+            none = [np.zeros(0) for _ in hm]
+            zeros = (np.zeros(len(hands[0])), np.zeros(len(hands[1])))
+            unknown = (np.zeros(len(hands[0]), dtype=bool), np.zeros(len(hands[1]), dtype=bool))
+            return TurnSolution([[] for _ in hm], none, none, {}, zeros, unknown, none)
         n1, n2, n_leaf = len(slot1_hand), len(slot2_parent), len(leaf_states)
         inf1, inf2 = np.asarray(slot1_hand), np.asarray(slot2_parent)
         hand_p, slot1_p, slot2_p = np.asarray(p_hand), np.asarray(p_slot1), np.asarray(p_slot2)
@@ -260,15 +277,37 @@ class TurnSolver:
             paths = np.flatnonzero(~terminal[leaf_p])  # the mover's hands at live leaves
             opp_leaf, opp_hand = np.nonzero(fits_o if self.other_values else fits_o[:0])
             n_cards = hm.shape[1]
-            x = np.zeros(
-                (len(paths) + len(opp_leaf), feats.shape[1] + 3 * n_cards + 1), dtype=np.float32
-            )
             row_leaf = np.concatenate([live_index[leaf_p[paths]], opp_leaf])
             f = feats.shape[1]
+            row_hands = np.concatenate([new_p[paths], ho[opp_hand].astype(np.float32)])
+            extra = np.zeros((len(row_leaf), 0), dtype=np.float32)
+            if hasattr(game, "hand_features"):
+                order = np.argsort(row_leaf, kind="stable")
+                starts = np.searchsorted(row_leaf[order], np.arange(len(live) + 1))
+                blocks = []
+                for k in range(len(live)):
+                    part = order[starts[k] : starts[k + 1]]
+                    mine = part < len(paths)
+                    block = np.zeros((len(part), 0), dtype=np.float32)
+                    for owner, rows_of in ((m, part[mine]), (o, part[~mine])):
+                        if len(rows_of):
+                            got = game.hand_features(
+                                leaf_states[live[k]], owner, row_hands[rows_of]
+                            )
+                            if block.shape[1] == 0:
+                                block = np.zeros((len(part), got.shape[1]), dtype=np.float32)
+                            block[mine if owner == m else ~mine] = got
+                    blocks.append(block)
+                width = max(b.shape[1] for b in blocks)
+                extra = np.zeros((len(row_leaf), width), dtype=np.float32)
+                for k, block in enumerate(blocks):
+                    if block.shape[1]:
+                        extra[order[starts[k] : starts[k + 1]]] = block
+            x = np.zeros((len(row_leaf), f + 3 * n_cards + extra.shape[1] + 1), dtype=np.float32)
             x[:, :f] = feats[row_leaf]
             x[:, f : f + n_cards] = belief_o[row_leaf]  # the opponent moves next
-            x[: len(paths), f + 2 * n_cards : f + 3 * n_cards] = new_p[paths]
-            x[len(paths) :, f + 2 * n_cards : f + 3 * n_cards] = ho[opp_hand]
+            x[:, f + 2 * n_cards : f + 3 * n_cards] = row_hands
+            x[:, f + 3 * n_cards : f + 3 * n_cards + extra.shape[1]] = extra
             x[: len(paths), -1] = 1.0  # the mover's hands are "the other player's" at the leaf
             net_rows = (x, row_leaf, paths, opp_leaf, opp_hand, slice(f + n_cards, f + 2 * n_cards))
 
@@ -280,6 +319,8 @@ class TurnSolver:
         mass_m = compat @ ro  # opponent mass compatible with each of the mover's hands
         mass_o = rm @ compat
         total_m, total_o = np.zeros(len(hm)), np.zeros(len(ho))
+        worth1, worth2 = np.zeros(n1), np.zeros(n2)
+        per_hand = np.where(mass_m > 0, mass_m, 1.0)
         value_o = np.zeros((n_leaf, len(ho)))
         value_o[terminal] = payoff[terminal, o][:, None]
         for t in range(1, iterations + 1):
@@ -309,7 +350,9 @@ class TurnSolver:
             reg1 = np.maximum(reg1 + node2 - node1[inf1], 0.0)
             sum1 += t * sig1
             sum2 += t * sig1[inf2] * sig2
-            total_m += t * node1 / np.where(mass_m > 0, mass_m, 1.0)
+            total_m += t * node1 / per_hand
+            worth1 += t * node2 / per_hand[inf1]
+            worth2 += t * q2 / per_hand[inf1[inf2]]
             if self.other_values:
                 played = rm[hand_p] * sig1[slot1_p] * sig2[slot2_p]
                 reached = ((played[:, None] * theirs_p) * value_o[leaf_p]).sum(axis=0)
@@ -325,12 +368,13 @@ class TurnSolver:
             part = slice(second[s1], second[s1 + 1])
             i = slot1_hand[s1]
             a1 = actions1[i][s1 - first[i]]
-            follow_ups[(i, a1)] = (slot2_action[part], avg2[part], kept2[part])
+            follow_ups[(i, a1)] = (slot2_action[part], avg2[part], kept2[part], worth2[part] / norm)
         return TurnSolution(
             actions=actions1,
             average=[avg1[first[i] : first[i + 1]] for i in range(len(hm))],
             sampled=[kept1[first[i] : first[i + 1]] for i in range(len(hm))],
             follow_ups=follow_ups,
+            action_values=[worth1[first[i] : first[i + 1]] / norm for i in range(len(hm))],
             values=(total_m / norm, total_o / norm) if m == 0 else (total_o / norm, total_m / norm),
             defined=(mass_m > 0, mass_o > 0) if m == 0 else (mass_o > 0, mass_m > 0),
         )
