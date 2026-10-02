@@ -245,9 +245,19 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      - [x] **Agent + match** (2026-10-02): **loses.** Plain search 0.050 (−110 points a game);
        anchored to the blueprint 0.435 / 0.405. Cause: value error ~10 points vs ~1-point gaps
        between moves; the search picks the maximum of noise.
-     - [ ] **Open decision.** (a) A value signal ~100× cleaner: paired rollouts that share future
-       cards (learn move differences), or far more data via a fast engine. (b) Take ReBeL to a
-       game it suits (small private states, low outcome luck): Liar's Dice or a small poker.
+     - [x] **Audit: where does search suit Ventures?** (2026-10-02,
+       `experiments/ventures_search_audit.py`; user chose to stay on Ventures.) Paired rollouts on
+       572 positions: the search loses 4-6 points a turn, worst when it swaps to a discard the
+       opponent can play (−10.5); the policy is improvable only in the endgame (deck ≤ 6: at
+       least +1.05 ± 0.37 a turn); luck is 22-38 points per paired rollout; the opponent's hand
+       shifts a move's value by 2-4 points.
+     - [x] **Late-game paired rollouts on the policy** (`agents/rollout.py`): **beats
+       `diverse_sym`**, 0.526 ± 0.006 from 6 cards left, 0.538 ± 0.008 from 12; with
+       belief-drawn re-deals 0.532 ± 0.008 (not significantly better).
+     - [ ] **Next on this line.** Robustness panel and exploiters for the rollout agent (its gain
+       is so far only against the policy it models the opponent with); more rollouts to push the
+       threshold earlier; distil its endgame choices into the policy; a value network trained on
+       paired-rollout *differences* (the only signal clean enough) if search is to work earlier.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero

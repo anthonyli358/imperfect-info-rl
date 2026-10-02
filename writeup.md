@@ -64,8 +64,14 @@ on sampled positions) have each been priced on Mini-Ventures: all three together
 0.41-0.44 when anchored to that policy). The search machinery is not the reason: the value network
 is. It is off by about 10 points per position, the real gaps between moves are a point or two, and
 a search that takes the maximum of noisy values picks the noise. This is the fifth search built on
-this game that fails to beat the reactive policy, each time for the same reason. Nash-seeking PPO
-remains the best Ventures agent.
+this game that fails to beat the reactive policy, each time for the same reason.
+
+**Where search does suit Ventures: the last few turns, with honest rollouts.** An audit that
+measured every move's true value by paired rollouts found the policy improvable only once the
+deck is nearly empty. Acting on that, the policy plus late-game rollouts **beats the policy
+itself, 0.538 ± 0.008 (+3.5 points a game)**: the first search on this game to do so, and the
+strongest Ventures agent so far against `diverse_sym`. (Measured against that one opponent only;
+robustness and exploitability not yet re-measured.)
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -98,6 +104,7 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 | NFSP (PPO best response) | Equally unexploitable as Nash PPO on Camel Stocks, but weaker (0.456 head to head) |
 | Tabular / vectorized CFR+ | Exact on toy games and on Mini-Ventures (0.002 points a game); far too big for the real games |
 | **ReBeL (CFR over public belief states + value nets)** | **Reaches equilibrium where values can be exact: 0.002 on Mini-Ventures vs PPO's 0.07.** On Ventures the first agent loses to its own blueprint (0.05; 0.41-0.44 anchored): the learned value is too noisy to search on |
+| **Late-game paired rollouts on top of the policy** | **Beats the policy: 0.526 from 6 cards left, 0.538 from 12.** Works because it needs no learned value and only acts where rollouts can resolve a difference |
 
 **What's left, in order:**
 
@@ -112,9 +119,12 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    `diverse_sym`, 0.41-0.44 when anchored to it. The limit is value accuracy (~10 points of error
    against ~1-point gaps between moves). Making it work needs a value signal about two orders of
    magnitude cleaner, which means either far more data than this machine can generate in Python
-   or learning move *differences* directly from paired rollouts. Open decision: invest there, or
-   take ReBeL to a game where values are learnable (a small-hand game such as Liar's Dice or
-   poker, the settings it was designed for).
+   or learning move *differences* directly from paired rollouts. The audit (findings log) says
+   where to look: the endgame is improvable and rollouts already capture it; hidden information
+   moves a move's value by 2-6 points, but under 20-40 points of luck per rollout.
+   Next on this line: measure the rollout agent on the robustness panel and with exploiters (its
+   gain so far is against the policy it also uses to model the opponent); push the rollouts
+   earlier with more samples; distil its endgame choices back into the policy.
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
 6. **Human play.** The one opponent type never measured; games are recorded by the play page.
 7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
@@ -164,6 +174,115 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Where search suits Ventures: an audit by paired rollouts, and the first search to beat the policy (2026-10-02)
+
+`experiments/ventures_search_audit.py`, `agents/rollout.py`. The ReBeL agent's failure showed
+that our search could not see the gaps between moves. It did not show where gaps exist, how big
+they are, or how much they depend on the hidden hand. The audit measures that directly.
+
+**Method.** 572 start-of-turn positions from `diverse_sym` self-play (one per game, at a
+uniformly random turn). Every first move (play or discard) is played out to the end by the
+greedy policy in 8 versions of the hidden information (the true one and 7 re-deals of the
+opponent's hand and deck consistent with the mover's view) × 8 shuffles of the deck in each.
+All moves see the same worlds and the same future cards, so the luck cancels in the differences.
+A move's true value is its mean over the 64. "True" means *if both sides then continue with the
+policy*: this measures one-turn improvements on it, not deeper plans.
+
+**1. Our search loses everywhere, and worst in one specific way.**
+
+| Phase | n | Search changes the move | True gain per turn | Gain it claimed |
+|---|:---:|:---:|:---:|:---:|
+| Early (deck > 30) | 197 | 0.83 | −4.08 ± 0.52 | +9.05 ± 0.66 |
+| Middle (16–30) | 205 | 0.87 | −6.02 ± 0.61 | +14.31 ± 0.86 |
+| Late (≤ 15) | 170 | 0.85 | −4.78 ± 0.56 | +10.01 ± 0.84 |
+
+By kind of swap (policy's move → search's move; true gain, points):
+
+| Swap | n | True gain |
+|---|:---:|:---:|
+| extend a route → **discard the opponent can play at once** | 125 | −10.53 ± 0.80 |
+| discard → discard the opponent can play at once | 33 | −11.93 ± 1.79 |
+| open a route → discard the opponent can play at once | 24 | −9.79 ± 1.84 |
+| open a route → other discard | 37 | −6.85 ± 1.14 |
+| extend a route → other discard | 76 | −3.47 ± 0.58 |
+| extend → extend, open → open, discard → discard | 51 / 40 / 35 | −1.68 / −1.88 / −1.07 |
+
+- The search's costliest habit is handing the opponent a playable card: the same leak the
+  agents themselves once had to unlearn. The value network was trained on games where the
+  opponent mostly was not offered such cards.
+- The value network is not empty: its ranking of moves correlates with the true ranking at
+  0.36–0.44. But its top move is the truly best one only 9–12% of the time.
+- Anchored to the policy (8 points) the search changes 18–29% of moves for a true gain of zero
+  (−0.11 ± 0.13, −0.05 ± 0.14, +0.15 ± 0.14).
+
+**2. The policy is improvable in the endgame, and not measurably before it.** What a better
+first move would gain over the policy's, per turn:
+
+| Phase | n | Upper bound | Lower bound | Lower bound among the policy's own top 3 |
+|---|:---:|:---:|:---:|:---:|
+| Early (deck > 30) | 197 | +3.85 ± 0.25 | −1.86 ± 0.55 | −0.56 ± 0.33 |
+| Middle (16–30) | 205 | +2.63 ± 0.21 | −0.72 ± 0.41 | +0.17 ± 0.29 |
+| Late (7–15) | 104 | +1.78 ± 0.30 | −0.39 ± 0.53 | +0.28 ± 0.28 |
+| **Endgame (deck ≤ 6)** | 66 | +1.16 ± 0.32 | **+1.05 ± 0.37** | +0.39 ± 0.24 |
+
+(Upper: the best move by all 64 rollouts, which flatters itself. Lower: the best move chosen on
+half the rollouts and scored on the other half, which is hurt by choosing among ~13 noisy
+candidates. The truth is between.) Only in the endgame do the bounds meet above zero: about a
+point a turn is there to be had. Earlier the bracket straddles zero: 32 paired rollouts per move
+cannot find a better move than the policy's.
+
+**3. Luck is the obstacle, even with the future cards shared.** How a move's advantage over the
+policy's move varies, for moves within 5 points of it:
+
+| Kind of move | Moves | sd across opponent hands | sd across deck orders |
+|---|:---:|:---:|:---:|
+| Extend a route | 700 | 2.2 | 21.9 |
+| Open a route | 461 | 3.9 | 32.8 |
+| Other discard | 1187 | 3.7 | 30.1 |
+| Discard the opponent can play | 539 | 4.3 | 37.9 |
+
+- One paired rollout's difference between two moves has a spread of 22–38 points. Resolving a
+  1-point gap at one position takes on the order of 900 rollouts per move.
+- **Hidden information does matter:** the right move shifts by 2–4 points with the opponent's
+  hand, most for discards they might use and for opening a route, least for extending one. That
+  exceeds the ~1-point gaps between close moves, so belief reasoning has something real to
+  capture. It is ~8× smaller than the luck, which is why a network trained on outcomes could not
+  find it (and why the beliefs added nothing to the ReBeL value network).
+
+**4. Acting on it: late-game paired rollouts beat the policy.** The agent plays `diverse_sym`,
+except that once the deck is down to N cards it plays every first move out with the policy in 8
+re-dealt hidden worlds × 8 deck orders, and switches only if the best move's paired advantage
+over the policy's move is at least 2 standard errors. Against `diverse_sym`, 400 paired deals:
+
+| Agent | Score | Margin, points a game |
+|---|:---:|:---:|
+| Rollouts from 6 cards left, uniform re-deals | 0.526 ± 0.006 | +2.97 ± 0.31 |
+| Rollouts from 12 cards left, uniform re-deals | **0.538 ± 0.008** | +3.52 ± 0.43 |
+| Rollouts from 6 cards left, re-deals drawn from the tracked belief | 0.532 ± 0.008 | +3.39 ± 0.32 |
+
+- The audit's prediction held: ~1 point a turn over the last ~3 own turns is ~3 points a game.
+- Starting at 12 cards adds little (+0.5 points for 4× the time): the improvable part really is
+  the last few turns.
+- Drawing the opponent's hand from the belief instead of uniformly is +0.4 points, about one
+  standard error: the right direction, not established.
+- It switches away from the policy's move only once or twice a game.
+
+**Caveats.** The gain is measured against the policy that the rollouts also use as their model
+of the opponent, which is the most favourable case; the robustness panel and exploiters have not
+been run on it. It costs 4–12 s a game from 6 cards, ~25 s from 12.
+
+**Where search suits Ventures, in short.**
+
+- *Suits:* the endgame, where few cards remain, rollouts are nearly deterministic, and the
+  policy has real (if small) errors. Honest rollouts, no learned value, and a significance test
+  before overriding.
+- *Does not suit:* one-turn search on a learned value anywhere in the game (value error ~10
+  points against ~1-point gaps); rollout search before the last ~12 cards at this budget (luck
+  of 20–40 points per rollout).
+- *Open:* belief reasoning. The hidden hand moves a move's value by 2–4 points, so the prize
+  exists; capturing it needs either far more rollouts per decision or a value signal that
+  cancels luck the way paired rollouts do.
 
 ### ReBeL on full Ventures: every part works, and the agent loses to its blueprint (2026-10-02)
 

@@ -10,8 +10,13 @@ shuffles of the deck in each (the same worlds and orders for every move, so the 
 the differences), and switches to the best move only if its paired advantage over the blueprint's
 move is at least ``z`` standard errors. The second decision of a turn stays the blueprint's.
 
+With ``belief`` the re-deals are not uniform: the opponent's hand is drawn from the tracked
+public belief (``selfplay.public_belief``, the blueprint as the model of the opponent), with any
+cards the agent itself holds swapped for random unseen ones.
+
 Game hooks: ``resample_from_infostate`` and a ``deck`` of card counts on the state (the deck's
-order is fixed per rollout so that all moves see the same future cards).
+order is fixed per rollout so that all moves see the same future cards); for ``belief`` also the
+hooks ``public_belief`` needs.
 """
 
 from __future__ import annotations
@@ -21,9 +26,12 @@ from dataclasses import dataclass
 import numpy as np
 
 from iirl.agents.base import Agent
+from iirl.agents.belief import net_opponent_model
 from iirl.agents.ppo.agent import PPOAgent
 from iirl.core.game import Game, State
-from iirl.core.types import Action
+from iirl.core.types import Action, Player
+from iirl.nn.policy_value import NetEvaluator
+from iirl.selfplay.public_belief import PublicBelief, PublicBeliefConfig
 
 
 @dataclass(frozen=True)
@@ -35,6 +43,9 @@ class RolloutConfig:
     worlds: int = 8
     orders: int = 8
     z: float = 2.0
+    belief: bool = False
+    particles: int = 256
+    temperature: float = 4.0
     seed: int = 0
 
 
@@ -60,6 +71,45 @@ class RolloutImprover(Agent):
         self.rng = np.random.default_rng(config.seed)
         self.searched = 0
         self.switched = 0
+        self.tracker: PublicBelief | None = None
+        self.informed = 0  # worlds drawn from the belief (the rest fell back to uniform)
+
+    def reset(self, game: Game, player: Player) -> None:
+        """Start a new game (and, with ``belief``, a fresh belief about both hands)."""
+        if self.config.belief:
+            cfg = PublicBeliefConfig(
+                particles=self.config.particles, temperature=self.config.temperature
+            )
+            model = net_opponent_model(NetEvaluator(self.blueprint.net))
+            self.tracker = PublicBelief(game, model, cfg, seed=int(self.rng.integers(2**31)))
+            self.previous = game.new_initial_state()
+
+    def observe(self, game: Game, state: State, action: Action | None) -> None:
+        """Update the belief on every transition."""
+        if self.tracker is not None:
+            self.tracker.observe(self.previous, action, state)
+            self.previous = state
+
+    def _worlds(self, game: Game, state: State, me: int) -> list[State]:
+        """Re-deals of what the agent cannot see: from the belief if tracked, else uniform."""
+        n = self.config.worlds
+        if self.tracker is not None and self.tracker.hands is not None:
+            mine = np.asarray(game.private_hand(state, me))
+            hands, weights = self.tracker.hands[1 - me], self.tracker.weights[1 - me]
+            room = np.asarray(game.unseen_cards(state)) - mine  # what the opponent could hold
+            size = sum(game.private_hand(state, 1 - me))
+            worlds = []
+            for k in self.rng.choice(len(hands), size=n, p=weights / weights.sum()):
+                # The belief does not know my hand: swap a candidate's cards that I hold for
+                # random cards I cannot see, keeping the rest of what the belief inferred.
+                hand = np.minimum(hands[k], room)
+                spare = np.repeat(np.arange(len(room)), room - hand)
+                extra = self.rng.choice(spare, size=size - hand.sum(), replace=False)
+                np.add.at(hand, extra, 1)
+                worlds.append(game.with_hands(state, me, tuple(mine), tuple(hand)))
+            self.informed += n
+            return worlds
+        return [game.resample_from_infostate(state, me, self.rng) for _ in range(n)]
 
     def step(self, game: Game, state: State, rng: np.random.Generator) -> Action:
         """Play the blueprint's move unless rollouts show a clearly better first move."""
@@ -73,8 +123,7 @@ class RolloutImprover(Agent):
         self.searched += 1
         margins = np.zeros((cfg.worlds * cfg.orders, len(legal)))
         row = 0
-        for _ in range(cfg.worlds):
-            world = game.resample_from_infostate(state, me, self.rng)
+        for world in self._worlds(game, state, me):
             for _ in range(cfg.orders):
                 order = np.repeat(np.arange(len(world.deck)), world.deck)
                 self.rng.shuffle(order)
