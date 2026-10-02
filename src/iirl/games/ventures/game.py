@@ -476,6 +476,11 @@ class Ventures(Game):
         assert isinstance(state, VenturesState)
         return state.hands[player]
 
+    def known_cards(self, state: State, player: Player) -> tuple[int, ...]:
+        """Cards publicly known to be in ``player``'s hand (seen taken from a discard pile)."""
+        assert isinstance(state, VenturesState)
+        return state.known[player]
+
     def unseen_cards(self, state: State) -> tuple[int, ...]:
         """Counts of the cards in the deck or in a hand: public knowledge."""
         assert isinstance(state, VenturesState)

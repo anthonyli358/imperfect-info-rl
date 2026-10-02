@@ -344,6 +344,11 @@ class MiniVentures(Game):
         assert isinstance(state, MiniVenturesState)
         return state.hands[player]
 
+    def known_cards(self, state: State, player: Player) -> Counts:
+        """Cards publicly known to be in ``player``'s hand (seen taken from a discard pile)."""
+        assert isinstance(state, MiniVenturesState)
+        return state.known[player]
+
     def unseen_cards(self, state: State) -> Counts:
         """Counts of the cards in the deck or in a hand: public knowledge."""
         assert isinstance(state, MiniVenturesState)

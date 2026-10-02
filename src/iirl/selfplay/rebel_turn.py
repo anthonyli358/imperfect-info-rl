@@ -68,9 +68,28 @@ def _match(regret: np.ndarray, infoset: np.ndarray, n: int, uniform: np.ndarray)
 class TurnSolver:
     """CFR+ on the one-turn subgame at a public state, over candidate hands."""
 
-    def __init__(self, game: Game, explore: float = 0.05) -> None:
-        """``explore`` is the uniform play assumed when computing beliefs (see ``rebel``)."""
-        self.game, self.explore = game, explore
+    def __init__(
+        self,
+        game: Game,
+        explore: float = 0.05,
+        draws: int | None = None,
+        other_values: bool = True,
+        seed: int = 0,
+    ) -> None:
+        """``explore`` is the uniform play assumed when computing beliefs (see ``rebel``).
+
+        ``other_values`` False skips the non-moving player's root values (returned as zeros):
+        they are training targets, not needed to choose a move, and cost a network row per
+        leaf and candidate hand.
+
+        ``draws`` caps how many private chance outcomes (cards drawn unseen) are followed after
+        each of the mover's action sequences: that many are sampled in proportion to their
+        probability and reweighted, instead of following every card that could be drawn. None
+        follows them all, which is exact.
+        """
+        self.game, self.explore, self.draws = game, explore, draws
+        self.other_values = other_values
+        self.rng = np.random.default_rng(seed)
 
     def solve(
         self,
@@ -183,19 +202,33 @@ class TurnSolver:
                     pool = self._unseen(after2) - held  # the deck plus the opponent's hand
                     size = pool.sum() - sum(game.private_hand(after2, o))
                     private = game.chance_is_private(after2)
-                    for e in np.flatnonzero(pool > 0):
-                        in_deck = np.clip(pool[e] - ho[:, e], 0, None) * compat[i]
-                        fits = np.flatnonzero(in_deck > 0)
-                        if len(fits) == 0:
-                            continue  # no candidate opponent leaves this card in the deck
-                        key = (a1, a2) if private else (a1, a2, int(e))
+                    events = np.flatnonzero(pool > 0)
+                    # Copies of each card left in the deck, per candidate opponent hand.
+                    in_deck = np.clip(pool[events] - ho[:, events], 0, None) * compat[i][:, None]
+                    mass = ro @ in_deck
+                    scale = (mass > 0).astype(float)  # skip cards no opponent leaves in the deck
+                    if private and self.draws is not None and scale.sum() > self.draws:
+                        points = (self.rng.random() + np.arange(self.draws)) / self.draws
+                        cum = np.cumsum(mass / mass.sum())
+                        hits = np.minimum(np.searchsorted(cum, points), len(events) - 1)
+                        count = np.bincount(hits, minlength=len(events))
+                        scale = count * mass.sum() / (self.draws * np.where(mass > 0, mass, 1.0))
+                    for n in np.flatnonzero(scale > 0):
+                        e = int(events[n])
+                        key = (a1, a2) if private else (a1, a2, e)
                         if key not in leaves:
-                            alt = game.with_hands(after2, m, tuple(held), tuple(ho[fits[0]]))
-                            leaf_of(key, game.apply_action(alt, int(e)))
+                            fit = int(np.argmax(in_deck[:, n] > 0))
+                            alt = game.with_hands(after2, m, tuple(held), tuple(ho[fit]))
+                            leaf_of(key, game.apply_action(alt, e))
                         new = held.copy()
                         if private:
                             new[e] += 1
-                        add(leaves[key], new, pool[e] / size, in_deck / size)
+                        add(
+                            leaves[key],
+                            new,
+                            scale[n] * pool[e] / size,
+                            scale[n] * in_deck[:, n] / size,
+                        )
 
         n1, n2, n_leaf = len(slot1_hand), len(slot2_parent), len(leaf_states)
         inf1, inf2 = np.asarray(slot1_hand), np.asarray(slot2_parent)
@@ -225,7 +258,7 @@ class TurnSolver:
             live_index = np.full(n_leaf, -1)
             live_index[live] = np.arange(len(live))
             paths = np.flatnonzero(~terminal[leaf_p])  # the mover's hands at live leaves
-            opp_leaf, opp_hand = np.nonzero(fits_o)
+            opp_leaf, opp_hand = np.nonzero(fits_o if self.other_values else fits_o[:0])
             n_cards = hm.shape[1]
             x = np.zeros(
                 (len(paths) + len(opp_leaf), feats.shape[1] + 3 * n_cards + 1), dtype=np.float32
@@ -277,9 +310,10 @@ class TurnSolver:
             sum1 += t * sig1
             sum2 += t * sig1[inf2] * sig2
             total_m += t * node1 / np.where(mass_m > 0, mass_m, 1.0)
-            played = rm[hand_p] * sig1[slot1_p] * sig2[slot2_p]
-            reached = ((played[:, None] * theirs_p) * value_o[leaf_p]).sum(axis=0)
-            total_o += t * reached / np.where(mass_o > 0, mass_o, 1.0)
+            if self.other_values:
+                played = rm[hand_p] * sig1[slot1_p] * sig2[slot2_p]
+                reached = ((played[:, None] * theirs_p) * value_o[leaf_p]).sum(axis=0)
+                total_o += t * reached / np.where(mass_o > 0, mass_o, 1.0)
 
         norm = iterations * (iterations + 1) / 2
         avg1 = _match(sum1, inf1, len(hm), uni1)
