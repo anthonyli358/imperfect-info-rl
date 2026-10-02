@@ -26,7 +26,9 @@ Run with::
     uv run python -m experiments.ventures_search_audit match deck_max=6 [z=2 worlds=8 ...]
 
 ``match`` plays the blueprint improved by late-game paired rollouts (``agents/rollout.py``, the
-agent the audit's findings suggest) against the blueprint on paired deals.
+agent the audit's findings suggest) against the blueprint on paired deals. ``panel`` plays it
+against every heuristic style on the deals the blueprint's own panel used
+(``runs/panel_diverse_sym.json``), where its rollouts' model of the opponent is wrong.
 
 ``report``'s tables 1 and 5 choose the best of ~13 moves from half the rollouts, which picks
 noise and comes out negative; ``decompose`` replaces them with estimators that do not select.
@@ -49,7 +51,7 @@ import iirl.games  # noqa: F401  (registers "ventures")
 from iirl.agents.ppo.agent import PPOAgent
 from iirl.agents.rebel import ReBeLAgent, ReBeLAgentConfig
 from iirl.agents.rollout import rollout_agent
-from iirl.core.registry import make
+from iirl.core.registry import make, make_heuristic
 from iirl.eval.duplicate import duplicate_match
 from iirl.games.ventures.cards import NUM_CARD_TYPES, rank_of, suit_of
 from iirl.games.ventures.game import _can_play
@@ -458,6 +460,57 @@ def match(config: Config) -> None:
         f.write(json.dumps(row) + "\n")
 
 
+PANEL = (
+    "ventures",
+    "ventures_careful",
+    "ventures_tight",
+    "ventures_aggressive",
+    "ventures_hoarder",
+)
+
+
+def panel(config: Config) -> None:
+    """The rollout agent against each heuristic style, beside the blueprint's own results."""
+    settings: dict[str, object] = {"blueprint": config.blueprint}
+    for item in sys.argv[2:]:
+        key, text = item.split("=")
+        settings[key] = json.loads(text)
+    tag = "_".join(f"{k}{v}" for k, v in settings.items() if k != "blueprint")
+    out = Path(config.out).with_name(f"rollout_panel_{tag}.json")
+    result = json.loads(out.read_text("utf-8")) if out.exists() else {}
+    base = json.loads(Path("runs/panel_diverse_sym.json").read_text("utf-8"))
+    game = make("ventures")
+    for name in PANEL:
+        if name not in result:
+            r = duplicate_match(
+                game,
+                (rollout_agent, settings),
+                (make_heuristic, {"short_name": name}),
+                500,
+                seed=61,
+                workers=config.workers,
+            )
+            result[name] = {
+                "score": r.score,
+                "score_se": r.score_se,
+                "margin": r.margin,
+                "margin_se": r.margin_se,
+            }
+            out.write_text(json.dumps(result, indent=2), "utf-8")
+        r, b = result[name], base[name]
+        print(
+            f"{name:<20} rollout {r['score']:.3f} ± {r['score_se']:.3f} ({r['margin']:+.1f})   "
+            f"blueprint {b['score']:.3f} ± {b['score_se']:.3f} ({b['margin']:+.1f})",
+            flush=True,
+        )
+
+
 if __name__ == "__main__":
-    stages = {"collect": collect, "report": report, "decompose": decompose, "match": match}
+    stages = {
+        "collect": collect,
+        "report": report,
+        "decompose": decompose,
+        "match": match,
+        "panel": panel,
+    }
     stages[sys.argv[1]](Config())
