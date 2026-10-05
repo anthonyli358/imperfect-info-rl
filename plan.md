@@ -254,10 +254,14 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      - [x] **Late-game paired rollouts on the policy** (`agents/rollout.py`): **beats
        `diverse_sym`**, 0.526 ± 0.006 from 6 cards left, 0.538 ± 0.008 from 12; with
        belief-drawn re-deals 0.532 ± 0.008 (not significantly better).
-     - [ ] **Next on this line.** Robustness panel and exploiters for the rollout agent (its gain
-       is so far only against the policy it models the opponent with); more rollouts to push the
-       threshold earlier; distil its endgame choices into the policy; a value network trained on
-       paired-rollout *differences* (the only signal clean enough) if search is to work earlier.
+     - [x] **Robustness panel for the rollout agent** (2026-10-05, 500 deals per style): level
+       with plain `diverse_sym` on four styles (+0.014, −0.007, +0.006, −0.009), worse against
+       tight (0.904 vs 0.934, −9.6 points a game). The gain is specific to opponents the
+       rollouts model correctly.
+     - [ ] **Next on this line.** Opponent-robust rollouts (a mixture of styles in the opposing
+       seat, or override only if better under every style), judged on the panel and head to head;
+       an exploiter against it; distil surviving endgame choices into the policy; a value network
+       trained on paired-rollout *differences* if search is to work earlier.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero

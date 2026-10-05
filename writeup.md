@@ -10,7 +10,7 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 ---
 
-## The headline (as of 2026-10-02)
+## The headline (as of 2026-10-05)
 
 **The best approach: Nash-seeking PPO self-play, trained against non-leaky opponents, with suit
 symmetry where the game has it.** No search at play time. It won on both games built so far:
@@ -69,9 +69,11 @@ this game that fails to beat the reactive policy, each time for the same reason.
 **Where search does suit Ventures: the last few turns, with honest rollouts.** An audit that
 measured every move's true value by paired rollouts found the policy improvable only once the
 deck is nearly empty. Acting on that, the policy plus late-game rollouts **beats the policy
-itself, 0.538 ± 0.008 (+3.5 points a game)**: the first search on this game to do so, and the
-strongest Ventures agent so far against `diverse_sym`. (Measured against that one opponent only;
-robustness and exploitability not yet re-measured.)
+itself, 0.538 ± 0.008 (+3.5 points a game)**: the first search on this game to do so. **The gain
+does not transfer to other opponents:** on the five-style robustness panel it is level with the
+plain policy on four and worse on one (0.904 vs 0.934 against the tight style), because its
+rollouts assume the opponent plays like the policy. So `diverse_sym` alone remains the best
+general Ventures agent; the rollouts are a proven lever only where the opponent model is right.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -104,7 +106,7 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 | NFSP (PPO best response) | Equally unexploitable as Nash PPO on Camel Stocks, but weaker (0.456 head to head) |
 | Tabular / vectorized CFR+ | Exact on toy games and on Mini-Ventures (0.002 points a game); far too big for the real games |
 | **ReBeL (CFR over public belief states + value nets)** | **Reaches equilibrium where values can be exact: 0.002 on Mini-Ventures vs PPO's 0.07.** On Ventures the first agent loses to its own blueprint (0.05; 0.41-0.44 anchored): the learned value is too noisy to search on |
-| **Late-game paired rollouts on top of the policy** | **Beats the policy: 0.526 from 6 cards left, 0.538 from 12.** Works because it needs no learned value and only acts where rollouts can resolve a difference |
+| **Late-game paired rollouts on top of the policy** | **Beats the policy head to head: 0.526 from 6 cards left, 0.538 from 12.** Needs no learned value and only acts where rollouts can resolve a difference. Does not transfer: level with the policy against four heuristic styles, worse against one (0.904 vs 0.934) |
 
 **What's left, in order:**
 
@@ -122,9 +124,10 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    or learning move *differences* directly from paired rollouts. The audit (findings log) says
    where to look: the endgame is improvable and rollouts already capture it; hidden information
    moves a move's value by 2-6 points, but under 20-40 points of luck per rollout.
-   Next on this line: measure the rollout agent on the robustness panel and with exploiters (its
-   gain so far is against the policy it also uses to model the opponent); push the rollouts
-   earlier with more samples; distil its endgame choices back into the policy.
+   The rollout agent's gain does not transfer across opponent styles (level on four, worse
+   against the tight style). Next on this line: rollouts with a mixture of styles in the
+   opposing seat, re-run on the panel and against `diverse_sym`; then distil the endgame choices
+   that survive into the policy.
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
 6. **Human play.** The one opponent type never measured; games are recorded by the play page.
 7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
@@ -268,9 +271,32 @@ over the policy's move is at least 2 standard errors. Against `diverse_sym`, 400
   standard error: the right direction, not established.
 - It switches away from the policy's move only once or twice a game.
 
-**Caveats.** The gain is measured against the policy that the rollouts also use as their model
-of the opponent, which is the most favourable case; the robustness panel and exploiters have not
-been run on it. It costs 4–12 s a game from 6 cards, ~25 s from 12.
+**5. The gain does not transfer to opponents the rollouts mis-model** (2026-10-05). The
+6-card rollout agent on the robustness panel, 500 paired deals per style, on the same deals as
+the plain policy's panel:
+
+| Opponent style | Rollout agent | Plain `diverse_sym` | Difference |
+|---|:---:|:---:|:---:|
+| Plain heuristic | 0.901 ± 0.010 (+61.9) | 0.887 ± 0.010 (+60.8) | +0.014 |
+| Careful | 0.788 ± 0.013 (+27.7) | 0.795 ± 0.013 (+28.8) | −0.007 |
+| Tight (few routes) | 0.904 ± 0.009 (+54.1) | 0.934 ± 0.008 (+63.7) | **−0.030** |
+| Aggressive | 0.829 ± 0.011 (+30.5) | 0.823 ± 0.011 (+29.9) | +0.006 |
+| Hoarder | 0.803 ± 0.012 (+30.1) | 0.812 ± 0.012 (+32.9) | −0.009 |
+
+- Four of five are within one standard error of the plain policy: no gain, no loss.
+- Against the tight style it loses 0.030 and 9.6 points a game (about 2.4 standard errors on
+  the score; the margins are far apart). The weakest matchup is unchanged in substance (0.788
+  vs 0.795, careful).
+- The rollouts play both seats with `diverse_sym`. Their +3 points against `diverse_sym` came
+  from predicting that opponent's endgame exactly; against a different endgame (the tight style
+  takes and discards differently, which changes when the deck runs out) the same confidence
+  test passes on a wrong forecast. Not yet verified move by move.
+- So the lever is real but conditional: endgame rollouts help when the opponent model is right.
+  Making it general needs rollouts that are robust to the opponent (a mixture of styles in the
+  opposing seat, or overriding only when a move wins under every style).
+
+**Caveats.** It costs 4–12 s a game from 6 cards, ~25 s from 12. No exploiter has been run
+against it.
 
 **Where search suits Ventures, in short.**
 
