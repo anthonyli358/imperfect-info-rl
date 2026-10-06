@@ -14,6 +14,13 @@ With ``belief`` the re-deals are not uniform: the opponent's hand is drawn from 
 public belief (``selfplay.public_belief``, the blueprint as the model of the opponent), with any
 cards the agent itself holds swapped for random unseen ones.
 
+**Who the rollouts assume the opponent is.** By default the blueprint plays both seats. That
+predicts a blueprint opponent exactly (+3 points a game against it) and mis-predicts others: on
+the robustness panel the agent was level against four heuristic styles and 10 points a game worse
+against the tight one. With ``robust`` every rollout is repeated with each of ``ROBUST_MODELS``
+in the opponent's seat, and the blueprint's move is overridden only if the best move is
+significantly better pooled over the models *and* not worse under any one of them.
+
 Game hooks: ``resample_from_infostate`` and a ``deck`` of card counts on the state (the deck's
 order is fixed per rollout so that all moves see the same future cards); for ``belief`` also the
 hooks ``public_belief`` needs.
@@ -29,6 +36,7 @@ from iirl.agents.base import Agent
 from iirl.agents.belief import net_opponent_model
 from iirl.agents.ppo.agent import PPOAgent
 from iirl.core.game import Game, State
+from iirl.core.registry import make_heuristic
 from iirl.core.types import Action, Player
 from iirl.nn.policy_value import NetEvaluator
 from iirl.selfplay.public_belief import PublicBelief, PublicBeliefConfig
@@ -43,20 +51,29 @@ class RolloutConfig:
     worlds: int = 8
     orders: int = 8
     z: float = 2.0
+    robust: bool = False
     belief: bool = False
     particles: int = 256
     temperature: float = 4.0
     seed: int = 0
 
 
-def play_out(game: Game, state: State, agent: Agent, order: list[int], rng) -> list[float]:  # noqa: ANN001
-    """Finish the game with ``agent`` in both seats, drawing the deck in the given order."""
+# Opponent models for ``robust`` rollouts: the blueprint itself and two heuristic styles. The
+# other styles (plain, aggressive, hoarder) are left out so that they test generalisation.
+ROBUST_MODELS = ("blueprint", "ventures_careful", "ventures_tight")
+
+
+def play_out(
+    game: Game, state: State, seats: tuple[Agent, Agent], order: list[int], rng
+) -> list[float]:  # noqa: ANN001
+    """Finish the game with ``seats`` playing, drawing the deck in the given order."""
     k = 0
     while not game.is_terminal(state):
         if game.is_chance_node(state):
             state = game.apply_action(state, order[k])
             k += 1
         else:
+            agent = seats[game.current_player(state)]
             state = game.apply_action(state, agent.step(game, state, rng))
     return game.returns(state)
 
@@ -69,6 +86,10 @@ class RolloutImprover(Agent):
         self.config, self.name = config, name
         self.blueprint = PPOAgent.from_checkpoint(config.blueprint, greedy=True)
         self.rng = np.random.default_rng(config.seed)
+        names = ROBUST_MODELS if config.robust else ("blueprint",)
+        self.models: list[Agent] = [
+            self.blueprint if name == "blueprint" else make_heuristic(name) for name in names
+        ]
         self.searched = 0
         self.switched = 0
         self.tracker: PublicBelief | None = None
@@ -121,7 +142,7 @@ class RolloutImprover(Agent):
         if sum(state.deck) > cfg.deck_max or not opening_a_turn or len(legal) < 2:
             return default
         self.searched += 1
-        margins = np.zeros((cfg.worlds * cfg.orders, len(legal)))
+        margins = np.zeros((len(self.models), cfg.worlds * cfg.orders, len(legal)))
         row = 0
         for world in self._worlds(game, state, me):
             for _ in range(cfg.orders):
@@ -130,15 +151,20 @@ class RolloutImprover(Agent):
                 order = order.tolist()
                 for k, a in enumerate(legal):
                     after = game.apply_action(world, a)
-                    margins[row, k] = play_out(game, after, self.blueprint, order, rng)[me]
+                    for j, model in enumerate(self.models):
+                        seats = (self.blueprint, model) if me == 0 else (model, self.blueprint)
+                        margins[j, row, k] = play_out(game, after, seats, order, rng)[me]
                 row += 1
         base = legal.index(default)
-        best = int(np.argmax(margins.mean(axis=0)))
+        best = int(np.argmax(margins.mean(axis=(0, 1))))
         if best == base:
             return default
-        gain = margins[:, best] - margins[:, base]
-        error = gain.std(ddof=1) / np.sqrt(len(gain))
-        if gain.mean() < cfg.z * error or error == 0 and gain.mean() <= 0:
+        gain = margins[:, :, best] - margins[:, :, base]  # (model, rollout)
+        pooled = gain.mean(axis=0)  # the same rollout under each model: average, then test
+        error = pooled.std(ddof=1) / np.sqrt(len(pooled))
+        if pooled.mean() < cfg.z * error or error == 0 and pooled.mean() <= 0:
+            return default
+        if (gain.mean(axis=1) < 0).any():  # worse against one of the modelled opponents
             return default
         self.switched += 1
         return int(legal[best])
