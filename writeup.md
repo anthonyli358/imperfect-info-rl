@@ -10,7 +10,7 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 ---
 
-## The headline (as of 2026-10-05)
+## The headline (as of 2026-10-06)
 
 **The best approach: Nash-seeking PPO self-play, trained against non-leaky opponents, with suit
 symmetry where the game has it.** No search at play time. It won on both games built so far:
@@ -69,11 +69,14 @@ this game that fails to beat the reactive policy, each time for the same reason.
 **Where search does suit Ventures: the last few turns, with honest rollouts.** An audit that
 measured every move's true value by paired rollouts found the policy improvable only once the
 deck is nearly empty. Acting on that, the policy plus late-game rollouts **beats the policy
-itself, 0.538 ± 0.008 (+3.5 points a game)**: the first search on this game to do so. **The gain
-does not transfer to other opponents:** on the five-style robustness panel it is level with the
-plain policy on four and worse on one (0.904 vs 0.934 against the tight style), because its
-rollouts assume the opponent plays like the policy. So `diverse_sym` alone remains the best
-general Ventures agent; the rollouts are a proven lever only where the opponent model is right.
+itself, 0.538 ± 0.008 (+3.5 points a game)**: the first search on this game to do so. That
+version assumed the opponent plays like the policy, and its gain did not transfer (level against
+four heuristic styles, worse against one). **Making the rollouts opponent-robust fixed that:**
+with three opponent models in the rollouts and an override only when a move is not worse under
+any of them, the agent beats `diverse_sym` head to head (0.524 ± 0.006) *and* improves on it
+against all five heuristic styles, lifting the weakest matchup from 0.795 to 0.827. **This is the
+best Ventures agent so far**: `diverse_sym` + opponent-robust endgame rollouts
+(`agents/rollout.py`, `robust=True`). Not yet attacked with a trained exploiter.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -106,7 +109,8 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 | NFSP (PPO best response) | Equally unexploitable as Nash PPO on Camel Stocks, but weaker (0.456 head to head) |
 | Tabular / vectorized CFR+ | Exact on toy games and on Mini-Ventures (0.002 points a game); far too big for the real games |
 | **ReBeL (CFR over public belief states + value nets)** | **Reaches equilibrium where values can be exact: 0.002 on Mini-Ventures vs PPO's 0.07.** On Ventures the first agent loses to its own blueprint (0.05; 0.41-0.44 anchored): the learned value is too noisy to search on |
-| **Late-game paired rollouts on top of the policy** | **Beats the policy head to head: 0.526 from 6 cards left, 0.538 from 12.** Needs no learned value and only acts where rollouts can resolve a difference. Does not transfer: level with the policy against four heuristic styles, worse against one (0.904 vs 0.934) |
+| **Late-game paired rollouts on top of the policy** | **Beats the policy head to head: 0.526 from 6 cards left, 0.538 from 12.** Needs no learned value and only acts where rollouts can resolve a difference. With one opponent model it does not transfer (worse against the tight style) |
+| **+ opponent-robust rollouts (3 opponent models)** | **Best agent: 0.524 head to head and better than the policy against all five styles; weakest matchup 0.795 → 0.827** |
 
 **What's left, in order:**
 
@@ -124,10 +128,10 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    or learning move *differences* directly from paired rollouts. The audit (findings log) says
    where to look: the endgame is improvable and rollouts already capture it; hidden information
    moves a move's value by 2-6 points, but under 20-40 points of luck per rollout.
-   The rollout agent's gain does not transfer across opponent styles (level on four, worse
-   against the tight style). Next on this line: rollouts with a mixture of styles in the
-   opposing seat, re-run on the panel and against `diverse_sym`; then distil the endgame choices
-   that survive into the policy.
+   Opponent-robust endgame rollouts now improve on the policy head to head and against all five
+   styles. Next on this line: a trained exploiter against the rollout agent; more rollouts or
+   more opponent models to push the threshold earlier than 6 cards; distil the endgame choices
+   into the policy so the gain is free at play time.
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
 6. **Human play.** The one opponent type never measured; games are recorded by the play page.
 7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
@@ -295,14 +299,42 @@ the plain policy's panel:
   Making it general needs rollouts that are robust to the opponent (a mixture of styles in the
   opposing seat, or overriding only when a move wins under every style).
 
-**Caveats.** It costs 4–12 s a game from 6 cards, ~25 s from 12. No exploiter has been run
-against it.
+**6. Opponent-robust rollouts transfer** (2026-10-06). Every rollout is repeated with three
+opponents in the other seat (`diverse_sym`, the careful heuristic, the tight heuristic; the agent's
+own seat always plays `diverse_sym`). The policy's move is overridden only if the best move's
+paired advantage, averaged over the three, is at least 2 standard errors *and* it is not worse
+under any one of them. Still from 6 cards left, 8 worlds × 8 deck orders.
+
+| Opponent | Robust rollouts | One-model rollouts | Plain `diverse_sym` |
+|---|:---:|:---:|:---:|
+| `diverse_sym` (400 deals) | 0.524 ± 0.006 (+2.5) | 0.526 ± 0.006 (+3.0) | 0.500 |
+| Plain heuristic *(not modelled)* | **0.918 ± 0.009** (+65.5) | 0.901 (+61.9) | 0.887 ± 0.010 (+60.8) |
+| Careful *(modelled)* | **0.827 ± 0.012** (+31.9) | 0.788 (+27.7) | 0.795 ± 0.013 (+28.8) |
+| Tight *(modelled)* | **0.956 ± 0.006** (+67.9) | 0.904 (+54.1) | 0.934 ± 0.008 (+63.7) |
+| Aggressive *(not modelled)* | **0.843 ± 0.011** (+31.4) | 0.829 (+30.5) | 0.823 ± 0.011 (+29.9) |
+| Hoarder *(not modelled)* | **0.829 ± 0.012** (+34.5) | 0.803 (+30.1) | 0.812 ± 0.012 (+32.9) |
+
+(500 paired deals per heuristic style, the same deals for all three agents; margins in points.)
+
+- Better than the plain policy against **all five styles**, by 0.017 to 0.032, and by 1.5 to 4.7
+  points a game. The weakest matchup rises from 0.795 to 0.827.
+- The three styles that were *not* among the rollout's opponent models improve too (+0.031,
+  +0.020, +0.017), so this is not just fitting the modelled opponents. Each of those three is
+  about 1–2 standard errors on its own; the evidence is that all five move the same way.
+- Almost none of the head-to-head gain is given up for it (0.524 vs 0.526).
+- The loss against the tight style is gone (0.956 vs 0.904), which supports the diagnosis that
+  the one-model version was acting on a wrong forecast of the opponent's endgame.
+
+**Caveats.** It costs ~10–20 s a game. No trained exploiter has been run against it, so its
+exploitability is unmeasured. The gains against the three unmodelled styles are individually
+small next to their standard errors.
 
 **Where search suits Ventures, in short.**
 
 - *Suits:* the endgame, where few cards remain, rollouts are nearly deterministic, and the
-  policy has real (if small) errors. Honest rollouts, no learned value, and a significance test
-  before overriding.
+  policy has real (if small) errors. Honest rollouts, no learned value, a significance test
+  before overriding, and more than one model of the opponent (with a single model the gain is
+  specific to that opponent).
 - *Does not suit:* one-turn search on a learned value anywhere in the game (value error ~10
   points against ~1-point gaps); rollout search before the last ~12 cards at this budget (luck
   of 20–40 points per rollout).

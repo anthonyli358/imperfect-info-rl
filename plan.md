@@ -258,10 +258,15 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
        with plain `diverse_sym` on four styles (+0.014, −0.007, +0.006, −0.009), worse against
        tight (0.904 vs 0.934, −9.6 points a game). The gain is specific to opponents the
        rollouts model correctly.
-     - [ ] **Next on this line.** Opponent-robust rollouts (a mixture of styles in the opposing
-       seat, or override only if better under every style), judged on the panel and head to head;
-       an exploiter against it; distil surviving endgame choices into the policy; a value network
-       trained on paired-rollout *differences* if search is to work earlier.
+     - [x] **Opponent-robust rollouts** (2026-10-06; `robust=True`: rollouts under `diverse_sym`,
+       careful and tight; override only if not worse under any): 0.524 ± 0.006 head to head, and
+       better than plain `diverse_sym` against all five styles (0.918 / 0.827 / 0.956 / 0.843 /
+       0.829 vs 0.887 / 0.795 / 0.934 / 0.823 / 0.812). **Best Ventures agent so far.**
+     - [ ] **Next on this line.** A trained exploiter against the robust rollout agent (needs the
+       exploiter to train against a slow opponent: only its endgame differs, so warm-start from an
+       exploiter of `diverse_sym`); push the threshold earlier than 6 cards; distil the endgame
+       choices into the policy; a value network trained on paired-rollout *differences* if search
+       is to work earlier.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero
