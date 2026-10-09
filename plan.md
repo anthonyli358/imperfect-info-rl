@@ -262,11 +262,14 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
        careful and tight; override only if not worse under any): 0.524 ± 0.006 head to head, and
        better than plain `diverse_sym` against all five styles (0.918 / 0.827 / 0.956 / 0.843 /
        0.829 vs 0.887 / 0.795 / 0.934 / 0.823 / 0.812). **Best Ventures agent so far.**
-     - [ ] **Next on this line.** A trained exploiter against the robust rollout agent (needs the
-       exploiter to train against a slow opponent: only its endgame differs, so warm-start from an
-       exploiter of `diverse_sym`); push the threshold earlier than 6 cards; distil the endgame
-       choices into the policy; a value network trained on paired-rollout *differences* if search
-       is to work earlier.
+     - [x] **Do counters to `diverse_sym` transfer to the rollout agent?** (2026-10-09,
+       `experiments/exploit_rollout.py`, 500 paired deals each.) No: all five attackers do worse
+       against it (margins −1.4 to −2.0 points); the best exploiter drops from 0.528 (+1.7) to
+       0.510 (−0.1). Indirect: none was trained against the rollout agent.
+     - [ ] **Next on this line.** Distil the rollout agent's endgame choices into the policy
+       (free at play time, and fast enough to train a direct exploiter against); push the
+       threshold earlier than 6 cards; a value network trained on paired-rollout *differences* if
+       search is to work earlier.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero

@@ -10,7 +10,7 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 ---
 
-## The headline (as of 2026-10-06)
+## The headline (as of 2026-10-09)
 
 **The best approach: Nash-seeking PPO self-play, trained against non-leaky opponents, with suit
 symmetry where the game has it.** No search at play time. It won on both games built so far:
@@ -76,7 +76,10 @@ with three opponent models in the rollouts and an override only when a move is n
 any of them, the agent beats `diverse_sym` head to head (0.524 ± 0.006) *and* improves on it
 against all five heuristic styles, lifting the weakest matchup from 0.795 to 0.827. **This is the
 best Ventures agent so far**: `diverse_sym` + opponent-robust endgame rollouts
-(`agents/rollout.py`, `robust=True`). Not yet attacked with a trained exploiter.
+(`agents/rollout.py`, `robust=True`). The five policies trained or selected to beat `diverse_sym`
+all do worse against it than against `diverse_sym` (by 1.4–2.0 points a game); the best of them
+scores 0.510 ± 0.014 with a margin of −0.1. An exploiter trained directly against the rollout
+agent has not been run (it is too slow to be an ordinary training opponent).
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -129,9 +132,9 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    where to look: the endgame is improvable and rollouts already capture it; hidden information
    moves a move's value by 2-6 points, but under 20-40 points of luck per rollout.
    Opponent-robust endgame rollouts now improve on the policy head to head and against all five
-   styles. Next on this line: a trained exploiter against the rollout agent; more rollouts or
-   more opponent models to push the threshold earlier than 6 cards; distil the endgame choices
-   into the policy so the gain is free at play time.
+   styles, and every existing counter to the policy does worse against them. Next on this line:
+   distil the endgame choices into the policy (which also makes a direct exploiter affordable);
+   more rollouts or more opponent models to push the threshold earlier than 6 cards.
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
 6. **Human play.** The one opponent type never measured; games are recorded by the play page.
 7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
@@ -325,9 +328,33 @@ under any one of them. Still from 6 cards left, 8 worlds × 8 deck orders.
 - The loss against the tight style is gone (0.956 vs 0.904), which supports the diagnosis that
   the one-model version was acting on a wrong forecast of the opponent's endgame.
 
-**Caveats.** It costs ~10–20 s a game. No trained exploiter has been run against it, so its
-exploitability is unmeasured. The gains against the three unmodelled styles are individually
-small next to their standard errors.
+**7. Counters to the policy work less well against the rollout agent** (2026-10-09,
+`experiments/exploit_rollout.py`). The agent is too slow (10–20 s a game) to be a PPO training
+opponent, so the first exploitability check is indirect: the policies trained or selected to
+beat `diverse_sym`, played against both agents on the same 500 paired deals.
+
+| Attacker | vs plain `diverse_sym` | vs robust rollouts | Change in margin |
+|---|:---:|:---:|:---:|
+| Best exploiter of `diverse_sym` (600 iterations) | 0.528 ± 0.014 (+1.7) | 0.510 ± 0.014 (−0.1) | −1.8 |
+| Exploiter, seed 1 | 0.497 ± 0.012 (−0.5) | 0.483 ± 0.012 (−1.9) | −1.4 |
+| PSRO best response, round 1 | 0.521 ± 0.013 (+1.1) | 0.504 ± 0.013 (−0.5) | −1.6 |
+| PSRO best response, round 3 | 0.506 ± 0.014 (−0.2) | 0.487 ± 0.014 (−1.9) | −1.7 |
+| `careful` (previous best agent) | 0.448 ± 0.014 (−6.7) | 0.427 ± 0.014 (−8.7) | −2.0 |
+
+- **All five do worse against the rollout agent**, by 0.014–0.021 on score and 1.4–2.0 points a
+  game. Each difference alone is about one standard error; five out of five in the same
+  direction, by a similar amount, is the evidence.
+- The best attacker goes from a small edge (+1.7 points) to none (−0.1). No existing policy has
+  a positive margin against the rollout agent.
+- So the rollouts do not open a weakness that counters to the policy can use; they take a
+  little away from every one of them.
+- **What this does not show:** these attackers were trained against `diverse_sym`, not against
+  the rollout agent. A counter aimed at the rollout agent itself (for example at the three
+  opponent models it assumes) could exist and would not appear here.
+
+**Caveats.** It costs ~10–20 s a game. A directly trained exploiter has not been run against it.
+The gains against the three unmodelled styles are individually small next to their standard
+errors.
 
 **Where search suits Ventures, in short.**
 
