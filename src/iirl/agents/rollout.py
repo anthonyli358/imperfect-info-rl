@@ -92,6 +92,10 @@ class RolloutImprover(Agent):
         ]
         self.searched = 0
         self.switched = 0
+        # When set to a list, every searched decision is appended to it as
+        # (state, legal actions, the blueprint's move, the move played, pooled gain per action
+        # over the blueprint's move): the training data for distilling the search into a policy.
+        self.log: list | None = None
         self.tracker: PublicBelief | None = None
         self.informed = 0  # worlds drawn from the belief (the rest fell back to uniform)
 
@@ -156,18 +160,27 @@ class RolloutImprover(Agent):
                         margins[j, row, k] = play_out(game, after, seats, order, rng)[me]
                 row += 1
         base = legal.index(default)
+        chosen = self._decide(margins, base)
+        if self.log is not None:
+            gains = margins.mean(axis=(0, 1)) - margins[:, :, base].mean()
+            self.log.append((state, list(legal), default, int(legal[chosen]), gains))
+        self.switched += int(chosen != base)
+        return int(legal[chosen])
+
+    def _decide(self, margins: np.ndarray, base: int) -> int:
+        """The index to play: the best move if it clearly beats ``base``, else ``base``."""
+        cfg = self.config
         best = int(np.argmax(margins.mean(axis=(0, 1))))
         if best == base:
-            return default
+            return base
         gain = margins[:, :, best] - margins[:, :, base]  # (model, rollout)
         pooled = gain.mean(axis=0)  # the same rollout under each model: average, then test
         error = pooled.std(ddof=1) / np.sqrt(len(pooled))
         if pooled.mean() < cfg.z * error or error == 0 and pooled.mean() <= 0:
-            return default
+            return base
         if (gain.mean(axis=1) < 0).any():  # worse against one of the modelled opponents
-            return default
-        self.switched += 1
-        return int(legal[best])
+            return base
+        return best
 
 
 def rollout_agent(**settings: object) -> RolloutImprover:
