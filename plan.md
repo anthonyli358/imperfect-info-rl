@@ -270,10 +270,15 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
        `experiments/distill_rollout.py`; 6,000 games, 4,715 overrides): **fails.** Strong
        imitation reproduces 13.5% of held-out overrides and scores 0.484 vs `diverse_sym`; gentle
        variants reproduce ~2% and score 0.497 / 0.500. The gain stays in the search.
-     - [ ] **Next on this line.** A direct exploiter against the rollout agent on a reduced
-       budget (scripted opponent, warm start from the best exploiter of `diverse_sym`); faster
-       rollouts (batch the network calls); push the threshold earlier than 6 cards; distil
-       rollout *values* with far more data rather than chosen moves.
+     - [x] **Faster rollouts** (2026-10-12): per-search move cache (identical decisions) and
+       `keep=3` (drop weak moves after 2 worlds): ~3× faster; 0.517 ± 0.003 head to head vs the
+       full form's 0.524 ± 0.006.
+     - [x] **Direct exploiter vs the fast rollout agent** (60 iterations, standard recipe, warm
+       start from the best exploiter of `diverse_sym`): **0.493 ± 0.010** on 1,000 fresh deals;
+       no snapshot beat the starting point. Reduced budget, so a weak attack.
+     - [ ] **Possible next steps.** Stronger exploiter recipes at full budget (~10 h each at
+       this speed); rollouts from earlier than 6 cards with the faster code; the rollout agent in
+       the play page; or leave Ventures here and carry the lessons to the next game.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero

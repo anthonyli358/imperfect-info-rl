@@ -79,9 +79,9 @@ best Ventures agent so far**: `diverse_sym` + opponent-robust endgame rollouts
 (`agents/rollout.py`, `robust=True`). The five policies trained or selected to beat `diverse_sym`
 all do worse against it than against `diverse_sym` (by 1.4–2.0 points a game); the best of them
 scores 0.510 ± 0.014 with a margin of −0.1. An exploiter trained directly against the rollout
-agent has not been run (it is too slow to be an ordinary training opponent). An attempt to
-distil the rollouts' choices into the policy network failed (the network either does not learn
-the overrides or learns a few and plays worse), so the gain currently costs 10–20 s a game.
+agent, on a reduced budget, found nothing (0.493 ± 0.010). An attempt to distil the rollouts'
+choices into the policy network failed (the network either does not learn the overrides or
+learns a few and plays worse), so the gain stays in the search: ~5 s a game in its faster form.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -136,10 +136,10 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    moves a move's value by 2-6 points, but under 20-40 points of luck per rollout.
    Opponent-robust endgame rollouts now improve on the policy head to head and against all five
    styles, and every existing counter to the policy does worse against them. Imitating its
-   overrides does not transfer the gain into the policy (three variants, findings log). Next on
-   this line: a direct exploiter against the rollout agent on a reduced budget; faster rollouts
-   (most of the cost is network calls in Python); or distilling with far more data and the
-   rollout *values* as targets instead of the chosen move.
+   overrides does not transfer the gain into the policy (three variants, findings log), and a
+   reduced-budget exploiter trained directly against it found nothing (0.493 ± 0.010). Possible
+   next steps on this line: a stronger exploiter recipe at full budget; pushing the rollouts
+   earlier than 6 cards now that they are 3× cheaper; the agent in the play page.
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
 6. **Human play.** The one opponent type never measured; games are recorded by the play page.
 7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
@@ -381,7 +381,35 @@ original policy on a sample of its other decisions. Held-out games (468 override
 - This matches the audit: the endgame gaps are about a point, found only by averaging luck away
   at the position itself. It is search's kind of gain, not a pattern the policy missed.
 
-**Caveats.** It costs ~10–20 s a game. A directly trained exploiter has not been run against it.
+**9. Faster rollouts, and a direct exploiter that finds nothing** (2026-10-12).
+
+*Speed.* Within one search the rollouts revisit the same positions under each opponent model and
+deck order, so the policy's move is now cached per position (identical decisions, 2–3× faster on
+test games). Optionally (`keep=3`), after the first 2 of the 8 hidden worlds only the policy's
+move and the 3 best moves so far are rolled out further. Together: 1,000 paired deals in 16
+minutes where 400 took 34 (~3× per game). The fast form scores **0.517 ± 0.003 (+1.89 ± 0.17
+points)** against `diverse_sym`, against the full form's 0.524 ± 0.006 (+2.45 ± 0.29): dropping
+moves early costs about 0.6 points (1.6 standard errors).
+
+*Direct exploiter* (`experiments/exploit_rollout.py train`). A PPO exploiter trained against the
+fast rollout agent itself as its opponent: standard exploiter settings (lr 3e-5, no entropy
+bonus), warm-started from the best exploiter of `diverse_sym`, 60 iterations × 256 games (the
+usual run is 300; this one took 127 minutes). Snapshots screened on 300 paired deals:
+
+| Snapshot | Start | 15 | 30 | 45 | 60 |
+|---|:---:|:---:|:---:|:---:|:---:|
+| Score vs the rollout agent | 0.490 | 0.490 | 0.497 | 0.497 | 0.477 |
+
+The best, rated on 1,000 fresh deals: **0.493 ± 0.010, margin −0.55 ± 0.72**. The exploiter does
+not beat the rollout agent and did not improve on its starting point.
+
+- This is the same picture as every attack on `diverse_sym` (best 0.512), one notch lower.
+- What it is worth: on Mini-Ventures this recipe found large weaknesses and missed moderate
+  ones, and here it had a fifth of its usual budget. It rules out an easily found counter, not
+  a subtle one. The target was the fast form; the full form is slightly stronger.
+
+**Caveats.** The agent costs ~5 s a game (fast form) or 10–20 s (full). Its exploitability is
+bounded only by the transfer test and one reduced-budget exploiter.
 The gains against the three unmodelled styles are individually small next to their standard
 errors.
 
