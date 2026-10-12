@@ -21,6 +21,12 @@ against the tight one. With ``robust`` every rollout is repeated with each of ``
 in the opponent's seat, and the blueprint's move is overridden only if the best move is
 significantly better pooled over the models *and* not worse under any one of them.
 
+**Speed.** Two things make a search cheaper without changing what it estimates: the blueprint's
+move is remembered per position within a search (the rollouts revisit the same positions under
+each opponent model and deck order), and with ``keep`` set, after the first ``probe_worlds``
+worlds only the blueprint's move and the ``keep`` best moves so far are rolled out further (most
+moves are many points worse and need no more samples).
+
 Game hooks: ``resample_from_infostate`` and a ``deck`` of card counts on the state (the deck's
 order is fixed per rollout so that all moves see the same future cards); for ``belief`` also the
 hooks ``public_belief`` needs.
@@ -52,6 +58,8 @@ class RolloutConfig:
     orders: int = 8
     z: float = 2.0
     robust: bool = False
+    keep: int | None = None
+    probe_worlds: int = 2
     belief: bool = False
     particles: int = 256
     temperature: float = 4.0
@@ -78,6 +86,30 @@ def play_out(
     return game.returns(state)
 
 
+class _Memo(Agent):
+    """A deterministic agent with its moves remembered per state.
+
+    The rollouts of one search revisit the same positions many times (the same position under
+    each opponent model and each deck order until the cards drawn differ), and the blueprint is
+    played greedily, so its move there never changes.
+    """
+
+    def __init__(self, agent: Agent) -> None:
+        self.agent = agent
+        self.moves: dict[State, Action] = {}
+        self.hits = 0
+        self.misses = 0
+
+    def step(self, game: Game, state: State, rng: np.random.Generator) -> Action:
+        move = self.moves.get(state)
+        if move is None:
+            move = self.moves[state] = self.agent.step(game, state, rng)
+            self.misses += 1
+        else:
+            self.hits += 1
+        return move
+
+
 class RolloutImprover(Agent):
     """The blueprint, overridden late in the game where paired rollouts show a clear better move."""
 
@@ -86,9 +118,10 @@ class RolloutImprover(Agent):
         self.config, self.name = config, name
         self.blueprint = PPOAgent.from_checkpoint(config.blueprint, greedy=True)
         self.rng = np.random.default_rng(config.seed)
+        self.memo = _Memo(self.blueprint)
         names = ROBUST_MODELS if config.robust else ("blueprint",)
         self.models: list[Agent] = [
-            self.blueprint if name == "blueprint" else make_heuristic(name) for name in names
+            self.memo if name == "blueprint" else make_heuristic(name) for name in names
         ]
         self.searched = 0
         self.switched = 0
@@ -146,23 +179,30 @@ class RolloutImprover(Agent):
         if sum(state.deck) > cfg.deck_max or not opening_a_turn or len(legal) < 2:
             return default
         self.searched += 1
+        self.memo.moves.clear()
         margins = np.zeros((len(self.models), cfg.worlds * cfg.orders, len(legal)))
+        base = legal.index(default)
+        alive = list(range(len(legal)))
+        probe = np.zeros(len(legal))  # every move's mean when the weak ones were dropped
         row = 0
-        for world in self._worlds(game, state, me):
+        for w, world in enumerate(self._worlds(game, state, me)):
+            if cfg.keep is not None and w == cfg.probe_worlds and len(alive) > cfg.keep + 1:
+                probe = margins[:, :row].mean(axis=(0, 1))
+                alive = sorted({base, *np.argsort(-probe)[: cfg.keep].tolist()})
             for _ in range(cfg.orders):
                 order = np.repeat(np.arange(len(world.deck)), world.deck)
                 self.rng.shuffle(order)
                 order = order.tolist()
-                for k, a in enumerate(legal):
-                    after = game.apply_action(world, a)
+                for k in alive:
+                    after = game.apply_action(world, legal[k])
                     for j, model in enumerate(self.models):
-                        seats = (self.blueprint, model) if me == 0 else (model, self.blueprint)
+                        seats = (self.memo, model) if me == 0 else (model, self.memo)
                         margins[j, row, k] = play_out(game, after, seats, order, rng)[me]
                 row += 1
-        base = legal.index(default)
-        chosen = self._decide(margins, base)
+        chosen = alive[self._decide(margins[:, :, alive], alive.index(base))]
         if self.log is not None:
-            gains = margins.mean(axis=(0, 1)) - margins[:, :, base].mean()
+            gains = probe - probe[base]
+            gains[alive] = margins[:, :, alive].mean(axis=(0, 1)) - margins[:, :, base].mean()
             self.log.append((state, list(legal), default, int(legal[chosen]), gains))
         self.switched += int(chosen != base)
         return int(legal[chosen])
