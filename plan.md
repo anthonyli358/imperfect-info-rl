@@ -266,10 +266,14 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
        `experiments/exploit_rollout.py`, 500 paired deals each.) No: all five attackers do worse
        against it (margins −1.4 to −2.0 points); the best exploiter drops from 0.528 (+1.7) to
        0.510 (−0.1). Indirect: none was trained against the rollout agent.
-     - [ ] **Next on this line.** Distil the rollout agent's endgame choices into the policy
-       (free at play time, and fast enough to train a direct exploiter against); push the
-       threshold earlier than 6 cards; a value network trained on paired-rollout *differences* if
-       search is to work earlier.
+     - [x] **Distil the rollout agent's endgame choices into the policy** (2026-10-12,
+       `experiments/distill_rollout.py`; 6,000 games, 4,715 overrides): **fails.** Strong
+       imitation reproduces 13.5% of held-out overrides and scores 0.484 vs `diverse_sym`; gentle
+       variants reproduce ~2% and score 0.497 / 0.500. The gain stays in the search.
+     - [ ] **Next on this line.** A direct exploiter against the rollout agent on a reduced
+       budget (scripted opponent, warm start from the best exploiter of `diverse_sym`); faster
+       rollouts (batch the network calls); push the threshold earlier than 6 cards; distil
+       rollout *values* with far more data rather than chosen moves.
 - [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero

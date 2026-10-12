@@ -11,6 +11,9 @@ Stages (each saves under ``runs/distill/``)::
     uv run python -m experiments.distill_rollout train     # fine-tune a copy of the policy
     uv run python -m experiments.distill_rollout evaluate  # head to head and the style panel
 
+``train`` and ``evaluate`` take ``key=value`` overrides of the settings, with ``tag=_name`` to
+keep a variant's outputs apart, e.g. ``train tag=_gentle switch_weight=2 anchor_weight=10``.
+
 ``collect`` plays the rollout agent against a mixed field (the policy itself and the heuristic
 styles) and logs every searched decision with the move the search played, plus a sample of its
 other decisions with the policy's own move. ``train`` fine-tunes a copy of the policy to
@@ -25,7 +28,7 @@ import json
 import multiprocessing as mp
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -62,6 +65,7 @@ class Config:
     lr: float = 3e-5
     batch_size: int = 512
     holdout: float = 0.1
+    tag: str = ""  # suffix for the outputs of ``train`` and ``evaluate`` (variants)
 
 
 def collect_shard(args: tuple) -> dict[str, np.ndarray]:
@@ -221,8 +225,10 @@ def train(config: Config) -> None:
             measure(epoch)
             net.train()
     ck = torch.load(config.blueprint, map_location="cpu")
-    torch.save({**ck, "state_dict": net.state_dict()}, Path(config.out) / "distilled.pt")
-    Path(config.out, "train.json").write_text(json.dumps(report, indent=1), "utf-8")
+    torch.save(
+        {**ck, "state_dict": net.state_dict()}, Path(config.out) / f"distilled{config.tag}.pt"
+    )
+    Path(config.out, f"train{config.tag}.json").write_text(json.dumps(report, indent=1), "utf-8")
 
 
 def ppo_agent(path: str) -> PPOAgent:
@@ -233,8 +239,8 @@ def ppo_agent(path: str) -> PPOAgent:
 def evaluate(config: Config) -> None:
     """The distilled policy against the original policy, and both on the style panel's deals."""
     game = make("ventures")
-    path = str(Path(config.out) / "distilled.pt")
-    out = Path(config.out) / "evaluate.json"
+    path = str(Path(config.out) / f"distilled{config.tag}.pt")
+    out = Path(config.out) / f"evaluate{config.tag}.json"
     results = json.loads(out.read_text("utf-8")) if out.exists() else {}
     if "diverse_sym" not in results:
         r = duplicate_match(
@@ -266,4 +272,7 @@ def evaluate(config: Config) -> None:
 
 
 if __name__ == "__main__":
-    {"collect": collect, "train": train, "evaluate": evaluate}[sys.argv[1]](Config())
+    overrides = dict(item.split("=") for item in sys.argv[2:])
+    settings = {k: v if k == "tag" else json.loads(v) for k, v in overrides.items()}
+    stages = {"collect": collect, "train": train, "evaluate": evaluate}
+    stages[sys.argv[1]](replace(Config(), **settings))

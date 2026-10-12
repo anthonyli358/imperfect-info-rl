@@ -10,7 +10,7 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 ---
 
-## The headline (as of 2026-10-09)
+## The headline (as of 2026-10-12)
 
 **The best approach: Nash-seeking PPO self-play, trained against non-leaky opponents, with suit
 symmetry where the game has it.** No search at play time. It won on both games built so far:
@@ -79,7 +79,9 @@ best Ventures agent so far**: `diverse_sym` + opponent-robust endgame rollouts
 (`agents/rollout.py`, `robust=True`). The five policies trained or selected to beat `diverse_sym`
 all do worse against it than against `diverse_sym` (by 1.4–2.0 points a game); the best of them
 scores 0.510 ± 0.014 with a margin of −0.1. An exploiter trained directly against the rollout
-agent has not been run (it is too slow to be an ordinary training opponent).
+agent has not been run (it is too slow to be an ordinary training opponent). An attempt to
+distil the rollouts' choices into the policy network failed (the network either does not learn
+the overrides or learns a few and plays worse), so the gain currently costs 10–20 s a game.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -114,6 +116,7 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 | **ReBeL (CFR over public belief states + value nets)** | **Reaches equilibrium where values can be exact: 0.002 on Mini-Ventures vs PPO's 0.07.** On Ventures the first agent loses to its own blueprint (0.05; 0.41-0.44 anchored): the learned value is too noisy to search on |
 | **Late-game paired rollouts on top of the policy** | **Beats the policy head to head: 0.526 from 6 cards left, 0.538 from 12.** Needs no learned value and only acts where rollouts can resolve a difference. With one opponent model it does not transfer (worse against the tight style) |
 | **+ opponent-robust rollouts (3 opponent models)** | **Best agent: 0.524 head to head and better than the policy against all five styles; weakest matchup 0.795 → 0.827** |
+| Distilling those rollouts' moves into the policy | Fails: the network reproduces 2–14% of the overrides and plays level or worse |
 
 **What's left, in order:**
 
@@ -132,9 +135,11 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
    where to look: the endgame is improvable and rollouts already capture it; hidden information
    moves a move's value by 2-6 points, but under 20-40 points of luck per rollout.
    Opponent-robust endgame rollouts now improve on the policy head to head and against all five
-   styles, and every existing counter to the policy does worse against them. Next on this line:
-   distil the endgame choices into the policy (which also makes a direct exploiter affordable);
-   more rollouts or more opponent models to push the threshold earlier than 6 cards.
+   styles, and every existing counter to the policy does worse against them. Imitating its
+   overrides does not transfer the gain into the policy (three variants, findings log). Next on
+   this line: a direct exploiter against the rollout agent on a reduced budget; faster rollouts
+   (most of the cost is network calls in Python); or distilling with far more data and the
+   rollout *values* as targets instead of the chosen move.
 5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
 6. **Human play.** The one opponent type never measured; games are recorded by the play page.
 7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
@@ -351,6 +356,30 @@ beat `diverse_sym`, played against both agents on the same 500 paired deals.
 - **What this does not show:** these attackers were trained against `diverse_sym`, not against
   the rollout agent. A counter aimed at the rollout agent itself (for example at the three
   opponent models it assumes) could exist and would not appear here.
+
+**8. Distilling the overrides into the policy does not work** (2026-10-12,
+`experiments/distill_rollout.py`). The rollout agent played 6,000 games (half against
+`diverse_sym`, half against a random heuristic style); its 24,680 searched decisions were logged,
+4,715 of them overrides of the policy (mean rollout gain of an override: 4.6 points). A copy of
+`diverse_sym` was fine-tuned to reproduce the logged moves, with a penalty for drifting from the
+original policy on a sample of its other decisions. Held-out games (468 overrides):
+
+| Variant | Overrides reproduced | Other searched moves kept | vs `diverse_sym` (2,000 deals) | Style panel vs `diverse_sym` |
+|---|:---:|:---:|:---:|:---:|
+| Strong (overrides ×8, lr 3e-5, 30 epochs) | 13.5% | 74.9% | 0.484 ± 0.006 (−1.45 ± 0.42) | worse on all five (−0.018 to −0.043) |
+| Gentle (×2, lr 1e-5, 10 epochs, drift ×10) | 1.9% | 93.4% | 0.497 ± 0.004 (−0.08 ± 0.25) | level (−0.011 to +0.004) |
+| Weakest (×1, lr 1e-5, 20 epochs, drift ×20) | 2.4% | 94.8% | 0.500 ± 0.003 (+0.18 ± 0.22) | level (−0.003 to +0.006) |
+
+(The rollout agent itself: 0.524 head to head, +0.017 to +0.032 on the panel.)
+
+- There is no setting where the gain transfers. Pushed hard, the network reproduces one override
+  in seven on unseen games and disturbs a quarter of the endgame moves the search had confirmed,
+  and plays worse than the policy. Pushed gently, it reproduces almost none and plays the same.
+- An override is the outcome of ~190 rollouts at one exact position: which card to release with
+  five cards left, given both routes and every card seen. 4,247 training examples of that do not
+  define a rule a 567-feature network can generalise; they are closer to 4,247 separate facts.
+- This matches the audit: the endgame gaps are about a point, found only by averaging luck away
+  at the position itself. It is search's kind of gain, not a pattern the policy missed.
 
 **Caveats.** It costs ~10–20 s a game. A directly trained exploiter has not been run against it.
 The gains against the three unmodelled styles are individually small next to their standard
