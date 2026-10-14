@@ -1,7 +1,8 @@
 # Findings — imperfect-info-rl
 
-A living log of what we've learned building and pitting agents against each other. The headline and
-"Where we stand" summarize the current state; the findings log below has the details, newest first.
+A living log of what we've learned building and pitting agents against each other. The headline
+summarizes the current state, "The October investigation" tells the latest line of work start to
+finish, and the findings log below has the details, newest first.
 Scores are head-to-head score rates (win 1, draw 0.5) over duplicate deals unless noted; Ventures Elo
 is anchored on random = 1000 and the plain heuristic = 1676.
 
@@ -10,10 +11,23 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 ---
 
-## The headline (as of 2026-10-12)
+## The headline (as of 2026-10-14)
 
-**The best approach: Nash-seeking PPO self-play, trained against non-leaky opponents, with suit
-symmetry where the game has it.** No search at play time. It won on both games built so far:
+**The best agents are reactive policies trained by Nash-seeking PPO self-play, plus, on Ventures,
+a narrow search in the last few turns.** The policy does almost all the work; search earns its
+place only where it can measure move values honestly.
+
+| | Ventures | Camel Stocks |
+|---|:---:|:---:|
+| Best agent | `diverse_sym` + opponent-robust endgame rollouts | `camel_nash` (policy only) |
+| Head to head vs the best plain policy | **0.524 ± 0.006** (+2.5 points a game) vs `diverse_sym` | (it is the best plain policy) |
+| Weakest matchup vs any heuristic style | **0.827** (careful; plain `diverse_sym`: 0.795) | **0.940** (plain; careful 0.966) |
+| Held-out search opponent (PIMC) | not re-run | **0.950** |
+| Best trained exploiter's score (lower bound) | **0.493 ± 0.010** (direct, reduced budget); existing counters ≤ 0.510 | 0.509 (4 runs, 3 recipes) |
+| Cost per game | ~5 s (fast form) to 10–20 s | instant |
+| Play it | `uv run python -m experiments.play` (top of the Ventures list) | same page |
+
+**The recipe**, in the order it was found:
 
 1. **Game setup.** An information-state encoding that spells out the card relations the policy
    needs (card-relative features were Ventures' largest early gain), and a hand-tuned heuristic
@@ -29,59 +43,20 @@ symmetry where the game has it.** No search at play time. It won on both games b
    0.716.
 5. **Suit symmetry** (Ventures): a DrAC-style regularizer pulls the policy on a suit-relabelled
    position toward the policy on the original. With a four-style opponent league it took the
-   weakest matchup to 0.795, and the league alone had not helped.
+   weakest matchup to 0.795.
+6. **Opponent-robust endgame rollouts** (Ventures, new in October). Once the deck is down to 6
+   cards, every first move of the turn is played out to the end with the policy, in 8 re-dealt
+   hidden worlds × 8 deck orders, each under three models of the opponent; the policy's move is
+   overridden only if another move is significantly better pooled over the models and not worse
+   under any one of them. It changes a move or two per game and adds ~2.5 points a game.
 
-| | Ventures (`diverse_sym`) | Camel Stocks (`camel_nash`) |
-|---|:---:|:---:|
-| Beats the previous best agent | 0.569 vs `careful` | (first recipe run) |
-| Weakest matchup vs any heuristic style | **0.795** (careful) | **0.940** (plain; careful 0.966) |
-| Held-out search opponent (PIMC) | not re-run | **0.950** |
-| Best trained exploiter's score (lower bound) | 0.512 (5 runs, 3 recipes) | 0.509 (4 runs, 3 recipes) |
-| Best PSRO best response vs the Nash mixture | 0.514 (4 rounds) | not run |
-
-**How far to trust the "unexploitable" column.** Every exploitability number comes from a
-*trained* exploiter, so it is a lower bound. On Mini-Ventures (Ventures shrunk until it can be
-solved exactly) two things were measured against ground truth: the recipe itself gets within 0.07
-points a game of the true equilibrium (97% of the way from random play), but the *standard
-exploiter recipe* used for the numbers above finds only large weaknesses (61% of a big one, 1% of a
-moderate one). More aggressive exploiter recipes find 55–92% of those, so both agents were
-re-measured with them: **neither recipe found more than the standard one** (best 0.500 and 0.505),
-so the row stands at 0.512 and 0.509. That rules out a moderate or large weakness of the kind those
-recipes can see. It does not rule out a small one: no recipe finds much of a weakness the size of
-Mini-Ventures' final 0.07. The head-to-head, robustness-panel and held-out results are direct
-measurements and stand.
-
-**The most promising next method: ReBeL.** On Mini-Ventures, where everything can be checked
-exactly, ReBeL (CFR over public belief states with a learned value network at each turn boundary)
-reaches **0.002 points a game** of exact exploitability, level with the full-game equilibrium and
-about 30× closer than Nash-seeking PPO's 0.07, in 21 minutes of training. It is not yet a Ventures
-agent: there a hidden hand has ~10^8 possibilities, so the beliefs must be approximated (step E1).
-The three approximations Ventures forces (per-card beliefs, one hand valued at a time, training
-on sampled positions) have each been priced on Mini-Ventures: all three together still reach
-0.0035.
-
-**On Ventures itself the first ReBeL agent loses to the policy it searches from** (0.05 unaided;
-0.41-0.44 when anchored to that policy). The search machinery is not the reason: the value network
-is. It is off by about 10 points per position, the real gaps between moves are a point or two, and
-a search that takes the maximum of noisy values picks the noise. This is the fifth search built on
-this game that fails to beat the reactive policy, each time for the same reason.
-
-**Where search does suit Ventures: the last few turns, with honest rollouts.** An audit that
-measured every move's true value by paired rollouts found the policy improvable only once the
-deck is nearly empty. Acting on that, the policy plus late-game rollouts **beats the policy
-itself, 0.538 ± 0.008 (+3.5 points a game)**: the first search on this game to do so. That
-version assumed the opponent plays like the policy, and its gain did not transfer (level against
-four heuristic styles, worse against one). **Making the rollouts opponent-robust fixed that:**
-with three opponent models in the rollouts and an override only when a move is not worse under
-any of them, the agent beats `diverse_sym` head to head (0.524 ± 0.006) *and* improves on it
-against all five heuristic styles, lifting the weakest matchup from 0.795 to 0.827. **This is the
-best Ventures agent so far**: `diverse_sym` + opponent-robust endgame rollouts
-(`agents/rollout.py`, `robust=True`). The five policies trained or selected to beat `diverse_sym`
-all do worse against it than against `diverse_sym` (by 1.4–2.0 points a game); the best of them
-scores 0.510 ± 0.014 with a margin of −0.1. An exploiter trained directly against the rollout
-agent, on a reduced budget, found nothing (0.493 ± 0.010). An attempt to distil the rollouts'
-choices into the policy network failed (the network either does not learn the overrides or
-learns a few and plays worse), so the gain stays in the search: ~5 s a game in its faster form.
+**How far to trust "unexploitable".** Every exploitability number is a lower bound from a trained
+exploiter. On Mini-Ventures, where exact answers exist, the PPO recipe gets within 0.07 points a
+game of the true equilibrium, and the exploiter recipes were calibrated: they find large
+weaknesses and most moderate ones, but little of one the size of 0.07. So the table rules out
+large and moderate weaknesses, not small ones. For the Ventures rollout agent the evidence is
+thinner still: one reduced-budget direct exploiter plus five counters to the plain policy, all of
+which do worse against it. Humans, the one opponent type never measured, can now play it.
 
 **The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
 PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
@@ -91,7 +66,154 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 
 ---
 
-## Where we stand (2026-09-30)
+## The October investigation: from ground truth to search that works (2026-10-01 → 10-14)
+
+At the end of September the best Ventures and Camel Stocks policies had survived every exploiter
+we had (best 0.512 and 0.509). The question for October was whether that meant anything, and
+whether a principled search method, ReBeL, could go further. This section tells that story in
+order; each step has a full entry in the findings log.
+
+### 1. Ground truth: Mini-Ventures, solved exactly
+
+A trained exploiter only gives a lower bound, and nobody knew how loose. So Ventures was shrunk
+until it could be solved: **Mini-Ventures** (2 suits × {backing, 2, 3, 4}, 2-card hands, a
+4-card deck, four turns; 2.3M states). Two exact tools were built for it: CFR+ vectorised over the
+whole state graph (equilibrium to **0.002 points a game** in 100 iterations) and exact best
+responses to any policy in 30 seconds.
+
+Against that ground truth:
+
+- **The PPO recipe works:** it reaches **0.07 points a game** of exact exploitability, 97% of
+  the way from random play (2.71) to the equilibrium.
+- **The exploiter yardstick was too gentle.** The standard exploiter recipe found 61% of a large
+  weakness but only 1% of a moderate one. More aggressive recipes found 55–92%.
+- Re-measured with those recipes, the real agents still showed nothing more (Ventures best 0.500
+  and 0.498, Camel Stocks 0.500 and 0.505). The September lower bounds stand, now with a known
+  meaning: no large or moderate weakness.
+
+A first version of this ground truth reported that "the yardstick finds ~4%" of the true
+exploitability. That was an artefact (a degenerate start cost and a starved PPO) and was
+retracted.
+
+### 2. ReBeL works where values can be exact
+
+ReBeL searches over **public belief states**: the public position plus, for each player, a
+probability for every possible hidden hand. Each turn is a subgame solved by CFR; where it is
+cut off, a value network gives every hand's value as a function of the beliefs; the network is
+trained on solved subgames, from the last turn up.
+
+On Mini-Ventures, measured exactly: **0.002 points a game**, level with the full-game equilibrium
+and ~30× closer than PPO, in 21 minutes of training. Three things had to be right, each found by
+checking against ground truth:
+
+1. **Play a random CFR iteration, not the average.** Re-solving later turns from the *average*
+   strategy's beliefs stalls (0.085 on Kuhn poker); ReBeL's rule of stopping at a random iteration
+   and re-solving from *its* beliefs reaches 0.016.
+2. **Beliefs must exist after a deviation.** The first run scored 1.30: near-pure CFR iterates
+   left most public states with no modelled reach, so an opponent's deviation met a re-solve with
+   no beliefs. Assuming a 5% trembling hand when forming beliefs fixed it (→ 0.0048).
+3. **The last turn is a plain best response** (one pass, exact, 60× cheaper).
+
+Then the three approximations a large game forces were priced on the same ground truth: beliefs
+as per-card probabilities instead of per-hand (0.0037), a network that values one hand at a time
+(0.0028), training on 256 sampled public states per pass instead of all of them (0.0035). None
+costs anything measurable; sampling needs data (0.093 at 2.5k examples, 0.006 at 5k).
+
+### 3. ReBeL on full Ventures: every part works, and the agent loses
+
+Everything was rebuilt for a game that cannot be enumerated: a one-position subgame solver over
+candidate hands (matches the exact solver to 1e-9 where they can be compared), public belief
+tracking with 48 candidate hands per player (overlap with the true hand 0.354, vs 0.296 from the
+cards alone), and a belief-conditioned value network trained on 24,000 `diverse_sym` self-play
+games (held-out R² 0.46, RMSE 32 points; belief inputs add nothing).
+
+Against `diverse_sym`: **0.050 plain** (−110 points a game), 0.41–0.44 when anchored to the
+policy. The search machinery was not at fault: the pipeline is self-consistent (bias +1.9 points,
+correlation 0.89). The value network is ~11 points off per evaluation, the real gaps between
+moves are a point or two, and a search that maximises over ~16 noisy values picks the noise. It
+claimed +9.6 points a turn over the policy; plain-search games ended with routes like
+[1, 2, 0, 1, 7] against the policy's [5, 6, 7, 6, 3].
+
+This was the fifth search on Ventures to fail for this reason (after AlphaZero's value, belief
+search, expert iteration and endgame CFR).
+
+### 4. Asking where search can work at all: an audit by paired rollouts
+
+Rather than build a sixth search, we measured move values directly. At 572 positions from
+`diverse_sym` self-play, every first move was played out to the end by the policy in the same 8
+hidden worlds × 8 deck orders, so the luck cancels in the differences. What it showed:
+
+- **Our search's losses have a shape.** It loses 4–6 points a turn in every phase, worst when it
+  swaps to a discard the opponent can play at once (−10.5 ± 0.8, n = 125): the same leak the
+  agents themselves once had to unlearn.
+- **The policy is improvable only in the endgame.** With 6 or fewer cards left, a better first
+  move is worth at least +1.05 ± 0.37 points a turn; earlier, no improvement is detectable.
+- **Luck is the obstacle.** One paired rollout's difference between two close moves has a spread
+  of 22–38 points; resolving a 1-point gap takes on the order of 900 rollouts per move.
+- **Hidden information matters, but less than luck.** The opponent's hand shifts a move's
+  advantage by 2–4 points: larger than the gaps between close moves, about 8× smaller than the
+  luck. That is why a value network trained on outcomes cannot see it.
+
+### 5. Endgame rollouts: the first search to beat the policy, made robust
+
+Acting on the audit: play the policy, and from 6 cards left override it only where paired
+rollouts show a significantly better move.
+
+- **With the policy as the only opponent model:** 0.526 ± 0.006 head to head (0.538 from 12
+  cards), as the audit predicted (~1 point a turn over the last ~3 turns). But the gain did not
+  transfer: level against four heuristic styles and **worse against the tight one** (0.904 vs
+  0.934). The rollouts had been forecasting the opponent's endgame as the policy's.
+- **With three opponent models** (the policy, the careful and the tight heuristic; override only
+  if not worse under any): 0.524 ± 0.006 head to head, and **better than the plain policy against
+  all five styles**, including the three it does not model. Weakest matchup 0.795 → 0.827.
+
+### 6. Is it exploitable? Two checks, both clean
+
+- **Existing counters lose ground.** The five policies trained or selected to beat `diverse_sym`
+  all do worse against the rollout agent, by 1.4–2.0 points a game; the best goes from +1.7 to
+  −0.1 (0.510 ± 0.014).
+- **A direct exploiter finds nothing.** Trained against the rollout agent itself (warm-started
+  from the best exploiter of `diverse_sym`, 60 iterations): 0.493 ± 0.010 on 1,000 fresh deals;
+  no snapshot improved on its starting point. A reduced budget, so a weak attack.
+
+### 7. The gain cannot be moved into the policy; it can be made cheaper
+
+- **Distillation fails.** A copy of the policy fine-tuned on 4,715 logged overrides either
+  reproduces one in seven on unseen games and plays worse (0.484), or reproduces ~2% and plays
+  the same. An override is the outcome of ~190 rollouts at one exact position, and 4,000
+  examples of that behave like separate facts, not a rule.
+- **Speed.** A per-search cache of the policy's moves (identical decisions) and dropping clearly
+  weak moves after the first quarter of rollouts make it ~3× faster: 0.517 ± 0.003 head to head
+  in this fast form, ~5 s a game.
+
+---
+
+## What we learned (general lessons)
+
+1. **Get ground truth before trusting a yardstick.** A small exactly-solvable version of the game
+   calibrated both the training recipe and the exploiter, and caught two methodological errors
+   (one of them our own retracted claim).
+2. **Leaky opponents teach leaks.** The biggest single gain in robustness came from removing an
+   opponent that handed over playable cards, and the biggest single loss of the October search
+   came from the search re-learning that leak through a value network.
+3. **Search needs values more accurate than the gaps between moves.** In a high-luck game a value
+   network trained on outcomes is ~10 points off when the decisions differ by ~1. Every search
+   built on such a value lost to the plain policy; the one that worked uses no learned value.
+4. **Measure where the decisions are close before searching.** The paired-rollout audit found the
+   one phase (the endgame) where search could help, and predicted the size of the gain.
+5. **Model the opponent more than once.** A search that assumes one opponent wins against that
+   opponent and can lose to others; requiring the override to hold under several models made the
+   gain general.
+6. **Pick the best of many noisy estimates and you pick noise.** It sank the ReBeL search, and it
+   produced misleading negative numbers in our own first audit report until selection-free
+   estimators replaced them.
+7. **Exact methods are the right tool on small games, not big ones.** ReBeL is exact and fast on
+   Mini-Ventures and loses on Ventures; what changed is not the algorithm but whether its value
+   function can be learned.
+
+---
+
+## Where we stand (2026-10-14)
 
 **Tried, and the verdict** (details in the findings log below):
 
@@ -108,41 +230,28 @@ not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal'
 | R-NaD-style moving-average magnet | No gain over the plain magnet |
 | **Careful heuristic in the league** | **Big gain: weakest matchup 0.574 → 0.716** |
 | Four-style league alone | Slightly worse than careful-only (0.681) |
-| **+ suit symmetry (DrAC)** | **Best: weakest matchup 0.795; beats `careful` 0.569** |
+| **+ suit symmetry (DrAC)** | **Weakest matchup 0.795; beats `careful` 0.569** |
 | PSRO (4 rounds) | Found nothing beyond ~+1.5 points a game; confirms `diverse_sym` |
 | Endgame CFR (depth-limited MCCFR) | Never beats the policy (best 0.452); its subgame assumes the opponent sees our hand |
 | NFSP (PPO best response) | Equally unexploitable as Nash PPO on Camel Stocks, but weaker (0.456 head to head) |
 | Tabular / vectorized CFR+ | Exact on toy games and on Mini-Ventures (0.002 points a game); far too big for the real games |
-| **ReBeL (CFR over public belief states + value nets)** | **Reaches equilibrium where values can be exact: 0.002 on Mini-Ventures vs PPO's 0.07.** On Ventures the first agent loses to its own blueprint (0.05; 0.41-0.44 anchored): the learned value is too noisy to search on |
-| **Late-game paired rollouts on top of the policy** | **Beats the policy head to head: 0.526 from 6 cards left, 0.538 from 12.** Needs no learned value and only acts where rollouts can resolve a difference. With one opponent model it does not transfer (worse against the tight style) |
-| **+ opponent-robust rollouts (3 opponent models)** | **Best agent: 0.524 head to head and better than the policy against all five styles; weakest matchup 0.795 → 0.827** |
-| Distilling those rollouts' moves into the policy | Fails: the network reproduces 2–14% of the overrides and plays level or worse |
+| **ReBeL (CFR over public belief states + value nets)** | **Reaches equilibrium where values can be exact: 0.002 on Mini-Ventures vs PPO's 0.07.** On Ventures it loses to its own blueprint (0.05; 0.41–0.44 anchored): the learned value is too noisy to search on |
+| Late-game paired rollouts on top of the policy | Beats the policy head to head (0.526 from 6 cards left, 0.538 from 12); with one opponent model it does not transfer |
+| **+ opponent-robust rollouts (3 opponent models)** | **Best Ventures agent: 0.524 head to head, better than the policy against all five styles (weakest 0.827); exploiters find nothing** |
+| Distilling those rollouts' moves into the policy | Fails: reproduces 2–14% of the overrides, plays level or worse |
 
-**What's left, in order:**
+**What's left, in order of value:**
 
-1. ~~Finish the Mini-Ventures ground truth.~~ Done: the recipe reaches 0.07 points a game of exact
-   exploitability; the standard exploiter misses moderate weaknesses.
-2. ~~Re-measure the Ventures and Camel Stocks agents with the stronger exploiter recipes.~~ Done:
-   they found nothing more (0.500 / 0.498 on Ventures, 0.500 / 0.505 on Camel Stocks).
-3. ~~ReBeL on Mini-Ventures (E0, step 4).~~ Done: exact exploitability 0.002 points a game, level
-   with the full-game equilibrium (PPO: 0.07).
-4. **ReBeL on full Ventures (E1): built, and it loses.** Every piece exists and is validated
-   (beliefs, one-position solver, value network, agent), and the agent scores 0.05 against
-   `diverse_sym`, 0.41-0.44 when anchored to it. The limit is value accuracy (~10 points of error
-   against ~1-point gaps between moves). Making it work needs a value signal about two orders of
-   magnitude cleaner, which means either far more data than this machine can generate in Python
-   or learning move *differences* directly from paired rollouts. The audit (findings log) says
-   where to look: the endgame is improvable and rollouts already capture it; hidden information
-   moves a move's value by 2-6 points, but under 20-40 points of luck per rollout.
-   Opponent-robust endgame rollouts now improve on the policy head to head and against all five
-   styles, and every existing counter to the policy does worse against them. Imitating its
-   overrides does not transfer the gain into the policy (three variants, findings log), and a
-   reduced-budget exploiter trained directly against it found nothing (0.493 ± 0.010). Possible
-   next steps on this line: a stronger exploiter recipe at full budget; pushing the rollouts
-   earlier than 6 cards now that they are 3× cheaper; the agent in the play page.
-5. **A fast engine and batched GPU search (Phase D)**, if E1 or large-budget search needs the speed.
-6. **Human play.** The one opponent type never measured; games are recorded by the play page.
-7. **The next game rungs** (Azul, Liar's Dice, poker), taking the recipe and its lessons along.
+1. **Human play.** The strongest Ventures agent is now the first opponent in the play page;
+   games are recorded to `runs/human_games/` for analysis.
+2. **The next game rungs** (Liar's Dice, a small poker, Azul). ReBeL's public-belief search should
+   suit the poker-like games far better than Ventures: small private states, outcomes that follow
+   from decisions rather than the deal.
+3. **A full-budget exploiter** against the rollout agent with the stronger recipes (~10 hours per
+   run at current speed), for a tighter exploitability bound.
+4. **Rollouts earlier than 6 cards**, now that they are 3× cheaper; the audit says the gain there
+   is small and hard to resolve.
+5. **A fast engine and batched search (Phase D)**, if any of the above needs the speed.
 
 ## Why each method lands where it does
 
