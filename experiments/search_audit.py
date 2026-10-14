@@ -14,14 +14,22 @@ cancels in the differences. Per phase of the game (by cards left in the deck) it
 * how much of a move's advantage depends on the hidden information (sd across worlds) and how
   much is luck (sd across deck orders), for moves within 5 points of the policy's.
 
+``match`` then plays the policy improved by opponent-robust rollouts (``agents/rollout.py``)
+against the plain policy, and ``panel`` against each heuristic style, on paired deals.
+
 Run with::
 
     uv run python -m experiments.search_audit camel_stocks collect
     uv run python -m experiments.search_audit camel_stocks report
+    uv run python -m experiments.search_audit camel_stocks match deck_max=12 [key=value ...]
+    uv run python -m experiments.search_audit camel_stocks panel deck_max=12 [key=value ...]
+
+Results of ``match`` and ``panel`` are appended to ``runs/rollout_<game>.jsonl``.
 """
 
 from __future__ import annotations
 
+import json
 import multiprocessing as mp
 import pickle
 import sys
@@ -34,8 +42,9 @@ import torch
 
 import iirl.games  # noqa: F401  (registers the games)
 from iirl.agents.ppo import PPOAgent
-from iirl.agents.rollout import play_out, turn_start
-from iirl.core.registry import make
+from iirl.agents.rollout import play_out, rollout_agent, turn_start
+from iirl.core.registry import make, make_heuristic
+from iirl.eval.duplicate import duplicate_match
 
 
 @dataclass(frozen=True)
@@ -49,6 +58,7 @@ class Config:
     orders: int = 8
     last_turn: int = 40  # positions are drawn at a uniformly random turn below this
     phases: tuple[tuple[str, int, int], ...] = ()  # (label, fewest, most cards in the deck)
+    styles: tuple[str, ...] = ()  # heuristic styles for the panel
     workers: int = 10
 
 
@@ -63,6 +73,7 @@ GAMES = {
             ("late (7-12)", 7, 12),
             ("endgame (deck <= 6)", 0, 6),
         ),
+        styles=("camel_stocks", "camel_stocks_careful"),
     ),
     "ventures": Config(
         game="ventures",
@@ -207,6 +218,77 @@ def report(config: Config) -> None:
     print("   (rollouts per move for a 2-standard-error resolution of a 1-point difference)")
 
 
+def ppo_agent(path: str) -> PPOAgent:
+    """The policy as deployed: greedy (picklable spec for duplicate matches)."""
+    return PPOAgent.from_checkpoint(path, greedy=True)
+
+
+def _settings(config: Config) -> tuple[dict, int]:
+    """The rollout agent's settings from the command line (``robust`` on by default)."""
+    settings: dict[str, object] = {"blueprint": config.blueprint, "robust": True}
+    deals = 400
+    for item in sys.argv[3:]:
+        key, text = item.split("=")
+        if key == "deals":
+            deals = int(text)
+        else:
+            settings[key] = json.loads(text)
+    return settings, deals
+
+
+def _record(config: Config, row: dict) -> None:
+    print(json.dumps(row), flush=True)
+    with Path(f"runs/rollout_{config.game}.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row) + "\n")
+
+
+def _row(opponent: str, settings: dict, r, minutes: float) -> dict:  # noqa: ANN001
+    return {
+        "opponent": opponent,
+        "settings": {k: v for k, v in settings.items() if k != "blueprint"},
+        "deals": r.deals,
+        "score": round(r.score, 4),
+        "score_se": round(r.score_se, 4),
+        "margin": round(r.margin, 2),
+        "margin_se": round(r.margin_se, 2),
+        "minutes": round(minutes, 1),
+    }
+
+
+def match(config: Config) -> None:
+    """The rollout agent against the plain policy, on paired deals."""
+    settings, deals = _settings(config)
+    t0 = time.perf_counter()
+    r = duplicate_match(
+        make(config.game),
+        (rollout_agent, settings),
+        (ppo_agent, {"path": config.blueprint}),
+        deals,
+        seed=2027,
+        workers=config.workers,
+    )
+    _record(config, _row("policy", settings, r, (time.perf_counter() - t0) / 60))
+
+
+def panel(config: Config) -> None:
+    """The rollout agent and the plain policy against each heuristic style, on the same deals."""
+    settings, deals = _settings(config)
+    game = make(config.game)
+    for style in config.styles:
+        for name, spec in (
+            ("rollout", (rollout_agent, settings)),
+            ("policy", (ppo_agent, {"path": config.blueprint})),
+        ):
+            t0 = time.perf_counter()
+            r = duplicate_match(
+                game, spec, (make_heuristic, {"short_name": style}), deals, 61, config.workers
+            )
+            row = _row(style, settings if name == "rollout" else {"agent": "policy"}, r, 0)
+            row["minutes"] = round((time.perf_counter() - t0) / 60, 1)
+            _record(config, row)
+
+
 if __name__ == "__main__":
     config = GAMES[sys.argv[1]]
-    {"collect": collect, "report": report}[sys.argv[2]](config)
+    stages = {"collect": collect, "report": report, "match": match, "panel": panel}
+    stages[sys.argv[2]](config)
