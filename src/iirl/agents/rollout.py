@@ -54,6 +54,7 @@ class RolloutConfig:
 
     blueprint: str
     deck_max: int = 6
+    models: tuple[str, ...] | None = None  # opponent models; default: per game if ``robust``
     worlds: int = 8
     orders: int = 8
     z: float = 2.0
@@ -66,20 +67,54 @@ class RolloutConfig:
     seed: int = 0
 
 
-# Opponent models for ``robust`` rollouts: the blueprint itself and two heuristic styles. The
-# other styles (plain, aggressive, hoarder) are left out so that they test generalisation.
-ROBUST_MODELS = ("blueprint", "ventures_careful", "ventures_tight")
+# Opponent models for ``robust`` rollouts, per game: the blueprint itself and heuristic styles.
+# On Ventures the other styles (plain, aggressive, hoarder) are left out so that they test
+# generalisation.
+ROBUST_MODELS = {
+    "ventures": ("blueprint", "ventures_careful", "ventures_tight"),
+    "camel_stocks": ("blueprint", "camel_stocks", "camel_stocks_careful"),
+}
+
+
+def turn_start(game: Game, state: State) -> bool:
+    """Whether ``state`` is the first decision of a player's turn.
+
+    Uses the game's ``turn_start`` hook if it has one; otherwise a turn starts when the mover's
+    hand is at least as large as the other player's (true of Ventures).
+    """
+    if hasattr(game, "turn_start"):
+        return bool(game.turn_start(state))
+    me = game.current_player(state)
+    return sum(game.private_hand(state, me)) >= sum(game.private_hand(state, 1 - me))
 
 
 def play_out(
-    game: Game, state: State, seats: tuple[Agent, Agent], order: list[int], rng
-) -> list[float]:  # noqa: ANN001
-    """Finish the game with ``seats`` playing, drawing the deck in the given order."""
+    game: Game,
+    state: State,
+    seats: tuple[Agent, Agent],
+    order: list[int],
+    rng,  # noqa: ANN001
+    chance_seed: int = 0,
+) -> list[float]:
+    """Finish the game with ``seats`` playing, drawing the deck in the given order.
+
+    Chance events that are not deck draws (the game's ``chance_from_deck`` hook says which; by
+    default all are) are sampled from a stream seeded by ``chance_seed``, so that rollouts sharing
+    a seed share those outcomes as far as the positions allow.
+    """
     k = 0
+    stream = None
+    from_deck = getattr(game, "chance_from_deck", None)
     while not game.is_terminal(state):
         if game.is_chance_node(state):
-            state = game.apply_action(state, order[k])
-            k += 1
+            if from_deck is None or from_deck(state):
+                state = game.apply_action(state, order[k])
+                k += 1
+            else:
+                stream = stream or np.random.default_rng(chance_seed)
+                outcomes = game.chance_outcomes(state)
+                pick = stream.choice(len(outcomes), p=[p for _, p in outcomes])
+                state = game.apply_action(state, outcomes[pick][0])
         else:
             agent = seats[game.current_player(state)]
             state = game.apply_action(state, agent.step(game, state, rng))
@@ -119,10 +154,7 @@ class RolloutImprover(Agent):
         self.blueprint = PPOAgent.from_checkpoint(config.blueprint, greedy=True)
         self.rng = np.random.default_rng(config.seed)
         self.memo = _Memo(self.blueprint)
-        names = ROBUST_MODELS if config.robust else ("blueprint",)
-        self.models: list[Agent] = [
-            self.memo if name == "blueprint" else make_heuristic(name) for name in names
-        ]
+        self.models: list[Agent] = []  # built on the first search, once the game is known
         self.searched = 0
         self.switched = 0
         # When set to a list, every searched decision is appended to it as
@@ -169,15 +201,24 @@ class RolloutImprover(Agent):
             return worlds
         return [game.resample_from_infostate(state, me, self.rng) for _ in range(n)]
 
+    def _opponent_models(self, game: Game) -> list[Agent]:
+        """The agents that play the opponent's seat in rollouts."""
+        cfg = self.config
+        names = cfg.models or (
+            ROBUST_MODELS[game.game_type.short_name] if cfg.robust else ("blueprint",)
+        )
+        return [self.memo if name == "blueprint" else make_heuristic(name) for name in names]
+
     def step(self, game: Game, state: State, rng: np.random.Generator) -> Action:
         """Play the blueprint's move unless rollouts show a clearly better first move."""
         cfg = self.config
         default = self.blueprint.step(game, state, rng)
         me = game.current_player(state)
-        opening_a_turn = sum(game.private_hand(state, me)) >= sum(game.private_hand(state, 1 - me))
         legal = game.legal_actions(state)
-        if sum(state.deck) > cfg.deck_max or not opening_a_turn or len(legal) < 2:
+        if sum(state.deck) > cfg.deck_max or len(legal) < 2 or not turn_start(game, state):
             return default
+        if not self.models:
+            self.models = self._opponent_models(game)
         self.searched += 1
         self.memo.moves.clear()
         margins = np.zeros((len(self.models), cfg.worlds * cfg.orders, len(legal)))
@@ -197,7 +238,7 @@ class RolloutImprover(Agent):
                     after = game.apply_action(world, legal[k])
                     for j, model in enumerate(self.models):
                         seats = (self.memo, model) if me == 0 else (model, self.memo)
-                        margins[j, row, k] = play_out(game, after, seats, order, rng)[me]
+                        margins[j, row, k] = play_out(game, after, seats, order, rng, row)[me]
                 row += 1
         chosen = alive[self._decide(margins[:, :, alive], alive.index(base))]
         if self.log is not None:

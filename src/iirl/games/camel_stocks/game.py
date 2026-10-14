@@ -167,6 +167,16 @@ class CamelStocks(Game):
         total = sum(state.deck)
         return [(c, n / total) for c, n in enumerate(state.deck) if n > 0]
 
+    def chance_from_deck(self, state: State) -> bool:
+        """Whether the pending chance event draws from the deck (not a bonus token)."""
+        assert isinstance(state, CamelStocksState)
+        return state.phase != Phase.BONUS
+
+    def turn_start(self, state: State) -> bool:
+        """Whether this is the first decision of a turn (not part of an exchange)."""
+        assert isinstance(state, CamelStocksState)
+        return state.phase == Phase.PLAY
+
     # --- Legal actions --------------------------------------------------------------------------
     def legal_actions(self, state: State) -> list[Action]:
         """Return the legal actions at a player node."""
