@@ -5,9 +5,19 @@ numbers are comparable across runs (about ±10 Elo at 1000 deals, vs ±35 for 40
 evals). Results go to ``runs/elo_ladder.json``; checkpoints already rated there are skipped, so
 this is cheap to rerun as the lineage grows, and safe to stop at any time.
 
+A lineage entry ``rollout:<checkpoint>`` is that checkpoint with opponent-robust endgame
+rollouts (``agents/rollout.py``).
+
+**Two Ventures scales.** The plain heuristic leaks (it hands over playable cards), so the best
+agents score 0.85-0.92 against it and their ratings bunch up near its ceiling. ``careful`` rates
+the same lineage against the careful heuristic instead, after placing the careful heuristic on the
+same scale with a heuristic-vs-heuristic match (so the two ladders share units; the careful one
+separates strong agents better).
+
 Run with::
 
-    uv run python -m experiments.elo_ladder              # Ventures
+    uv run python -m experiments.elo_ladder              # Ventures, plain-heuristic anchor
+    uv run python -m experiments.elo_ladder careful      # Ventures, careful-heuristic anchor
     uv run python -m experiments.elo_ladder camel_stocks # Camel Stocks (its heuristic = 1500)
 """
 
@@ -22,7 +32,8 @@ import iirl.games  # noqa: F401  (registers "ventures")
 from experiments.exploit_ventures import heuristic_agent, ppo_agent
 from iirl.agents.base import Agent
 from iirl.agents.heuristic import CamelStocksHeuristic
-from iirl.core.registry import make
+from iirl.agents.rollout import rollout_agent
+from iirl.core.registry import make, make_heuristic
 from iirl.eval.duplicate import duplicate_match
 from iirl.eval.tournament import anchored_elo
 
@@ -54,6 +65,7 @@ class Config:
         *((f"careful {i}", f"runs/careful_{i}.pt") for i in range(100, 500, 100)),
         *((f"diverse {i}", f"runs/diverse_{i}.pt") for i in range(100, 500, 100)),
         *((f"diverse_sym {i}", f"runs/diverse_sym_{i}.pt") for i in range(100, 500, 100)),
+        ("diverse_sym + rollouts", "rollout:runs/diverse_sym.pt"),
     )
     deals: int = 1000
     out: str = "runs/elo_ladder.json"
@@ -74,15 +86,50 @@ CAMEL_STOCKS = Config(
 )
 
 
+ROLLOUT = "rollout:"
+
+
+def agent_spec(path: str) -> tuple:
+    """A picklable agent spec for a lineage entry (a checkpoint, or ``rollout:<checkpoint>``)."""
+    if path.startswith(ROLLOUT):
+        settings = {"blueprint": path[len(ROLLOUT) :], "deck_max": 6, "robust": True}
+        return rollout_agent, settings
+    return ppo_agent, {"path": path}
+
+
+def careful_heuristic() -> Agent:
+    """The careful heuristic (never hands over a playable card)."""
+    return make_heuristic("ventures_careful")
+
+
+def careful_config() -> Config:
+    """The Ventures ladder anchored on the careful heuristic, placed on the plain scale."""
+    out = Path("runs/elo_ladder_careful.json")
+    ladder = json.loads(out.read_text("utf-8")) if out.exists() else {}
+    if "_anchor" not in ladder:
+        game = make("ventures")
+        r = duplicate_match(game, (careful_heuristic, {}), (heuristic_agent, {}), 2000)
+        ladder["_anchor"] = {
+            "label": "careful heuristic vs the plain heuristic",
+            "score": round(r.score, 4),
+            "elo": round(anchored_elo(r.score, HEURISTIC_ELO), 1),
+            "deals": r.deals,
+        }
+        out.write_text(json.dumps(ladder, indent=2), "utf-8")
+    anchor = ladder["_anchor"]["elo"]
+    print(f"careful heuristic = {anchor:.0f} Elo on the plain-heuristic scale", flush=True)
+    return Config(out=str(out), heuristic=careful_heuristic, anchor_elo=anchor)
+
+
 def main(config: Config) -> None:
     """Rate each unrated checkpoint vs the heuristic; print and save the ladder."""
     game = make(config.game)
     out = Path(config.out)
     ladder = json.loads(out.read_text("utf-8")) if out.exists() else {}
     for label, path in config.lineage:
-        if label in ladder or not Path(path).exists():
+        if label in ladder or not Path(path.removeprefix(ROLLOUT)).exists():
             continue
-        r = duplicate_match(game, (ppo_agent, {"path": path}), (config.heuristic, {}), config.deals)
+        r = duplicate_match(game, agent_spec(path), (config.heuristic, {}), config.deals)
         ladder[label] = {
             "checkpoint": path,
             "elo": round(anchored_elo(r.score, config.anchor_elo), 1),
@@ -118,4 +165,8 @@ def main(config: Config) -> None:
 if __name__ == "__main__":
     import sys
 
-    main(CAMEL_STOCKS if sys.argv[1:] == ["camel_stocks"] else Config())
+    choice = sys.argv[1] if len(sys.argv) > 1 else ""
+    if choice == "camel_stocks":
+        main(CAMEL_STOCKS)
+    else:
+        main(careful_config() if choice == "careful" else Config())
