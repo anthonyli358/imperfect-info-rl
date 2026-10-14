@@ -31,7 +31,8 @@ class Config:
         port: Port to serve on.
         agents: Per game, ``(label, checkpoint)`` opponents offered in the page, strongest first;
             ``"heuristic"`` is the game's hand-tuned agent and other names without ``.pt`` are
-            registered heuristics. Missing checkpoints are skipped.
+            registered heuristics; ``"rollout:<checkpoint>"`` adds endgame rollouts to a
+            checkpoint. Missing checkpoints are skipped.
         open_browser: Open the page on start.
         record_dir: Where finished games are saved as JSON, for analysis (``None``: off).
     """
@@ -41,7 +42,11 @@ class Config:
     agents: dict[str, tuple[tuple[str, str], ...]] = field(
         default_factory=lambda: {
             "ventures": (
-                ("Best: symmetry + diverse league (diverse_sym)", "runs/diverse_sym.pt"),
+                (
+                    "Best: diverse_sym + endgame rollouts (thinks a few seconds late on)",
+                    "rollout:runs/diverse_sym.pt",
+                ),
+                ("Symmetry + diverse league, no search (diverse_sym)", "runs/diverse_sym.pt"),
                 ("Careful-league PPO (careful)", "runs/careful.pt"),
                 ("Nash PPO (league_control), 1973 Elo", "runs/league_control.pt"),
                 ("Nash PPO (nash_g), ~1970 Elo", "runs/nash_g.pt"),
@@ -63,12 +68,17 @@ class Config:
 
 def main(config: Config) -> None:
     """Serve the play page with the opponents whose checkpoints exist."""
+
+    def resolve(spec: str) -> str | None:
+        """The spec with its checkpoint made absolute, or None if the checkpoint is missing."""
+        prefix = "rollout:" if spec.startswith("rollout:") else ""
+        path = spec[len(prefix) :]
+        if not path.endswith(".pt"):
+            return spec
+        return prefix + str(ROOT / path) if (ROOT / path).exists() else None
+
     agents = {
-        game: [
-            (label, str(ROOT / p) if p.endswith(".pt") else p)
-            for label, p in opponents
-            if not p.endswith(".pt") or (ROOT / p).exists()
-        ]
+        game: [(label, resolve(p)) for label, p in opponents if resolve(p) is not None]
         for game, opponents in config.agents.items()
     }
     record = ROOT / config.record_dir if config.record_dir else None

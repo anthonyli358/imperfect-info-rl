@@ -24,13 +24,23 @@ from iirl.agents.ppo import PPOAgent
 from iirl.core.game import Game, State
 from iirl.core.registry import make, make_heuristic
 
+ROLLOUT = "rollout:"
+
 
 def build_agent(game_name: str, checkpoint: str) -> Agent:
     """Return the agent for ``checkpoint``.
 
     ``"heuristic"`` is the game's own heuristic, another name without ``.pt`` is a registered
     heuristic (e.g. ``"ventures_careful"``), and a ``.pt`` path is a PPO checkpoint.
+    ``"rollout:<path>.pt"`` is that checkpoint with opponent-robust endgame rollouts
+    (``agents/rollout.py``; it thinks for a few seconds per move in the last turns).
     """
+    if checkpoint.startswith(ROLLOUT):
+        from iirl.agents.rollout import rollout_agent
+
+        return rollout_agent(
+            blueprint=checkpoint[len(ROLLOUT) :], deck_max=6, robust=True, seed=int(time.time())
+        )
     if checkpoint == "heuristic":
         return make_heuristic(game_name)
     if not checkpoint.endswith(".pt"):
