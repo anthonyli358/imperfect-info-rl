@@ -276,6 +276,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      - [x] **Direct exploiter vs the fast rollout agent** (60 iterations, standard recipe, warm
        start from the best exploiter of `diverse_sym`): **0.493 ± 0.010** on 1,000 fresh deals;
        no snapshot beat the starting point. Reduced budget, so a weak attack.
+     - [x] **Rollout agent in the play page** (2026-10-14): first Ventures opponent in
+       `experiments/play.py` (`rollout:runs/diverse_sym.pt`).
      - [ ] **Possible next steps.** Stronger exploiter recipes at full budget (~10 h each at
        this speed); rollouts from earlier than 6 cards with the faster code; the rollout agent in
        the play page; or leave Ventures here and carry the lessons to the next game.
