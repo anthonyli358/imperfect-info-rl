@@ -78,6 +78,7 @@ CAMEL_STOCKS = Config(
     lineage=(
         *((f"camel_ppo {i}", f"runs/camel_ppo_{i}.pt") for i in range(100, 700, 100)),
         *((f"camel_nash {i}", f"runs/camel_nash_{i}.pt") for i in range(100, 500, 100)),
+        ("camel_nash + rollouts", "rollout:runs/camel_nash.pt"),
     ),
     out="runs/elo_ladder_camel_stocks.json",
     game="camel_stocks",
@@ -89,11 +90,20 @@ CAMEL_STOCKS = Config(
 ROLLOUT = "rollout:"
 
 
-def agent_spec(path: str) -> tuple:
+# Cards left in the deck at which each game's rollout agent starts searching (where the paired-
+# rollout audits found its policy improvable: experiments/search_audit.py).
+ROLLOUT_DECK_MAX = {"ventures": 6, "camel_stocks": 12}
+
+
+def agent_spec(path: str, game: str = "ventures") -> tuple:
     """A picklable agent spec for a lineage entry (a checkpoint, or ``rollout:<checkpoint>``)."""
     if path.startswith(ROLLOUT):
-        settings = {"blueprint": path[len(ROLLOUT) :], "deck_max": 6, "robust": True}
-        return rollout_agent, settings
+        blueprint = path[len(ROLLOUT) :]
+        return rollout_agent, {
+            "blueprint": blueprint,
+            "deck_max": ROLLOUT_DECK_MAX[game],
+            "robust": True,
+        }
     return ppo_agent, {"path": path}
 
 
@@ -129,7 +139,8 @@ def main(config: Config) -> None:
     for label, path in config.lineage:
         if label in ladder or not Path(path.removeprefix(ROLLOUT)).exists():
             continue
-        r = duplicate_match(game, agent_spec(path), (config.heuristic, {}), config.deals)
+        spec = agent_spec(path, config.game)
+        r = duplicate_match(game, spec, (config.heuristic, {}), config.deals)
         ladder[label] = {
             "checkpoint": path,
             "elo": round(anchored_elo(r.score, config.anchor_elo), 1),
