@@ -380,6 +380,12 @@ Goal: a second game to reveal which abstractions are real vs incidental — then
   **0.950 ± 0.026** (+23.3), as decisively as vs the heuristic it trained with.
 - [x] Play page for any game: `Game.player_view` hook; game-agnostic play server; per-game board
   renderers with a generic fallback (`experiments/play.py`, `viz/play.html`)
+- [x] **The Ventures search approach on Camel Stocks** (2026-10-16): paired-rollout audit
+  (`experiments/search_audit.py`) finds the policy improvable from the middle game, ~2 points a
+  turn from 12 cards left; robust rollouts from 12 cards: **0.620 ± 0.007** vs `camel_nash`
+  (+3.8 points), 0.978 / 0.988 vs the two heuristic styles (policy: 0.936 / 0.966), Elo
+  2151 ± 24; 5.5 s of thinking a game. From 25 cards: 12× slower, not worth it. In the play
+  page. Open: exploiter and PIMC against it.
 
 **Refactor block — harden the game-agnostic core:**
 

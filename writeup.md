@@ -11,23 +11,25 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 ---
 
-## The headline (as of 2026-10-14)
+## The headline (as of 2026-10-16)
 
-**The best agents are reactive policies trained by Nash-seeking PPO self-play, plus, on Ventures,
-a narrow search in the last few turns.** The policy does almost all the work; search earns its
-place only where it can measure move values honestly.
+**The best agents are reactive policies trained by Nash-seeking PPO self-play, plus a narrow
+search late in the game where an audit shows the policy is improvable.** The policy does almost
+all the work; search earns its place only where it can measure move values honestly. The same
+two-part method now leads on both games.
 
 | | Ventures | Camel Stocks |
 |---|:---:|:---:|
-| Best agent | `diverse_sym` + opponent-robust endgame rollouts | `camel_nash` (policy only) |
-| Elo, plain-heuristic anchor | **2070 ± 13** (policy alone: 2034 ± 12) | **1968–1972** (heuristic = 1500) |
-| Elo, careful-heuristic anchor (same scale) | **1960 ± 10** (policy alone: 1929 ± 9) | not built |
-| Head to head vs the best plain policy | **0.524 ± 0.006** (+2.5 points a game) vs `diverse_sym` | (it is the best plain policy) |
-| Weakest matchup vs any heuristic style | **0.827** (careful; plain `diverse_sym`: 0.795) | **0.940** (plain; careful 0.966) |
-| Held-out search opponent (PIMC) | not re-run | **0.950** |
-| Best trained exploiter's score (lower bound) | **0.493 ± 0.010** (direct, reduced budget); existing counters ≤ 0.510 | 0.509 (4 runs, 3 recipes) |
-| Cost per game | ~5 s (fast form) to 10–20 s | instant |
-| Play it | `uv run python -m experiments.play` (top of the Ventures list) | same page |
+| Best agent | `diverse_sym` + opponent-robust endgame rollouts | `camel_nash` + opponent-robust rollouts |
+| Search starts at | 6 cards left in the deck | 12 cards left |
+| Elo, plain-heuristic anchor | **2070 ± 13** (policy alone: 2034 ± 12) | **2151 ± 24** (policy alone: 1968–1972; heuristic = 1500) |
+| Elo, careful-heuristic anchor (same scale) | **1960 ± 10** (policy alone: 1929 ± 9) | not built (the plain anchor does not leak here) |
+| Head to head vs the best plain policy | **0.524 ± 0.006** (+2.5 points a game) vs `diverse_sym` | **0.620 ± 0.007** (+3.8 points a game) vs `camel_nash` |
+| Weakest matchup vs any heuristic style | **0.827** (careful; plain `diverse_sym`: 0.795) | **0.978** (plain; `camel_nash` alone: 0.936) |
+| Held-out search opponent (PIMC) | not re-run | 0.950 (policy alone; not re-run with search) |
+| Best trained exploiter's score (lower bound) | **0.493 ± 0.010** (direct, reduced budget); existing counters ≤ 0.510 | 0.509 for the policy (4 runs, 3 recipes); not run against the search |
+| Thinking time per game | ~5 s (fast form) to 10–20 s | **5.5 s** (median pause 0.7 s, worst 5.3 s) |
+| Play it | `uv run python -m experiments.play` (top of the Ventures list) | same page, top of the Camel Stocks list |
 
 **The recipe**, in the order it was found:
 
@@ -46,11 +48,13 @@ place only where it can measure move values honestly.
 5. **Suit symmetry** (Ventures): a DrAC-style regularizer pulls the policy on a suit-relabelled
    position toward the policy on the original. With a four-style opponent league it took the
    weakest matchup to 0.795.
-6. **Opponent-robust endgame rollouts** (Ventures, new in October). Once the deck is down to 6
-   cards, every first move of the turn is played out to the end with the policy, in 8 re-dealt
-   hidden worlds × 8 deck orders, each under three models of the opponent; the policy's move is
-   overridden only if another move is significantly better pooled over the models and not worse
-   under any one of them. It changes a move or two per game and adds ~2.5 points a game.
+6. **Audit, then opponent-robust late-game rollouts** (new in October). First a paired-rollout
+   audit finds the phase of the game where the policy's move is measurably improvable. From there
+   on (Ventures: 6 cards left in the deck; Camel Stocks: 12), every first move of the turn is
+   played out to the end with the policy, in 8 re-dealt hidden worlds × 8 deck orders, each under
+   three models of the opponent; the policy's move is overridden only if another move is
+   significantly better pooled over the models and not worse under any one of them. It adds
+   ~2.5 points a game on Ventures and ~3.8 on Camel Stocks.
 
 **How far to trust "unexploitable".** Every exploitability number is a lower bound from a trained
 exploiter. On Mini-Ventures, where exact answers exist, the PPO recipe gets within 0.07 points a
@@ -109,12 +113,14 @@ What the two scales say together:
 
 **Camel Stocks** (one anchor, the Camel Stocks heuristic at 1500):
 
-| Checkpoint | PPO 100 | 200 | 300 | 400 | 500 | 600 | Nash 100 | 200 | 300 | 400 |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Elo | 1810 | 1834 | 1851 | 1856 | 1912 | 1889 | 1915 | 1950 | **1972** | 1968 |
+| Checkpoint | PPO 100 | 200 | 300 | 400 | 500 | 600 | Nash 100 | 200 | 300 | 400 | **+ rollouts** |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Elo | 1810 | 1834 | 1851 | 1856 | 1912 | 1889 | 1915 | 1950 | 1972 | 1968 | **2151 ± 24** |
 
-The recipe transferred unchanged: plain PPO climbs to ~1900, and the Nash-seeking phase adds
-~70. Its anchor is not known to leak: the agent scores *higher* against the careful Camel Stocks
+The recipe transferred unchanged: plain PPO climbs to ~1900, the Nash-seeking phase adds ~70,
+and the late-game rollouts add +179 more on this ladder. That overstates them: at a 0.977 score
+against the anchor, Elo stretches small score changes into large gaps. Measured head to head,
+0.620 against `camel_nash` is **+85 Elo**, the figure to trust. Its anchor is not known to leak: the agent scores *higher* against the careful Camel Stocks
 heuristic (0.966) than against the plain one (0.940), the reverse of Ventures, so this ladder has
 not been re-anchored.
 
@@ -267,7 +273,7 @@ rollouts show a significantly better move.
 
 ---
 
-## Where we stand (2026-10-14)
+## Where we stand (2026-10-16)
 
 **Tried, and the verdict** (details in the findings log below):
 
@@ -293,19 +299,23 @@ rollouts show a significantly better move.
 | Late-game paired rollouts on top of the policy | Beats the policy head to head (0.526 from 6 cards left, 0.538 from 12); with one opponent model it does not transfer |
 | **+ opponent-robust rollouts (3 opponent models)** | **Best Ventures agent: 0.524 head to head, better than the policy against all five styles (weakest 0.827); exploiters find nothing** |
 | Distilling those rollouts' moves into the policy | Fails: reproduces 2–14% of the overrides, plays level or worse |
+| **Audit + robust rollouts on Camel Stocks** | **Transfers: 0.620 head to head vs `camel_nash`, better against both heuristic styles; search from 12 cards, 5.5 s a game** |
 
 **What's left, in order of value:**
 
-1. **Human play.** The strongest Ventures agent is now the first opponent in the play page;
+1. **Azul (next).** A perfect-information game apart from the tile draws: the setting where a
+   learned value *should* support search, unlike Ventures. The plan is the recipe first, then the
+   audit, then whichever search the audit supports.
+2. **Human play.** The strongest agent of each game is now the first opponent in the play page;
    games are recorded to `runs/human_games/` for analysis.
-2. **The next game rungs** (Liar's Dice, a small poker, Azul). ReBeL's public-belief search should
-   suit the poker-like games far better than Ventures: small private states, outcomes that follow
-   from decisions rather than the deal.
-3. **A full-budget exploiter** against the rollout agent with the stronger recipes (~10 hours per
-   run at current speed), for a tighter exploitability bound.
-4. **Rollouts earlier than 6 cards**, now that they are 3× cheaper; the audit says the gain there
-   is small and hard to resolve.
-5. **A fast engine and batched search (Phase D)**, if any of the above needs the speed.
+3. **Liar's Dice and a small poker**, where ReBeL's public-belief search should suit far better
+   than on Ventures: small private states, outcomes that follow from decisions.
+4. **A full-budget exploiter** against the rollout agents with the stronger recipes (~10 hours per
+   run at current speed), for a tighter exploitability bound; none has been run against the Camel
+   Stocks search yet.
+5. **Earlier rollouts** only with faster code: on Camel Stocks starting at 25 cards costs 12× the
+   thinking time (68 s a game, pauses up to 20 s) for a gain the audit puts at ~0.3 points a turn.
+6. **A fast engine and batched search (Phase D)**, if any of the above needs the speed.
 
 ## Why each method lands where it does
 
@@ -352,6 +362,64 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### The search approach transfers to Camel Stocks (2026-10-14 → 10-16)
+
+`experiments/search_audit.py` (a game-agnostic version of the Ventures audit, plus match and
+panel stages), `experiments/rollout_latency.py`; the rollout agent now handles chance events
+that are not deck draws (Camel Stocks' bonus tokens) and a per-game start-of-turn rule.
+
+**1. The audit first.** 584 start-of-turn positions from `camel_nash` self-play, every first move
+played out by the policy in the same 8 hidden worlds × 8 deck orders:
+
+| Phase (cards in deck) | n | Legal moves | Policy's move is best | Better move worth: upper | Lower | Rollouts to resolve 1 point |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| Early (> 25) | 246 | 7.7 | 0.47 | +0.89 ± 0.08 | −0.35 ± 0.15 | 930 |
+| Middle (13–25) | 260 | 7.0 | 0.39 | +1.21 ± 0.11 | **+0.34 ± 0.15** | 537 |
+| Late (7–12) | 69 | 6.8 | 0.35 | +2.02 ± 0.32 | **+1.74 ± 0.36** | 160 |
+| Endgame (≤ 6) | 9 | 8.8 | 0.33 | +3.28 ± 1.16 | +3.25 ± 1.17 | 21 |
+
+- **Improvable from the middle game on, and by ~2 points a turn once 12 or fewer cards are left**
+  (Ventures: only the last 6 cards, ~1 point a turn).
+- **Few games reach a near-empty deck** (9 of 584 positions): Camel Stocks usually ends when three
+  goods run out. A Ventures-style threshold of 6 cards would almost never fire; 12 is the natural
+  start.
+- **Hidden information matters little** (a close move's advantage varies by 0.6–1.6 points with
+  the opponent's hand, against 2–4 on Ventures), and **luck shrinks fast** as the deck empties
+  (15 points per rollout early, 2 at the end).
+
+**2. The agent.** `camel_nash` plus opponent-robust rollouts from 12 cards left, with the policy,
+the Camel Stocks heuristic and the careful Camel Stocks heuristic as the three opponent models.
+
+| Opponent (paired deals) | Rollout agent | `camel_nash` alone |
+|---|:---:|:---:|
+| `camel_nash` (1,000) | **0.620 ± 0.007** (+3.80 ± 0.11) | 0.500 |
+| Camel Stocks heuristic (500) | **0.978 ± 0.004** (+24.0) | 0.936 ± 0.007 (+20.0) |
+| Careful heuristic (500) | **0.988 ± 0.003** (+27.8) | 0.966 ± 0.006 (+23.7) |
+| Elo, heuristic = 1500 (1,000) | **2151 ± 24** | 1968–1972 |
+
+- **A bigger gain than on Ventures** (+3.8 points a game against +2.5), as the audit predicted:
+  the policy is improvable earlier and by more, and there is less luck to average away.
+- **It transfers across opponents:** about +4 points a game against both heuristic styles too.
+  Unlike the first Ventures version, no opponent got worse.
+- Both heuristic styles are among the rollouts' opponent models, so (unlike Ventures, which had
+  three unmodelled styles) there is no held-out style here; the gain against `camel_nash`, which
+  is also modelled, is the head-to-head figure.
+
+**3. What it costs, and why not search earlier.** Per-decision latency over 20 games on an idle
+machine, single process (`experiments/rollout_latency.py`):
+
+| Search from | Searched turns a game | Median pause | 90th percentile | Worst pause | Thinking per game |
+|---|:---:|:---:|:---:|:---:|:---:|
+| 12 cards | 5.3 | 0.66 s | 2.8 s | 5.3 s | **5.5 s** |
+| 25 cards | 14.3 | 3.5 s | 10.5 s | 20.5 s | 67.6 s |
+
+(The policy's own move takes 0.2 ms.) Starting at 25 cards costs 12× the thinking time for the
+middle-game gain the audit puts at ~0.3 points a turn. A 1,000-deal match from 25 cards was
+stopped after five hours without a result; a smaller one can settle it if faster code arrives.
+
+**Not yet measured:** a trained exploiter against the Camel Stocks rollout agent, and PIMC as a
+held-out opponent for it.
 
 ### Where search suits Ventures: an audit by paired rollouts, and the first search to beat the policy (2026-10-02)
 
