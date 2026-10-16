@@ -20,6 +20,8 @@ place only where it can measure move values honestly.
 | | Ventures | Camel Stocks |
 |---|:---:|:---:|
 | Best agent | `diverse_sym` + opponent-robust endgame rollouts | `camel_nash` (policy only) |
+| Elo, plain-heuristic anchor | **2070 ± 13** (policy alone: 2034 ± 12) | **1968–1972** (heuristic = 1500) |
+| Elo, careful-heuristic anchor (same scale) | **1960 ± 10** (policy alone: 1929 ± 9) | not built |
 | Head to head vs the best plain policy | **0.524 ± 0.006** (+2.5 points a game) vs `diverse_sym` | (it is the best plain policy) |
 | Weakest matchup vs any heuristic style | **0.827** (careful; plain `diverse_sym`: 0.795) | **0.940** (plain; careful 0.966) |
 | Held-out search opponent (PIMC) | not re-run | **0.950** |
@@ -58,11 +60,63 @@ large and moderate weaknesses, not small ones. For the Ventures rollout agent th
 thinner still: one reduced-budget direct exploiter plus five counters to the plain policy, all of
 which do worse against it. Humans, the one opponent type never measured, can now play it.
 
-**The history, for context.** On Ventures the method ladder went: random 1000 → REINFORCE ~1420 →
-PPO v1 ~1340 → hand-tuned heuristic 1676 → PIMC search ~1700 → PPO v2 ~1800 → net-guided PIMC
-~1855 → Nash-seeking PPO ~1940–1970. These Elo figures are anchored on the plain heuristic, which
-turned out to leak (against the careful heuristic, PPO v2 *loses*, 0.441), so read them as ordering,
-not strength. AlphaZero sits at ~1140: its learned value is swamped by the deal's luck.
+---
+
+## The Elo trajectory
+
+**How the ratings are made.** Every checkpoint plays a fixed anchor on the same 1,000 paired deals
+(`experiments/elo_ladder.py`), and its score converts to Elo against the anchor's fixed rating.
+Ventures has two anchors on one scale:
+
+- **The plain heuristic, fixed at 1676** (random play = 1000). It *leaks*: it hands over playable
+  cards, so strong agents score 0.85–0.91 against it and their ratings bunch up near its ceiling.
+- **The careful heuristic**, which never hands over a playable card. It scores 0.5175 against the
+  plain one over 2,000 deals, which places it at **1688** on the same scale. Rating everyone
+  against it as well separates the strong agents far better (a 0.80 score instead of 0.89).
+
+**Ventures, the whole climb** (± one standard error; the early methods were rated before the
+ladder existed, against the plain heuristic only):
+
+| Stage | Agent | Plain anchor | Careful anchor |
+|---|---|:---:|:---:|
+| Baseline | Random play | 1000 | |
+| Early learning | REINFORCE / PPO v1 | ~1420 / ~1340 | |
+| Hand-tuned | Plain heuristic (anchor) | 1676 | ~1676 |
+| Hand-tuned | Careful heuristic (anchor) | 1688 | 1688 |
+| Search | PIMC (determinized UCT) | ~1700 | |
+| Learned + search | Net-guided PIMC | ~1855 | |
+| Search on a learned value | AlphaZero | ~1140 | |
+| **PPO v2** (features, shaping, privileged critic) | `ppo_ventures_best` | 1822 ± 8 | **1650 ± 8** |
+| **Nash-seeking PPO** | `nash_control` / `nash_long 600` | 1905 ± 9 / 1941 ± 10 | 1757 ± 8 / 1731 ± 7 |
+| | `league_control`, `nash_g`, `rnad` (best of each) | 1973–1983 | 1748–1786 |
+| **+ careful heuristic in the league** | `careful` 400 | 1982 ± 11 | **1855 ± 8** |
+| + four-style league | `diverse` 300 | 1982 ± 11 | 1829 ± 8 |
+| **+ suit symmetry** | `diverse_sym` 400 | 2034 ± 12 | **1929 ± 9** |
+| **+ opponent-robust endgame rollouts** | best agent | **2070 ± 13** | **1960 ± 10** |
+
+What the two scales say together:
+
+- **PPO v2 loses to the careful heuristic** (1650 vs 1688) although it is 146 points above the
+  plain one: most of its edge was the plain heuristic's gifts.
+- **Nash-seeking PPO, the league and R-NaD looked like steady progress on the plain scale
+  (1905 → 1983) but were nearly flat on the careful one (1716–1786).** Those months were spent
+  climbing a leaky yardstick. This is the measurement behind "train against non-leaky opponents".
+- **The careful-league and symmetry steps are where real strength came from:** +69 and +74 on
+  the careful scale (1786 → 1855 → 1929), while the plain scale barely moved for the first.
+- **The endgame rollouts add +31 to +36** on both scales, about three standard errors each.
+- In total: **+310 Elo on the careful scale from PPO v2 to the best agent**, against +248 on the
+  plain one, which compresses the top.
+
+**Camel Stocks** (one anchor, the Camel Stocks heuristic at 1500):
+
+| Checkpoint | PPO 100 | 200 | 300 | 400 | 500 | 600 | Nash 100 | 200 | 300 | 400 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Elo | 1810 | 1834 | 1851 | 1856 | 1912 | 1889 | 1915 | 1950 | **1972** | 1968 |
+
+The recipe transferred unchanged: plain PPO climbs to ~1900, and the Nash-seeking phase adds
+~70. Its anchor is not known to leak: the agent scores *higher* against the careful Camel Stocks
+heuristic (0.966) than against the plain one (0.940), the reverse of Ventures, so this ladder has
+not been re-anchored.
 
 ---
 
