@@ -56,7 +56,11 @@ class Config:
                 ("Careful heuristic (never gifts)", "ventures_careful"),
             ),
             "camel_stocks": (
-                ("Nash PPO (camel_nash), ~1970 Elo", "runs/camel_nash.pt"),
+                (
+                    "Best: camel_nash + endgame rollouts (thinks ~1 s late on)",
+                    "rollout:runs/camel_nash.pt",
+                ),
+                ("Nash PPO (camel_nash), ~1970 Elo, no search", "runs/camel_nash.pt"),
                 ("PPO (camel_ppo), ~1890 Elo", "runs/camel_ppo.pt"),
                 ("Heuristic, 1500 Elo", "heuristic"),
             ),

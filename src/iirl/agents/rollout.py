@@ -76,6 +76,11 @@ ROBUST_MODELS = {
 }
 
 
+# Cards left in the deck at which each game's rollout agent starts searching: where the paired-
+# rollout audits found the policy improvable (experiments/search_audit.py).
+DECK_MAX = {"ventures": 6, "camel_stocks": 12}
+
+
 def turn_start(game: Game, state: State) -> bool:
     """Whether ``state`` is the first decision of a player's turn.
 

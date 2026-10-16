@@ -36,10 +36,13 @@ def build_agent(game_name: str, checkpoint: str) -> Agent:
     (``agents/rollout.py``; it thinks for a few seconds per move in the last turns).
     """
     if checkpoint.startswith(ROLLOUT):
-        from iirl.agents.rollout import rollout_agent
+        from iirl.agents.rollout import DECK_MAX, rollout_agent
 
         return rollout_agent(
-            blueprint=checkpoint[len(ROLLOUT) :], deck_max=6, robust=True, seed=int(time.time())
+            blueprint=checkpoint[len(ROLLOUT) :],
+            deck_max=DECK_MAX[game_name],
+            robust=True,
+            seed=int(time.time()),
         )
     if checkpoint == "heuristic":
         return make_heuristic(game_name)

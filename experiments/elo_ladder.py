@@ -32,7 +32,7 @@ import iirl.games  # noqa: F401  (registers "ventures")
 from experiments.exploit_ventures import heuristic_agent, ppo_agent
 from iirl.agents.base import Agent
 from iirl.agents.heuristic import CamelStocksHeuristic
-from iirl.agents.rollout import rollout_agent
+from iirl.agents.rollout import DECK_MAX, rollout_agent
 from iirl.core.registry import make, make_heuristic
 from iirl.eval.duplicate import duplicate_match
 from iirl.eval.tournament import anchored_elo
@@ -90,18 +90,13 @@ CAMEL_STOCKS = Config(
 ROLLOUT = "rollout:"
 
 
-# Cards left in the deck at which each game's rollout agent starts searching (where the paired-
-# rollout audits found its policy improvable: experiments/search_audit.py).
-ROLLOUT_DECK_MAX = {"ventures": 6, "camel_stocks": 12}
-
-
 def agent_spec(path: str, game: str = "ventures") -> tuple:
     """A picklable agent spec for a lineage entry (a checkpoint, or ``rollout:<checkpoint>``)."""
     if path.startswith(ROLLOUT):
         blueprint = path[len(ROLLOUT) :]
         return rollout_agent, {
             "blueprint": blueprint,
-            "deck_max": ROLLOUT_DECK_MAX[game],
+            "deck_max": DECK_MAX[game],
             "robust": True,
         }
     return ppo_agent, {"path": path}
