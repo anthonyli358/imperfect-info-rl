@@ -363,6 +363,34 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Tessera: the recipe needs its league to beat the heuristic, and is still climbing (2026-10-19)
+
+Tessera is the third game: an original game on Azul's mechanics (`games/tessera`), perfect
+information apart from the bag. Engine, 13 rules tests, a greedy heuristic (beats random in 90%+
+of games; heuristic self-play scores ~55 each over 5 rounds, like the original). Then the recipe,
+unchanged (`experiments/train_tessera.py`). In-training evaluation, 400 games vs the heuristic
+every 10 iterations (Elo anchored on the heuristic at 1500, ±35 at this sample size):
+
+| Phase | Iterations | Score vs heuristic | Margin | Elo |
+|---|:---:|:---:|:---:|:---:|
+| PPO from scratch | 100 / 300 / 600 | 0.30 / 0.38 / 0.40 | −9.7 / −4.8 / −3.8 | 1366 / 1417 / 1439 |
+| Nash-seeking PPO (heuristic in the league) | 100 / 200 / 300 / 400 | 0.46 / 0.56 / 0.65 / **0.69** | −0.3 / +3.4 / +6.7 / **+8.2** | 1484 / 1557 / 1608 / **1652** |
+
+- **Unlike both card games, plain PPO self-play never beat the heuristic** (0.40 after 154k
+  games, flattening). It took the Nash phase, whose league includes the heuristic as a permanent
+  opponent, to pass it, and that phase was **still climbing at its last checkpoint** (+44 Elo
+  over the final 100 iterations).
+- **Exploitability 0.543** (max of two exploiter runs, 0.535 and 0.543; margins +1.2 to +1.4 points
+  a game). Higher than either card game (0.509–0.512), consistent with a policy that has not
+  converged.
+- Likely reasons, untested: Tessera's margins are small (±10 points) next to the +20 win bonus,
+  so the reward is mostly the sign; and drafting rewards planning a round ahead, which a reactive
+  policy learns slowly. Both point at the next steps rather than at the recipe failing.
+
+**Next:** continue the Nash phase until it flattens, rate it on a proper 1,000-deal Elo ladder,
+then the paired-rollout audit and the comparison the plan was written for: AlphaZero-style search
+with a learned value, which should finally work on a game without hidden hands.
+
 ### The search approach transfers to Camel Stocks (2026-10-14 → 10-16)
 
 `experiments/search_audit.py` (a game-agnostic version of the Ventures audit, plus match and

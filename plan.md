@@ -423,8 +423,11 @@ recipe, which it never did on the card games.
 - [x] Encoder (`information_state_tensor`, 225 features: both boards, which rows accept which
   colour, displays, centre, supply, clock) and a greedy heuristic (beats random ≥ 90%;
   heuristic self-play ~55 points each over 5 rounds, like the original)
-- [ ] The recipe unchanged (`experiments/train_tessera.py`): PPO, then Nash-seeking PPO; Elo
-  ladder anchored on the heuristic at 1500; exploiters
+- [x] The recipe unchanged (`experiments/train_tessera.py`, 2026-10-19): plain PPO plateaus
+  **below** the heuristic (0.40 after 600 iterations, Elo ~1439); the Nash phase with the heuristic
+  in the league passes it (0.69, +8.2 points, Elo ~1652 in-training) and is still climbing.
+  Exploitability 0.543 (max of 2). Not yet converged.
+- [ ] Continue the Nash phase until it flattens; a 1,000-deal Elo ladder for Tessera
 - [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
 - [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
   the recipe and against audit-chosen rollouts
