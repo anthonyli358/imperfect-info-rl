@@ -40,6 +40,7 @@ class Config:
     tag: str = "tessera"
     base_iterations: int = 600
     nash_iterations: int = 400
+    more_iterations: int = 1200
     save_every: int = 100
     exploit_seeds: tuple[int, ...] = (0, 1)
     ppo: PPOConfig = field(
@@ -85,10 +86,12 @@ def main(config: Config) -> None:
         gamma=0.999,
         seed=1,
     )
-    path = _train(base, nash, f"{config.tag}_nash", **common)
+    first = _train(base, nash, f"{config.tag}_nash", **common)
+    stage = f"{config.tag}_nash2"  # a second Nash phase from the first, while it still climbs
+    path = _train(first, replace(nash, iterations=config.more_iterations, seed=2), stage, **common)
     scores = []
     for seed in config.exploit_seeds:
-        name = f"{config.tag}_nash_s{seed}"
+        name = f"{stage}_s{seed}"
         record = Path(f"runs/exploit_{name}.json")
         if not record.exists():
             ex = exploit_ventures.Config()
@@ -96,7 +99,7 @@ def main(config: Config) -> None:
                 replace(ex, target=path, name=name, game="tessera", ppo=replace(ex.ppo, seed=seed))
             )
         scores.append(float(json.loads(record.read_text("utf-8"))["final"]["score"]))
-    print(f"\nexploitability of {config.tag}_nash: max {max(scores):.3f}  (runs: {scores})")
+    print(f"\nexploitability of {stage}: max {max(scores):.3f}  (runs: {scores})")
 
 
 if __name__ == "__main__":
