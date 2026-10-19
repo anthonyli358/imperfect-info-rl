@@ -464,6 +464,31 @@ Goal: adopt the framework where it earns its place — CFR at scale, with verifi
 
 ---
 
+## Stage 7 — LotR: The Confrontation *(entity rung)*
+
+> **IP note:** as with Ventures and Camel Stocks, ship it under an original name and theme on the
+> game's mechanical skeleton (Reiner Knizia's design credited as inspiration only): no names,
+> characters, art or rulebook text from the published game.
+
+Goal: first entity-token policy. Pieces are distinct, hidden-identity
+individuals; actions are "this piece → that region".
+
+- [ ] Engine: 9v9 asymmetric characters, region graph, hidden identities,
+      combat cards, legal-move masks — behind the `Game`/`State` interface
+- [ ] Encoder: one token per character + a global token; own pieces carry
+      identity, enemy pieces carry "unknown" or revealed identity;
+      pad + mask as characters die
+- [ ] Policy: transformer over tokens → pointer head (which character) →
+      target head (destination region); value head for training only
+- [ ] Baselines: random, ISMCTS, flat-MLP PPO
+- [ ] Training: PPO self-play + league of past selves, then R-NaD
+- [ ] Eval: Elo vs baselines; entity-vs-flat encoder ablation;
+      approximate exploitability via best response if tractable
+
+**Done when:** the entity agent beats both flat-MLP PPO and ISMCTS.
+
+---
+
 ## Cross-cutting definition of done
 
 - [ ] Google-style docstrings; clean module separation; no argparse (config dataclasses + minimal runnable blocks)
