@@ -432,8 +432,11 @@ recipe, which it never did on the card games.
 - [x] **AlphaGo recipe** (2026-10-19, `experiments/alphago_tessera.py`): value net Brier 0.193
   (heuristic 0.209); PUCT with policy priors + value leaves: 100 sims 0.551 vs the policy / 0.81 vs
   the heuristic; **400 sims 0.941 / 0.938; 1,600 sims 0.999 / 0.969 (Elo ~2097)**. Strong.
-- [ ] AlphaZero loop (`alphago_tessera exit`) to raise the nets; a 1,000-deal Elo ladder; search
-  agent in the play page; per-move latency
+- [x] AlphaZero loop (`alphago_tessera exit`, 24 iterations): the raw policy rises to 0.612 vs the
+  starting policy (+3.6); search at 100 sims vs the heuristic stays ~0.83-0.88 (flat)
+- [x] Search agent (400 sims) in the play page
+- [ ] Search budget scan with the loop's nets; a 1,000-deal Elo ladder; per-move latency; a
+  Tessera board renderer with the Ladder design system's Tile / Factory / Wall
 - [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
 - [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
   the recipe and against audit-chosen rollouts

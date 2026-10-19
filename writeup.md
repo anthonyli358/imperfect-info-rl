@@ -7,9 +7,85 @@ Scores are head-to-head score rates (win 1, draw 0.5) over duplicate deals unles
 is anchored on random = 1000 and the plain heuristic = 1676.
 
 > Written for: contributors and readers of this repo — engineers/researchers who want the *why*, not
-> just the scores.
+> just the scores. A new session (human or agent) should start with "Start here" below.
 
 ---
+
+## Start here (handoff for a new session)
+
+Read this section first; it is enough to pick the work up. Everything below it is the detailed
+record.
+
+**The project.** `imperfect-info-rl` (branch `feat/rl-agent-ladder`): self-play agents for a ladder
+of two-player games, built on one game-agnostic `Game`/`State` interface (OpenSpiel-style) in
+`src/iirl/`. The owner's goal is the strongest, least exploitable agent per game, built step by
+step, while expanding to more games and trying more approaches. Games so far:
+
+| Game | What it is | Best agent | Strength | Play it |
+|---|---|---|---|---|
+| **Ventures** | Original card game on Lost Cities' mechanics; hidden hands, heavy luck | `diverse_sym` policy + opponent-robust rollouts from 6 cards left (`agents/rollout.py`) | Elo 2070 (plain anchor) / 1960 (careful anchor); 0.524 vs the policy alone; no exploiter beats it (0.493) | `experiments/play.py` |
+| **Camel Stocks** | Original card game on Jaipur's mechanics | `camel_nash` policy + the same rollouts from 12 cards left | 0.620 vs the policy alone (+3.8 points); 0.978 / 0.988 vs the two heuristic styles | same page |
+| **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | `tessera_nash2` policy + value net + PUCT search (`experiments/alphago_tessera.py`) | 400 sims: 0.941 vs the policy, 0.938 vs the heuristic; 1,600 sims: 0.999 / 0.969 | same page (400 sims) |
+| Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
+
+**What we know works, by kind of game** (details in "What we learned" and the findings log):
+
+- *Every game:* PPO self-play with good features, potential shaping from a heuristic, a privileged
+  critic, a win bonus, then a league phase with the heuristic and past selves as opponents. Train
+  against **non-leaky** opponents (a heuristic that gifts cards teaches dependence on gifts).
+- *Hidden information and heavy luck (Ventures, Camel Stocks):* search on a learned value fails
+  (the value is ~10 points off on moves ~1 point apart). What works is a **paired-rollout audit**
+  (`experiments/search_audit.py`) to find where the policy is improvable, then **opponent-robust
+  rollouts** only there. ReBeL is exact on small games but loses on Ventures.
+- *Perfect information (Tessera):* the **AlphaGo recipe** works: a value net trained on the
+  policy's self-play, PUCT search with policy priors and value leaves. Strength climbs steadily with
+  simulations. "Nash-seeking" is unnecessary there (minimax needs no mixing).
+
+**Open threads, in the order I would take them:**
+
+1. **Tessera board renderer** in `viz/play.html` (it still uses the generic text-and-buttons
+   fallback), built with the **Ladder design system**:
+   https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5 (tokens, 19 components incl. Tile, Factory,
+   Wall; read its README first). The system is not yet applied to `viz/play.html` either.
+2. **Tessera after the AlphaZero loop:** the 24-iteration loop finished; its policy beats the
+   starting policy 0.612 alone, but search at 100 sims did not improve. Re-run the search budget
+   scan with `runs/tessera_ag/exit_prior.pt` + `exit_value.pt` (`alphago_tessera match` takes
+   `sims=`; add a `prior_path`), a 1,000-deal Elo ladder (`experiments/elo_ladder.py`, add a
+   Tessera config), and per-move latency (`experiments/rollout_latency.py` pattern).
+3. **Next games:** Liar's Dice and small poker (plan.md Stages 4–5, where ReBeL should suit), then
+   Stage 7, an entity-token rung on The Confrontation's skeleton (plan.md).
+4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
+   recorded to `runs/human_games/`).
+
+**How the owner likes to work** (please keep to these):
+
+- **Update `writeup.md` and `plan.md` after every experiment**, negative results included, then
+  commit. Commit messages end with a `Co-Authored-By` line for the assistant.
+- Behaviour analysis asks **conditional strategic questions** ("does it do X when Y arises"), with
+  n and standard errors, and names confounds.
+- Report numbers with error bars and paired deals; say plainly when a result is noise or a claim
+  was wrong (two retractions are recorded below).
+- Elo progress should be saved and visible (`runs/elo_ladder*.json`).
+- Runs must be resumable: the owner stops sessions ("stop here for today").
+- Games are original implementations of mechanical skeletons: own name and theme, no art or
+  rulebook text, the designer credited as inspiration in the module docstring.
+
+**Practicalities.**
+
+- Windows, Git Bash and PowerShell; Python via `uv` (`uv sync`, `uv run pytest`, `uv run ruff check .`
+  and `ruff format`, line length 100, Google docstrings). Configs are dataclasses, not argparse
+  (small `key=value` command-line overrides in experiment scripts).
+- 12 CPU cores, 16 GB; the venv's torch is CPU-only. Most experiments use 10 worker processes.
+- Long runs: launch detached (`Start-Process cmd /c "uv run python -m experiments.<x> >> runs\<x>.log"`),
+  because background shell commands are killed after about an hour. Everything long is resumable
+  from `runs/`.
+- Key code: `src/iirl/games/<game>/` (engines, heuristics), `src/iirl/selfplay/` (PPO, value,
+  expert iteration, ReBeL), `src/iirl/agents/` (rollout, alphazero, rebel, belief, cfr),
+  `src/iirl/eval/` (duplicate matches, exact best response), `experiments/` (one script per
+  experiment, each with its run command in the docstring), `docs/adding-a-game.md`.
+
+---
+
 
 ## The headline (as of 2026-10-16)
 
@@ -397,9 +473,20 @@ heuristic's value (0.209) and a coin flip (0.243): unlike Ventures, the value is
 - Thinking times are worker time per game across 10 parallel processes; per-move latency not yet
   measured on an idle machine.
 
-**Running:** the AlphaZero loop (expert iteration: search self-play at 200 simulations, the policy
-trained toward the search's improved choices, the value toward outcomes mixed with the search's
-estimate), to raise both nets so that less search reaches the same strength.
+**The AlphaZero loop** (expert iteration, 24 iterations of 400 search self-play games at 200
+simulations: the policy trained toward the search's improved choices, the value toward outcomes
+mixed with the search's estimate; `alphago_tessera exit`, curve in `runs/tessera_ag/exit.jsonl`):
+
+| Iteration | 3 | 6 | 9 | 12 | 15 | 18 | 21 | 24 |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| New policy alone vs the starting policy (300 deals) | 0.496 | 0.516 | 0.525 | 0.543 | 0.565 | 0.587 | 0.585 | **0.612** (+3.6) |
+| Search, 100 sims, new nets vs the heuristic (200 deals) | 0.843 | 0.828 | 0.840 | 0.844 | 0.841 | 0.878 | 0.854 | 0.826 |
+
+- **The policy improved:** distilling the search raised the raw policy steadily, to 0.612 against
+  where it started (+3.6 points a game), with no search at play time.
+- **Search at 100 simulations did not:** 0.83–0.88 against the heuristic throughout (before the
+  loop 0.810), within about two standard errors of flat. A stronger policy and value should show
+  at larger budgets; not yet measured.
 
 ### Tessera: the recipe needs its league to beat the heuristic, and is still climbing (2026-10-19)
 
