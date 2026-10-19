@@ -6,11 +6,17 @@ off when moves differed by ~1). Stages, each saved under ``runs/tessera_ag/``::
 
     uv run python -m experiments.alphago_tessera value   # value net on the policy's self-play
     uv run python -m experiments.alphago_tessera match [sims=200 deals=200 opponent=policy]
+    uv run python -m experiments.alphago_tessera exit    # the AlphaZero loop from both nets
 
 ``value`` trains ``selfplay.value.train_value`` on the policy's self-play outcomes and reports the
 held-out Brier score next to the heuristic's. ``match`` plays net-guided PUCT search (priors from
 the policy, leaf values from the value net: ``SplitEvaluator``) against the plain policy or the
-heuristic on paired deals.
+heuristic on paired deals. ``exit`` is the AlphaZero loop (``selfplay.expert_iteration``): search
+self-play, the policy trained toward the search's improved move distribution and the value toward
+the outcome mixed with the search's own estimate, repeated. Each iteration saves both nets
+(``runs/tessera_ag/exit_prior.pt``, ``exit_value.pt``; a rerun resumes after the last one) and
+rates the raw policy against the starting policy; every few iterations it also rates the search
+agent on the new nets against the heuristic. The curve is ``runs/tessera_ag/exit.jsonl``.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ from iirl.agents.ppo import PPOAgent
 from iirl.core.registry import make, make_heuristic
 from iirl.eval.duplicate import duplicate_match
 from iirl.nn.policy_value import PolicyValueNet, SplitEvaluator
+from iirl.selfplay.expert_iteration import ExItConfig, train_expert_iteration
 from iirl.selfplay.value import ValueConfig, train_value
 
 OUT = Path("runs/tessera_ag")
@@ -52,6 +59,20 @@ class Config:
             margin_scale=20.0,
         )
     )
+    exit: ExItConfig = field(
+        default_factory=lambda: ExItConfig(
+            iterations=24,
+            games_per_iter=400,
+            simulations=200,
+            determinizations=1,
+            temp_moves=12,
+            margin_weight=0.5,
+            margin_scale=20.0,
+            q_mix=0.5,
+            num_workers=10,
+        )
+    )
+    eval_every: int = 3
 
 
 def latest_policy(config: Config) -> str:
@@ -104,10 +125,31 @@ def value(config: Config) -> None:
     )
 
 
-def alphago_agent(policy: str, value_path: str, sims: int) -> AlphaZeroAgent:
-    """Policy priors + value-net leaves + PUCT (a picklable spec for duplicate matches)."""
+def save_net(net: PolicyValueNet, path: Path, extra: dict) -> None:
+    """Save a net in the checkpoint format ``PPOAgent.from_checkpoint`` and ``load_value`` read."""
+    hidden = [m.out_features for m in net.trunk if isinstance(m, torch.nn.Linear)]
+    torch.save(
+        {
+            "state_dict": net.state_dict(),
+            "input_dim": net.input_dim,
+            "num_actions": net.num_actions,
+            "hidden": hidden,
+            **extra,
+        },
+        path,
+    )
+
+
+def alphago_agent(
+    policy: str, value_path: str, sims: int, prior_path: str | None = None
+) -> AlphaZeroAgent:
+    """Policy priors + value-net leaves + PUCT (a picklable spec for duplicate matches).
+
+    ``prior_path`` overrides where the priors come from (an expert-iteration checkpoint).
+    """
     ck = torch.load(value_path, map_location="cpu", weights_only=False)
-    evaluator = SplitEvaluator(PPOAgent.from_checkpoint(policy).net, load_value(value_path))
+    prior = PPOAgent.from_checkpoint(prior_path or policy).net
+    evaluator = SplitEvaluator(prior, load_value(value_path))
     search = PUCTConfig(
         simulations=sims,
         determinizations=1,  # perfect information: the one world is the real state
@@ -152,5 +194,70 @@ def match(config: Config) -> None:
         f.write(json.dumps(row) + "\n")
 
 
+def exit_loop(config: Config) -> None:
+    """Run the AlphaZero loop from the policy and the value net, rating as it goes."""
+    from dataclasses import replace
+
+    policy = latest_policy(config)
+    prior_path, value_path = OUT / "exit_prior.pt", OUT / "exit_value.pt"
+    log_path = OUT / "exit.jsonl"
+    done = 0
+    if log_path.exists():
+        done = max(
+            json.loads(line)["iteration"] for line in log_path.read_text("utf-8").splitlines()
+        )
+    if done and prior_path.exists():
+        prior = PPOAgent.from_checkpoint(str(prior_path)).net
+        value_net = load_value(str(value_path))
+        print(f"resuming after iteration {done}", flush=True)
+    else:
+        prior = PPOAgent.from_checkpoint(policy).net
+        value_net = load_value(str(OUT / "value.pt"))
+    value_meta = torch.load(OUT / "value.pt", map_location="cpu", weights_only=False)
+    meta = {k: value_meta[k] for k in ("margin_weight", "margin_scale")}
+    game = make("tessera")
+    ex = replace(config.exit, iterations=config.exit.iterations - done, seed=done)
+
+    def on_iteration(stats, prior_net, value_net) -> None:  # noqa: ANN001
+        it = done + stats.iteration
+        save_net(prior_net, prior_path, {})
+        save_net(value_net, value_path, meta)
+        row = {
+            "iteration": it,
+            "games": it * ex.games_per_iter,
+            "policy_loss": round(stats.policy_loss, 4),
+            "value_loss": round(stats.value_loss, 4),
+            "minutes": round(stats.seconds / 60, 1),
+        }
+        r = duplicate_match(
+            game,
+            (ppo_agent, {"path": str(prior_path)}),
+            (ppo_agent, {"path": policy}),
+            300,
+            seed=31,
+            workers=10,
+        )
+        row["policy_vs_start"] = round(r.score, 4)
+        row["policy_vs_start_margin"] = round(r.margin, 2)
+        if it % config.eval_every == 0:
+            spec = (
+                alphago_agent,
+                {
+                    "policy": policy,
+                    "value_path": str(value_path),
+                    "sims": 100,
+                    "prior_path": str(prior_path),
+                },
+            )
+            h = duplicate_match(game, spec, (make_heuristic, {"short_name": "tessera"}), 200, 2028)
+            row["search100_vs_heuristic"] = round(h.score, 4)
+            row["search100_vs_heuristic_margin"] = round(h.margin, 2)
+        print(json.dumps(row), flush=True)
+        with log_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+
+    train_expert_iteration(game, prior, value_net, ex, on_iteration)
+
+
 if __name__ == "__main__":
-    {"value": value, "match": match}[sys.argv[1]](Config())
+    {"value": value, "match": match, "exit": exit_loop}[sys.argv[1]](Config())
