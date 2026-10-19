@@ -64,6 +64,11 @@ class Config:
                 ("PPO (camel_ppo), ~1890 Elo", "runs/camel_ppo.pt"),
                 ("Heuristic, 1500 Elo", "heuristic"),
             ),
+            "tessera": (
+                ("Nash PPO (tessera_nash)", "runs/tessera_nash.pt"),
+                ("PPO (tessera_ppo)", "runs/tessera_ppo.pt"),
+                ("Heuristic, 1500 Elo", "heuristic"),
+            ),
         }
     )
     open_browser: bool = True

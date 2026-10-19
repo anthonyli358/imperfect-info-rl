@@ -404,20 +404,34 @@ Goal: a second game to reveal which abstractions are real vs incidental — then
 
 ---
 
-## Stage 3 — Azul *(perfect-info; AlphaZero-style self-play)*
+## Stage 3 — Tessera *(Azul's skeleton; perfect-info apart from the bag)*
 
-Goal: consolidate the neural self-play infra on the *easiest* substrate — perfect info means straight MCTS + policy/value net, no information sets. Also the safe-to-build game (spatial fun, no portable checklist).
+> **IP note:** shipped as **Tessera**, an original game on the mechanical skeleton of Azul (Michael
+> Kiesling), credited as inspiration only: own name, colour names, no assets or rulebook text.
+> Package `iirl/games/tessera/`, registry key `tessera`. Deliberate differences (two players,
+> score-difference payoff, a 20-round cap) are documented in `tiles.py`.
 
-- [ ] Engine: factories + centre, colour drafting, pattern rows, wall placement, floor line, adjacency scoring, bag/lid chance
-- [ ] Engine unit tests (scoring geometry especially)
-- [ ] Board `observation_tensor` + action encoding with legal-action masking
-- [ ] `nn/` policy+value network
-- [ ] `selfplay/` loop + replay buffer
-- [ ] AlphaZero-style training (MCTS-visit policy targets, game-outcome value targets)
-- [ ] Checkpointing + seed reproducibility
-- [ ] Eval: net-guided MCTS vs raw MCTS vs random; Elo-vs-iteration curve
+Goal: the first game where a learned value *should* support search (no hidden hand, outcomes that
+follow from decisions), so the place to test whether AlphaZero-style search finally beats the
+recipe, which it never did on the card games.
 
-**Done when:** the trained agent clearly beats raw MCTS, and the self-play/NN/checkpoint infra is reusable.
+- [x] Engine (2026-10-19): five displays + centre, colour drafting, pattern rows, fixed-colour
+  wall, floor line, adjacency scoring, end bonuses, bag/lid refills with every tile draw a chance
+  node. Flat action space of 180 ids (display or centre × colour × row or floor)
+- [x] Engine unit tests (`tests/test_tessera_engine.py`): wall layout, scoring geometry, floor and
+  end bonuses, row rules, tiling, the marker, tile conservation over random games
+- [x] Encoder (`information_state_tensor`, 225 features: both boards, which rows accept which
+  colour, displays, centre, supply, clock) and a greedy heuristic (beats random ≥ 90%;
+  heuristic self-play ~55 points each over 5 rounds, like the original)
+- [ ] The recipe unchanged (`experiments/train_tessera.py`): PPO, then Nash-seeking PPO; Elo
+  ladder anchored on the heuristic at 1500; exploiters
+- [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
+- [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
+  the recipe and against audit-chosen rollouts
+- [ ] Eval: Elo-vs-iteration curve; play page
+
+**Done when:** we know which of policy, rollouts and value-based search wins on a perfect-information
+game, and why.
 
 ---
 

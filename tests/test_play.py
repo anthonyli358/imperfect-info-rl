@@ -105,3 +105,20 @@ def test_careful_heuristic_never_gifts_when_a_safe_discard_exists() -> None:
                     checked += 1
             s = g.apply_action(s, a)
     assert checked > 50
+
+
+def test_session_plays_full_tessera_games() -> None:
+    rng = np.random.default_rng(0)
+    session = Session()
+    for seat in ("0", "1"):
+        view = session.new("tessera", "heuristic", "Heuristic", seat)
+        steps = 0
+        while not view["terminal"]:
+            assert view["your_turn"] and view["legal"]
+            json.dumps(view)
+            view = session.act(int(rng.choice([a["id"] for a in view["legal"]])))
+            assert "error" not in view
+            steps += 1
+            assert steps < 1000
+        assert view["margin"] == make("tessera").returns(session.state)[int(seat)]
+    assert session.records["tessera"]["games"] == 2
