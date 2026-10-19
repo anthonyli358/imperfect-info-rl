@@ -25,6 +25,28 @@ from iirl.core.game import Game, State
 from iirl.core.registry import make, make_heuristic
 
 ROLLOUT = "rollout:"
+SEARCH = "search:"
+
+
+def search_agent(policy: str, value: str, simulations: int) -> Agent:
+    """Net-guided PUCT search: priors from a policy checkpoint, leaves from a value checkpoint."""
+    import torch
+
+    from iirl.agents.alphazero.agent import AlphaZeroAgent
+    from iirl.agents.alphazero.mcts import PUCTConfig
+    from iirl.nn.policy_value import PolicyValueNet, SplitEvaluator
+
+    ck = torch.load(value, map_location="cpu", weights_only=False)
+    value_net = PolicyValueNet(ck["input_dim"], ck["num_actions"], tuple(ck["hidden"]), "tanh")
+    value_net.load_state_dict(ck["state_dict"])
+    config = PUCTConfig(
+        simulations=simulations,
+        determinizations=1,
+        margin_weight=ck.get("margin_weight", 0.0),
+        margin_scale=ck.get("margin_scale", 40.0),
+    )
+    evaluator = SplitEvaluator(PPOAgent.from_checkpoint(policy).net, value_net)
+    return AlphaZeroAgent(evaluator, config, name=f"search{simulations}")
 
 
 def build_agent(game_name: str, checkpoint: str) -> Agent:
@@ -33,7 +55,9 @@ def build_agent(game_name: str, checkpoint: str) -> Agent:
     ``"heuristic"`` is the game's own heuristic, another name without ``.pt`` is a registered
     heuristic (e.g. ``"ventures_careful"``), and a ``.pt`` path is a PPO checkpoint.
     ``"rollout:<path>.pt"`` is that checkpoint with opponent-robust endgame rollouts
-    (``agents/rollout.py``; it thinks for a few seconds per move in the last turns).
+    (``agents/rollout.py``; it thinks for a few seconds per move in the last turns), and
+    ``"search:<policy.pt>|<value.pt>|<simulations>"`` net-guided PUCT search (perfect-information
+    games).
     """
     if checkpoint.startswith(ROLLOUT):
         from iirl.agents.rollout import DECK_MAX, rollout_agent
@@ -44,6 +68,9 @@ def build_agent(game_name: str, checkpoint: str) -> Agent:
             robust=True,
             seed=int(time.time()),
         )
+    if checkpoint.startswith(SEARCH):
+        policy, value, sims = checkpoint[len(SEARCH) :].split("|")
+        return search_agent(policy, value, int(sims))
     if checkpoint == "heuristic":
         return make_heuristic(game_name)
     if not checkpoint.endswith(".pt"):

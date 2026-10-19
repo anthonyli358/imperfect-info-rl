@@ -65,8 +65,12 @@ class Config:
                 ("Heuristic, 1500 Elo", "heuristic"),
             ),
             "tessera": (
-                ("Nash PPO (tessera_nash)", "runs/tessera_nash.pt"),
-                ("PPO (tessera_ppo)", "runs/tessera_ppo.pt"),
+                (
+                    "Best: policy + value search, 400 simulations (~0.3 s a move)",
+                    "search:runs/tessera_nash2.pt|runs/tessera_ag/value.pt|400",
+                ),
+                ("League PPO (tessera_nash2), no search", "runs/tessera_nash2.pt"),
+                ("League PPO (tessera_nash)", "runs/tessera_nash.pt"),
                 ("Heuristic, 1500 Elo", "heuristic"),
             ),
         }
@@ -80,6 +84,11 @@ def main(config: Config) -> None:
 
     def resolve(spec: str) -> str | None:
         """The spec with its checkpoint made absolute, or None if the checkpoint is missing."""
+        if spec.startswith("search:"):
+            policy, value, sims = spec[len("search:") :].split("|")
+            if not ((ROOT / policy).exists() and (ROOT / value).exists()):
+                return None
+            return f"search:{ROOT / policy}|{ROOT / value}|{sims}"
         prefix = "rollout:" if spec.startswith("rollout:") else ""
         path = spec[len(prefix) :]
         if not path.endswith(".pt"):
