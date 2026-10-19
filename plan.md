@@ -427,7 +427,13 @@ recipe, which it never did on the card games.
   **below** the heuristic (0.40 after 600 iterations, Elo ~1439); the Nash phase with the heuristic
   in the league passes it (0.69, +8.2 points, Elo ~1652 in-training) and is still climbing.
   Exploitability 0.543 (max of 2). Not yet converged.
-- [ ] Continue the Nash phase until it flattens; a 1,000-deal Elo ladder for Tessera
+- [x] Second league phase (1,200 iterations): 0.79 vs the heuristic, +13.3, Elo ~1734, flat;
+  exploitability 0.505
+- [x] **AlphaGo recipe** (2026-10-19, `experiments/alphago_tessera.py`): value net Brier 0.193
+  (heuristic 0.209); PUCT with policy priors + value leaves: 100 sims 0.551 vs the policy / 0.81 vs
+  the heuristic; **400 sims 0.941 / 0.938; 1,600 sims 0.999 / 0.969 (Elo ~2097)**. Strong.
+- [ ] AlphaZero loop (`alphago_tessera exit`) to raise the nets; a 1,000-deal Elo ladder; search
+  agent in the play page; per-move latency
 - [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
 - [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
   the recipe and against audit-chosen rollouts

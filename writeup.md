@@ -363,6 +363,44 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Tessera: the AlphaGo recipe works where value search never did (2026-10-19)
+
+Tessera hides nothing but the order of the bag, so it is the first game where search on a learned
+value should work. It does, by a wide margin. (`experiments/alphago_tessera.py`.)
+
+**The policy.** The recipe's second league phase (another 1,200 iterations, with the heuristic and
+past selves as opponents and a lower learning rate) took the policy to **0.79 against the heuristic,
++13.3 points, Elo ~1734**, flat over its last 200 iterations; exploiters find almost nothing
+(0.505, max of two). On a perfect-information game the "Nash-seeking" magnet has no mixed
+equilibrium to aim for; the gain more likely came from the league and the lower learning rate
+(not separated).
+
+**The value net.** Trained on 40,000 self-play games of that policy (480,000 positions; target
+win/loss blended with the margin, weight 0.5, scale 20). Held-out Brier **0.193**, better than the
+heuristic's value (0.209) and a coin flip (0.243): unlike Ventures, the value is learnable.
+
+**Search.** PUCT with the policy's priors and the value net's leaves (`SplitEvaluator`), one world
+(nothing to resample), 200 paired deals per match:
+
+| Simulations per move | vs the policy alone | vs the heuristic | Elo (heuristic = 1500) | Thinking per game |
+|:---:|:---:|:---:|:---:|:---:|
+| 0 (the policy) | 0.500 | 0.79 | ~1734 | instant |
+| 100 | 0.551 ± 0.017 (+1.9) | 0.810 ± 0.019 (+13.1) | 1752 | ~1 s |
+| 400 | **0.941 ± 0.011** (+12.4) | **0.938 ± 0.012** (+16.6) | 1970 | ~9 s |
+| 1,600 | **0.999 ± 0.001** (+20.5) | **0.969 ± 0.009** (+22.5) | 2097 | ~36 s |
+
+- Strength rises steadily with the search budget, the signature of a sound value: at 1,600
+  simulations the search wins 399.5 of 400 games against the policy it searches from.
+- **Why here and not on Ventures:** on Ventures the value net was ~11 points off when moves
+  differed by ~1, because of hidden hands and the deal. Tessera's outcome follows from the
+  position, so the value can rank leaves, and deeper search compounds it.
+- Thinking times are worker time per game across 10 parallel processes; per-move latency not yet
+  measured on an idle machine.
+
+**Running:** the AlphaZero loop (expert iteration: search self-play at 200 simulations, the policy
+trained toward the search's improved choices, the value toward outcomes mixed with the search's
+estimate), to raise both nets so that less search reaches the same strength.
+
 ### Tessera: the recipe needs its league to beat the heuristic, and is still climbing (2026-10-19)
 
 Tessera is the third game: an original game on Azul's mechanics (`games/tessera`), perfect
