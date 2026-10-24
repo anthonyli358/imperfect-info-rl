@@ -28,7 +28,9 @@ from iirl.core.types import Action, ChanceOutcome, GameType, Information, Player
 from iirl.games.tessera.state import NO_TILES, Board, Counts, Phase, TesseraState
 from iirl.games.tessera.tiles import (
     CENTER,
+    COLOR_HEX,
     COLOR_NAMES,
+    COLOR_SYMBOLS,
     FLOOR,
     FLOOR_PENALTIES,
     FLOOR_SLOTS,
@@ -342,8 +344,16 @@ class Tessera(Game):
         """Viewer metadata."""
         return {
             "color_names": list(COLOR_NAMES),
+            "color_hex": list(COLOR_HEX),
+            "color_symbols": list(COLOR_SYMBOLS),
             "wall_size": WALL_SIZE,
             "floor_penalties": list(FLOOR_PENALTIES),
+            "actions": {
+                "num_colors": NUM_COLORS,
+                "num_destinations": NUM_DESTINATIONS,
+                "center": CENTER,
+                "floor": FLOOR,
+            },
         }
 
     def to_display(self, state: State) -> dict:

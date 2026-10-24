@@ -11,21 +11,21 @@
     --ground: #f0f2f6; --surface: #ffffff; --surface-2: #f6f7fa; --ink: #1b2230; --muted: #5c6678;
     --faint: #8b93a4; --line: #e1e5ee; --accent: #4f6aa8; --accent-soft: #e7ecf7;
     --shadow: 0 1px 2px rgba(20, 28, 46, .06), 0 8px 24px rgba(20, 28, 46, .06);
-    --pos: #2f7d55; --neg: #b8414c; color-scheme: light;
+    --pos: #2f7d55; --neg: #b8414c; --on-accent: #ffffff; color-scheme: light;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --ground: #0f131b; --surface: #191e29; --surface-2: #131822; --ink: #e9edf4; --muted: #97a1b3;
       --faint: #6b7688; --line: #29303d; --accent: #8099c8; --accent-soft: #232c3d;
       --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
-      --pos: #57b483; --neg: #e06b76; color-scheme: dark;
+      --pos: #57b483; --neg: #e06b76; --on-accent: #0f131b; color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --ground: #0f131b; --surface: #191e29; --surface-2: #131822; --ink: #e9edf4; --muted: #97a1b3;
     --faint: #6b7688; --line: #29303d; --accent: #8099c8; --accent-soft: #232c3d;
     --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
-    --pos: #57b483; --neg: #e06b76; color-scheme: dark;
+    --pos: #57b483; --neg: #e06b76; --on-accent: #0f131b; color-scheme: dark;
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ground); color: var(--ink); font-family: "Hanken Grotesk", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
@@ -41,7 +41,7 @@
   .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   select { font: inherit; font-size: 13px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; max-width: 100%; }
   .btn { font-family: "Archivo", sans-serif; font-weight: 600; font-size: 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 8px 14px; cursor: pointer; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
   .btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
   .btn:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -148,6 +148,34 @@
   .move-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .move-group .glabel { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); min-width: 70px; }
 
+  /* Tessera (Ladder design system: Tile, Factory, Wall) */
+  :root { --tile: 30px; }
+  @media (max-width: 560px) { :root { --tile: 22px; } .tile { font-size: 11px; } .tboard { gap: 8px; } }
+  .tile { --c: var(--muted); --label: #ffffff; width: var(--tile); height: var(--tile); border-radius: 5px; background: var(--c); color: var(--label);
+    border: 1px solid color-mix(in srgb, var(--c) 70%, var(--line)); display: grid; place-items: center; font-size: 14px; line-height: 1; flex: none; padding: 0;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 35%, transparent); font-family: inherit; }
+  .tile.on-light { --label: #1b2230; }
+  .tile.edge { border-color: var(--line); }
+  .tile.ghost { background: color-mix(in srgb, var(--c) 16%, var(--surface-2)); color: color-mix(in srgb, var(--c) 60%, var(--muted)); border-style: dashed; box-shadow: none; }
+  .tile.slot { background: transparent; border: 1px dashed var(--line); color: transparent; box-shadow: none; }
+  .tile.marker { --c: var(--surface); --label: var(--ink); font-family: "JetBrains Mono", monospace; font-weight: 700; border-color: var(--line); }
+  button.tile { cursor: pointer; }
+  button.tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .tile.picked { outline: 3px solid var(--accent); outline-offset: 2px; transform: translateY(-3px); transition: transform .12s; }
+  @media (prefers-reduced-motion: reduce) { .tile.picked { transition: none; transform: none; } }
+  .factories { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .factory { display: grid; grid-template-columns: repeat(2, var(--tile)); gap: 3px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); width: calc(2 * var(--tile) + 22px); height: calc(2 * var(--tile) + 22px); place-content: center; }
+  .factory.empty { opacity: .45; }
+  .pool { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; min-height: 30px; }
+  .tboard { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; }
+  .tlines, .twall { display: grid; gap: 3px; }
+  .tlines { justify-items: end; }
+  .tline { display: flex; justify-content: flex-end; gap: 3px; border-radius: 7px; padding: 1px; border: 0; background: transparent; }
+  .twall { grid-template-columns: repeat(5, var(--tile)); }
+  .tfloor { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; align-items: flex-start; border: 0; background: transparent; padding: 1px; border-radius: 7px; }
+  .tfloor .cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .tfloor .pen { font-family: "JetBrains Mono", monospace; font-size: 10px; font-weight: 700; color: var(--neg); }
+  .tline.target, .tfloor.target { cursor: pointer; }
   .prompt { text-align: center; font-size: 13px; color: var(--muted); min-height: 36px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
   .prompt b { color: var(--ink); }
   .error { color: var(--neg); font-size: 12px; text-align: center; min-height: 16px; }
@@ -164,7 +192,9 @@
   footer { color: var(--faint); font-size: 11px; line-height: 1.5; }
 
   @media (max-width: 860px) {
-    .layout { grid-template-columns: 1fr; }
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .controls { min-width: 0; max-width: 100%; }
+    .controls select { min-width: 0; max-width: 100%; }
     .log { max-height: 260px; }
     .tableau, .discards, .tokens { gap: 4px; }
     .tokens { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -371,6 +401,102 @@
     }
   };
 
+  // ======================= Tessera =======================
+  var T = {
+    rules: "Each turn take every tile of one colour from one display (its other tiles slide to the centre) or from the centre (the first to do so also takes the first-player marker, which fills a floor space). Put them on one pattern row (one colour per row, and not a colour that row already has on the wall) or on the floor; tiles that do not fit fall to the floor. When the displays and centre are empty, each full row moves one tile to the wall and scores 1, or the length of the rows and columns it joins; floor tiles cost the points under them. The game ends after the round in which someone completes a wall row: +2 per full row, +7 per full column, +10 per colour placed five times.",
+    lum: function (hex) {
+      var c = [1, 3, 5].map(function (i) {
+        var v = parseInt(hex.substr(i, 2), 16) / 255;
+        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+      });
+      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    },
+    tile: function (meta, k, cls, attrs, tag) {
+      // Label colour by the design system's rule: ink on light tiles, white on dark ones; a tile
+      // close to either ground keeps its border.
+      var hex = meta.color_hex[k], L = T.lum(hex);
+      var extra = (L > 0.18 ? " on-light" : "") + (L < 0.04 || L > 0.6 ? " edge" : "");
+      tag = tag || "div";
+      return "<" + tag + ' class="tile' + extra + (cls ? " " + cls : "") + '" style="--c:' + hex + '" title="' + esc(meta.color_names[k]) + '" ' +
+        (attrs || "") + ">" + meta.color_symbols[k] + "</" + tag + ">";
+    },
+    slot: '<div class="tile slot"></div>',
+    source: function (meta, tiles, src, canPick) {
+      // A display's or the centre's tiles; a colour you may take is a button (key = source × colours + colour).
+      var NC = meta.actions.num_colors, out = "";
+      tiles.forEach(function (n, k) {
+        var key = src * NC + k;
+        for (var i = 0; i < n; i++) {
+          out += canPick(key)
+            ? T.tile(meta, k, selected === key ? "picked" : "", 'data-card="' + key + '" aria-label="Take ' + n + " " + esc(meta.color_names[k]) + '"', "button")
+            : T.tile(meta, k, "");
+        }
+      });
+      return out;
+    },
+    board: function (meta, b, targets) {
+      // Pattern rows (filled from the right) beside the wall (empty spaces show their printed colour), the floor below.
+      var W = meta.wall_size, A = meta.actions;
+      var lines = b.lines.map(function (line, r) {
+        var k = line[0], n = line[1], cells = "";
+        for (var i = 0; i < r + 1; i++) cells += i >= r + 1 - n ? T.tile(meta, k, "") : T.slot;
+        var act = targets[r];
+        return act !== undefined
+          ? '<button class="tline target" data-act="' + act + '" aria-label="Place on row ' + (r + 1) + '">' + cells + "</button>"
+          : '<div class="tline">' + cells + "</div>";
+      }).join("");
+      var wall = "";
+      for (var r = 0; r < W; r++) {
+        for (var c = 0; c < W; c++) wall += T.tile(meta, ((c - r) % W + W) % W, b.wall[r][c] ? "" : "ghost");
+      }
+      var pens = meta.floor_penalties;
+      var floor = pens.map(function (pen, i) {
+        return '<div class="cell">' + (i < b.floor ? '<div class="tile marker">•</div>' : T.slot) + '<span class="pen">' + pen + "</span></div>";
+      }).join("") + (b.floor > pens.length ? '<span class="kind">+' + (b.floor - pens.length) + " free</span>" : "");
+      var fact = targets[A.floor];
+      floor = fact !== undefined
+        ? '<button class="tfloor target" data-act="' + fact + '" aria-label="Place on the floor">' + floor + "</button>"
+        : '<div class="tfloor">' + floor + "</div>";
+      return '<div class="tboard"><div class="tlines">' + lines + '</div><div class="twall">' + wall + "</div></div>" + floor;
+    },
+    render: function () {
+      var meta = state.meta, v = state.view, A = meta.actions, me = state.seat, opp = 1 - me;
+      var ND = A.num_destinations, NC = A.num_colors, picks = {};
+      legalIds().forEach(function (a) {
+        var key = Math.floor(a / ND);
+        (picks[key] = picks[key] || {})[a % ND] = a;
+      });
+      var myTurn = state.your_turn && !state.terminal;
+      if (selected !== null && !picks[selected]) selected = null;
+      var canPick = function (key) { return myTurn && picks[key] !== undefined; };
+      var factories = v.factories.map(function (f, i) {
+        var has = f.some(function (n) { return n > 0; });
+        return '<div class="factory' + (has ? "" : " empty") + '" title="Display ' + (i + 1) + '">' + T.source(meta, f, i, canPick) + "</div>";
+      }).join("");
+      var pool = T.source(meta, v.center, A.center, canPick) + (v.marker_in_center ? '<div class="tile marker" title="First-player marker">1</div>' : "");
+      var centre = '<div class="zone"><div class="zone-title">Displays <b>round ' + v.round + '</b></div><div class="factories">' + factories + "</div>" +
+        '<div class="zone-title" style="margin-top:10px">Centre</div><div class="pool">' + (pool || '<span class="kind">empty</span>') + "</div>" +
+        '<div class="chips" style="margin-top:8px"><span class="chip">in the bag <b>' + v.bag + '</b></span><span class="chip">in the lid <b>' + v.lid + "</b></span></div></div>";
+      var targets = selected !== null && myTurn ? picks[selected] : {};
+      function panel(p, who, kind) {
+        var b = v.boards[p], active = !state.terminal && (p === me ? state.your_turn : !state.your_turn);
+        return '<div class="panel' + (active ? " active" : "") + '"><div class="panel-head"><span class="pname">' + who + '</span><span class="kind">' + kind +
+          '</span><span class="pscore">' + b.score + ' <span class="kind">pts</span></span></div>' + T.board(meta, b, p === me ? targets : {}) + "</div>";
+      }
+      var p;
+      if (state.terminal) p = "";
+      else if (!state.your_turn) p = "Opponent is thinking…";
+      else if (selected === null) p = "<b>Your turn:</b> pick a colour from a display or the centre.";
+      else {
+        var src = Math.floor(selected / NC), k = selected % NC;
+        var n = (src === A.center ? v.center : v.factories[src])[k];
+        p = "<b>" + n + " " + esc(meta.color_names[k]) + "</b> from " + (src === A.center ? "the centre" : "display " + (src + 1)) +
+          ': click a highlighted row or the floor. <button class="btn" data-act="cancel">Cancel</button>';
+      }
+      return banner() + panel(opp, "Opponent", esc(state.agent)) + centre + prompt(p) + panel(me, "You", "P" + me);
+    }
+  };
+
   // ======================= Any other game: the raw view and the legal moves =======================
   var G = {
     rules: "No board for this game yet: the panel shows your view of the position, and every legal move is a button.",
@@ -383,7 +509,7 @@
     }
   };
 
-  var RENDERERS = { ventures: V, camel_stocks: C };
+  var RENDERERS = { ventures: V, camel_stocks: C, tessera: T };
 
   function api(path, body) {
     return fetch(path, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })

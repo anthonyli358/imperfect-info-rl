@@ -22,6 +22,8 @@ from __future__ import annotations
 NUM_COLORS = 5
 COLOR_NAMES: tuple[str, ...] = ("Cobalt", "Saffron", "Vermilion", "Jet", "Ivory")
 COLOR_HEX: tuple[str, ...] = ("#2b5fa8", "#e0a21b", "#c4372f", "#2b2b2b", "#e8e2d0")  # display
+# One glyph per colour, so tiles are told apart without colour (display only).
+COLOR_SYMBOLS: tuple[str, ...] = ("◆", "●", "▲", "■", "✚")
 TILES_PER_COLOR = 20
 NUM_FACTORIES = 5  # two players
 TILES_PER_FACTORY = 4
