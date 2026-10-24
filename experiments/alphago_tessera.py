@@ -5,7 +5,7 @@ value should work (on Ventures it never did: hidden hands and the deal left the 
 off when moves differed by ~1). Stages, each saved under ``runs/tessera_ag/``::
 
     uv run python -m experiments.alphago_tessera value   # value net on the policy's self-play
-    uv run python -m experiments.alphago_tessera match [sims=200 deals=200 opponent=policy]
+    uv run python -m experiments.alphago_tessera match [sims=200 opponent=policy nets=exit]
     uv run python -m experiments.alphago_tessera exit    # the AlphaZero loop from both nets
 
 ``value`` trains ``selfplay.value.train_value`` on the policy's self-play outcomes and reports the
@@ -175,12 +175,20 @@ def match(config: Config) -> None:
         if opponent == "heuristic"
         else (ppo_agent, {"path": policy})
     )
-    spec = (alphago_agent, {"policy": policy, "value_path": str(OUT / "value.pt"), "sims": sims})
+    # nets=exit: priors and values from the AlphaZero loop's checkpoints instead of the originals.
+    nets = args.get("nets", "start")
+    value_path = OUT / ("exit_value.pt" if nets == "exit" else "value.pt")
+    prior_path = str(OUT / "exit_prior.pt") if nets == "exit" else None
+    spec = (
+        alphago_agent,
+        {"policy": policy, "value_path": str(value_path), "sims": sims, "prior_path": prior_path},
+    )
     t0 = time.perf_counter()
     r = duplicate_match(make("tessera"), spec, other, deals, seed=2028, workers=10)
     row = {
         "policy": policy,
         "sims": sims,
+        "nets": nets,
         "opponent": opponent,
         "deals": r.deals,
         "score": round(r.score, 4),
