@@ -9,6 +9,10 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 > Written for: contributors and readers of this repo — engineers/researchers who want the *why*, not
 > just the scores. A new session (human or agent) should start with "Start here" below.
 
+Project: imperfect-info-rl in c:\Users\Ant\Documents\My Projects\GitHub\imperfect-info-rl
+(branch feat/rl-agent-ladder). Read the "Start here" section at the top of writeup.md, then
+continue with its "Open threads", starting with thread 1.
+
 ---
 
 ## Start here (handoff for a new session)
@@ -25,7 +29,7 @@ step, while expanding to more games and trying more approaches. Games so far:
 |---|---|---|---|---|
 | **Ventures** | Original card game on Lost Cities' mechanics; hidden hands, heavy luck | `diverse_sym` policy + opponent-robust rollouts from 6 cards left (`agents/rollout.py`) | Elo 2070 (plain anchor) / 1960 (careful anchor); 0.524 vs the policy alone; no exploiter beats it (0.493) | `experiments/play.py` |
 | **Camel Stocks** | Original card game on Jaipur's mechanics | `camel_nash` policy + the same rollouts from 12 cards left | 0.620 vs the policy alone (+3.8 points); 0.978 / 0.988 vs the two heuristic styles | same page |
-| **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | `tessera_nash2` policy + value net + PUCT search (`experiments/alphago_tessera.py`) | 400 sims: 0.941 vs the policy, 0.938 vs the heuristic; 1,600 sims: 0.999 / 0.969 | same page (400 sims) |
+| **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | Policy + value net + PUCT search, both nets improved by an AlphaZero loop (`experiments/alphago_tessera.py`, `runs/tessera_ag/exit_*.pt`) | 400 sims: 0.970 vs the original policy, 0.953 vs the heuristic; 1,600 sims: 0.986 vs the heuristic (Elo ~2242) | same page (400 sims), with a real board |
 | Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
 
 **What we know works, by kind of game** (details in "What we learned" and the findings log):
@@ -43,15 +47,13 @@ step, while expanding to more games and trying more approaches. Games so far:
 
 **Open threads, in the order I would take them:**
 
-1. **Tessera board renderer** in `viz/play.html` (it still uses the generic text-and-buttons
-   fallback), built with the **Ladder design system**:
-   https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5 (tokens, 19 components incl. Tile, Factory,
-   Wall; read its README first). The system is not yet applied to `viz/play.html` either.
-2. **Tessera after the AlphaZero loop:** the 24-iteration loop finished; its policy beats the
-   starting policy 0.612 alone, but search at 100 sims did not improve. Re-run the search budget
-   scan with `runs/tessera_ag/exit_prior.pt` + `exit_value.pt` (`alphago_tessera match` takes
-   `sims=`; add a `prior_path`), a 1,000-deal Elo ladder (`experiments/elo_ladder.py`, add a
-   Tessera config), and per-move latency (`experiments/rollout_latency.py` pattern).
+1. ~~Tessera board renderer~~ Done 2026-10-24 (`viz/play.html`, from the **Ladder design system**:
+   https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5). Still open there: apply the system's
+   tokens and components to the Ventures and Camel Stocks boards (only `on-accent` is applied).
+2. ~~Search with the AlphaZero loop's nets~~ Done: +2 to +3 points a game over the original nets.
+   Still open: more loop iterations (the raw policy was still rising at iteration 24), a
+   1,000-deal Elo ladder (`experiments/elo_ladder.py`, add a Tessera config), per-move latency
+   (`experiments/rollout_latency.py` pattern).
 3. **Next games:** Liar's Dice and small poker (plan.md Stages 4–5, where ReBeL should suit), then
    Stage 7, an entity-token rung on The Confrontation's skeleton (plan.md).
 4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
@@ -485,8 +487,20 @@ mixed with the search's estimate; `alphago_tessera exit`, curve in `runs/tessera
 - **The policy improved:** distilling the search raised the raw policy steadily, to 0.612 against
   where it started (+3.6 points a game), with no search at play time.
 - **Search at 100 simulations did not:** 0.83–0.88 against the heuristic throughout (before the
-  loop 0.810), within about two standard errors of flat. A stronger policy and value should show
-  at larger budgets; not yet measured.
+  loop 0.810), within about two standard errors of flat.
+- **At larger budgets the loop's nets are clearly stronger** (2026-10-24, 200 paired deals each):
+
+| Search | vs the original policy | vs the heuristic | Elo (heuristic = 1500) |
+|---|:---:|:---:|:---:|
+| 400 sims, original nets | 0.941 ± 0.011 (+12.4) | 0.938 ± 0.012 (+16.6) | ~1970 |
+| 400 sims, **loop nets** | **0.970 ± 0.008** (+14.4) | **0.953 ± 0.011** (+18.8) | ~2021 |
+| 1,600 sims, original nets | 0.999 ± 0.001 (+20.5) | 0.969 ± 0.009 (+22.5) | ~2097 |
+| 1,600 sims, **loop nets** | not run | **0.986 ± 0.006** (+25.3) | ~2242 |
+
+  About +2 to +3 points a game at equal budget. The loop's nets (`runs/tessera_ag/exit_prior.pt`,
+  `exit_value.pt`) are now Tessera's play-page opponent at 400 simulations. The board itself is
+  now a real renderer (displays, centre, pattern rows, wall, floor; pick a colour, then a row),
+  built from the Ladder design system.
 
 ### Tessera: the recipe needs its league to beat the heuristic, and is still climbing (2026-10-19)
 

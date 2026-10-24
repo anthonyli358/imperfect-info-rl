@@ -435,8 +435,11 @@ recipe, which it never did on the card games.
 - [x] AlphaZero loop (`alphago_tessera exit`, 24 iterations): the raw policy rises to 0.612 vs the
   starting policy (+3.6); search at 100 sims vs the heuristic stays ~0.83-0.88 (flat)
 - [x] Search agent (400 sims) in the play page
-- [ ] Search budget scan with the loop's nets; a 1,000-deal Elo ladder; per-move latency; a
-  Tessera board renderer with the Ladder design system's Tile / Factory / Wall
+- [x] Search with the loop's nets (2026-10-24): 400 sims 0.970 vs the original policy, 0.953 vs
+  the heuristic; 1,600 sims 0.986 vs the heuristic (Elo ~2242); +2 to +3 points over the original
+  nets. Now the play-page opponent.
+- [x] Tessera board renderer in `viz/play.html` from the Ladder design system
+- [ ] More loop iterations; a 1,000-deal Elo ladder; per-move latency
 - [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
 - [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
   the recipe and against audit-chosen rollouts
