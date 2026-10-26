@@ -5,8 +5,8 @@ value should work (on Ventures it never did: hidden hands and the deal left the 
 off when moves differed by ~1). Stages, each saved under ``runs/tessera_ag/``::
 
     uv run python -m experiments.alphago_tessera value   # value net on the policy's self-play
-    uv run python -m experiments.alphago_tessera match [sims=200 opponent=policy nets=exit]
-    uv run python -m experiments.alphago_tessera exit    # the AlphaZero loop from both nets
+    uv run python -m experiments.alphago_tessera match [sims=200 opponent=policy nets=exit|exit_24]
+    uv run python -m experiments.alphago_tessera exit [iterations=48]  # the AlphaZero loop
 
 ``value`` trains ``selfplay.value.train_value`` on the policy's self-play outcomes and reports the
 held-out Brier score next to the heuristic's. ``match`` plays net-guided PUCT search (priors from
@@ -16,7 +16,9 @@ self-play, the policy trained toward the search's improved move distribution and
 the outcome mixed with the search's own estimate, repeated. Each iteration saves both nets
 (``runs/tessera_ag/exit_prior.pt``, ``exit_value.pt``; a rerun resumes after the last one) and
 rates the raw policy against the starting policy; every few iterations it also rates the search
-agent on the new nets against the heuristic. The curve is ``runs/tessera_ag/exit.jsonl``.
+agent on the new nets against the heuristic, and every ``snapshot_every`` it keeps numbered copies
+(``exit_prior_<i>.pt``, ``exit_value_<i>.pt``). ``iterations=`` sets the total to reach, so a
+finished run can be extended. The curve is ``runs/tessera_ag/exit.jsonl``.
 """
 
 from __future__ import annotations
@@ -73,6 +75,7 @@ class Config:
         )
     )
     eval_every: int = 3
+    snapshot_every: int = 12
 
 
 def latest_policy(config: Config) -> str:
@@ -175,10 +178,12 @@ def match(config: Config) -> None:
         if opponent == "heuristic"
         else (ppo_agent, {"path": policy})
     )
-    # nets=exit: priors and values from the AlphaZero loop's checkpoints instead of the originals.
+    # nets=exit: priors and values from the AlphaZero loop's latest checkpoints instead of the
+    # originals; nets=exit_24 (any snapshot number): that iteration's numbered copies.
     nets = args.get("nets", "start")
-    value_path = OUT / ("exit_value.pt" if nets == "exit" else "value.pt")
-    prior_path = str(OUT / "exit_prior.pt") if nets == "exit" else None
+    loop = nets.startswith("exit")
+    value_path = OUT / (f"exit_value{nets[4:]}.pt" if loop else "value.pt")
+    prior_path = str(OUT / f"exit_prior{nets[4:]}.pt") if loop else None
     spec = (
         alphago_agent,
         {"policy": policy, "value_path": str(value_path), "sims": sims, "prior_path": prior_path},
@@ -206,6 +211,9 @@ def exit_loop(config: Config) -> None:
     """Run the AlphaZero loop from the policy and the value net, rating as it goes."""
     from dataclasses import replace
 
+    args = dict(item.split("=") for item in sys.argv[2:])
+    if "iterations" in args:
+        config = replace(config, exit=replace(config.exit, iterations=int(args["iterations"])))
     policy = latest_policy(config)
     prior_path, value_path = OUT / "exit_prior.pt", OUT / "exit_value.pt"
     log_path = OUT / "exit.jsonl"
@@ -230,6 +238,9 @@ def exit_loop(config: Config) -> None:
         it = done + stats.iteration
         save_net(prior_net, prior_path, {})
         save_net(value_net, value_path, meta)
+        if it % config.snapshot_every == 0:
+            save_net(prior_net, OUT / f"exit_prior_{it}.pt", {})
+            save_net(value_net, OUT / f"exit_value_{it}.pt", meta)
         row = {
             "iteration": it,
             "games": it * ex.games_per_iter,

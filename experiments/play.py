@@ -67,7 +67,7 @@ class Config:
             "tessera": (
                 (
                     "Best: value search after the AlphaZero loop, 400 simulations (~0.3 s a move)",
-                    "search:runs/tessera_ag/exit_prior.pt|runs/tessera_ag/exit_value.pt|400",
+                    "search:runs/tessera_ag/exit_prior_24.pt|runs/tessera_ag/exit_value_24.pt|400",
                 ),
                 ("League PPO (tessera_nash2), no search", "runs/tessera_nash2.pt"),
                 ("League PPO (tessera_nash)", "runs/tessera_nash.pt"),
