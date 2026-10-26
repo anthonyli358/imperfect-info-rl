@@ -5,7 +5,7 @@ value should work (on Ventures it never did: hidden hands and the deal left the 
 off when moves differed by ~1). Stages, each saved under ``runs/tessera_ag/``::
 
     uv run python -m experiments.alphago_tessera value   # value net on the policy's self-play
-    uv run python -m experiments.alphago_tessera match [sims=200 opponent=policy nets=exit|exit_24]
+    uv run python -m experiments.alphago_tessera match [sims=200 opponent=heuristic nets=exit vs=…]
     uv run python -m experiments.alphago_tessera exit [iterations=48]  # the AlphaZero loop
 
 ``value`` trains ``selfplay.value.train_value`` on the policy's self-play outcomes and reports the
@@ -173,11 +173,6 @@ def match(config: Config) -> None:
     sims, deals = int(args.get("sims", 200)), int(args.get("deals", 200))
     opponent = args.get("opponent", "policy")
     policy = latest_policy(config)
-    other = (
-        (make_heuristic, {"short_name": "tessera"})
-        if opponent == "heuristic"
-        else (ppo_agent, {"path": policy})
-    )
     # nets=exit: priors and values from the AlphaZero loop's latest checkpoints instead of the
     # originals; nets=exit_24 (any snapshot number): that iteration's numbered copies.
     nets = args.get("nets", "start")
@@ -188,6 +183,23 @@ def match(config: Config) -> None:
         alphago_agent,
         {"policy": policy, "value_path": str(value_path), "sims": sims, "prior_path": prior_path},
     )
+    # vs=exit_24: the opponent is the same search on that snapshot's nets (a direct comparison).
+    vs = args.get("vs")
+    if vs:
+        opponent = f"search on {vs}"
+        other = (
+            alphago_agent,
+            {
+                "policy": policy,
+                "value_path": str(OUT / f"exit_value{vs[4:]}.pt"),
+                "sims": sims,
+                "prior_path": str(OUT / f"exit_prior{vs[4:]}.pt"),
+            },
+        )
+    elif opponent == "heuristic":
+        other = (make_heuristic, {"short_name": "tessera"})
+    else:
+        other = (ppo_agent, {"path": policy})
     t0 = time.perf_counter()
     r = duplicate_match(make("tessera"), spec, other, deals, seed=2028, workers=10)
     row = {
