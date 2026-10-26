@@ -29,7 +29,7 @@ step, while expanding to more games and trying more approaches. Games so far:
 |---|---|---|---|---|
 | **Ventures** | Original card game on Lost Cities' mechanics; hidden hands, heavy luck | `diverse_sym` policy + opponent-robust rollouts from 6 cards left (`agents/rollout.py`) | Elo 2070 (plain anchor) / 1960 (careful anchor); 0.524 vs the policy alone; no exploiter beats it (0.493) | `experiments/play.py` |
 | **Camel Stocks** | Original card game on Jaipur's mechanics | `camel_nash` policy + the same rollouts from 12 cards left | 0.620 vs the policy alone (+3.8 points); 0.978 / 0.988 vs the two heuristic styles | same page |
-| **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | Policy + value net + PUCT search, both nets improved by an AlphaZero loop (`experiments/alphago_tessera.py`, `runs/tessera_ag/exit_*.pt`) | 400 sims: 0.970 vs the original policy, 0.953 vs the heuristic; 1,600 sims: 0.986 vs the heuristic (Elo ~2242) | same page (400 sims), with a real board |
+| **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | Policy + value net + PUCT search, both nets improved by 48 iterations of an AlphaZero loop (`experiments/alphago_tessera.py`, `runs/tessera_ag/exit_*_48.pt`) | 400 sims: 2057 ± 21 Elo (heuristic = 1500; 0.961 vs the heuristic), 0.545 vs the same search on the iteration-24 nets | same page (400 sims), with a real board |
 | Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
 
 **What we know works, by kind of game** (details in "What we learned" and the findings log):
@@ -53,9 +53,13 @@ step, while expanding to more games and trying more approaches. Games so far:
    system"). Left: the system's own `bundle.css` still prints white labels with a text shadow and
    could take the page's label rule.
 2. ~~Search with the AlphaZero loop's nets~~ Done: +2 to +3 points a game over the original nets.
-   Still open: more loop iterations (the raw policy was still rising at iteration 24), a
-   1,000-deal Elo ladder (`experiments/elo_ladder.py`, add a Tessera config), per-move latency
-   (`experiments/rollout_latency.py` pattern).
+   ~~More loop iterations; a 1,000-deal Elo ladder~~ Done 2026-10-26 (findings log, "Tessera: 24
+   more loop iterations"): search on the iteration-48 nets is 2057 ± 21 Elo and beats search on the
+   iteration-24 nets 0.545 ± 0.016; the play page now uses the iteration-48 nets. Still open:
+   per-move latency (`experiments/rollout_latency.py` pattern); the `tessera_strong` ladder's
+   last two search entries, if the detached run was stopped (rerun
+   `uv run python -m experiments.elo_ladder tessera_strong`; it skips rated entries); more
+   iterations (search was still gaining ~+30 Elo per 12 iterations).
 3. **Next games:** Liar's Dice and small poker (plan.md Stages 4–5, where ReBeL should suit), then
    Stage 7, an entity-token rung on The Confrontation's skeleton (plan.md).
 4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
@@ -442,6 +446,54 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Tessera: 24 more loop iterations help the search, not the raw policy's score (2026-10-26)
+
+The AlphaZero loop (`experiments/alphago_tessera.py exit iterations=48`) ran from iteration 24 to
+48, about 5 minutes an iteration, resumed from the saved nets (snapshots now kept every 12
+iterations as `runs/tessera_ag/exit_{prior,value}_<i>.pt`).
+
+**The loop's own curve looked flat.** The raw policy against the starting policy (300 deals):
+0.61 at iteration 24, then 0.55–0.61 through iteration 48 (0.57 at 48; SE ≈ 0.02). Search at 100
+simulations against the heuristic (200 deals): 0.83–0.87 throughout. Read alone, these say the
+loop had plateaued.
+
+**Direct and ladder measurements say otherwise.** Search at 400 simulations, head to head on 400
+paired deals:
+
+| Nets | vs search on the iteration-24 nets |
+|---|---|
+| iteration 36 | 0.547 ± 0.017, +0.96 ± 0.36 points |
+| iteration 48 | **0.545 ± 0.016, +1.41 ± 0.35 points** |
+
+The 1,000-deal Tessera Elo ladder (`experiments/elo_ladder.py tessera`,
+`runs/elo_ladder_tessera.json`, heuristic = 1500):
+
+| Agent | Elo | Score vs heuristic | Margin |
+|---|---|---|---|
+| `tessera_ppo` 100 → 600 | 1358 → 1447 | 0.31 → 0.42 | −9.3 → −3.1 |
+| `tessera_nash` 100 → 400 | 1522 → 1627 | 0.53 → 0.68 | +1.1 → +7.1 |
+| `tessera_nash2` 200 → 1200 | 1649 → 1718 ± 10 | 0.70 → 0.78 | +8.3 → +12.6 |
+| loop policy, iteration 24 / 36 / 48 | 1740 / 1742 / 1754 (± 10) | 0.80 / 0.80 / 0.81 | +13.6 / +13.9 / +13.9 |
+| search 400, starting nets | 1942 ± 16 | 0.927 | +17.4 |
+| search 400, iteration 24 / 36 / 48 | 1993 ± 17 / 2028 ± 18 / **2057 ± 21** | 0.945 / 0.954 / 0.961 | +18.4 / +19.2 / +19.9 |
+
+So the loop's later iterations improve what search does with the nets (+64 Elo from 24 to 48,
+matching the head-to-head) while the raw policy gains little (+14 ± 14). The in-loop yardstick
+(raw policy vs the starting policy) is the wrong one for a search agent. The play page now uses
+the iteration-48 nets at 400 simulations.
+
+**A second anchor does not help search agents (non-transitivity).** `tessera_strong` rates the
+strong end against the `tessera_nash2` policy at its 1718. The policies agree roughly across
+anchors (iteration 24 / 36 / 48: 1768 / 1785 / 1791 ± 8, about 30 above the heuristic scale), but
+search on the starting nets comes out at **2250 ± 19 against 1942 on the heuristic scale**, and on
+the iteration-24 nets 2310 ± 21. Search built on a policy's priors beats that same policy far more
+than its strength elsewhere predicts, so the policy anchor inflates search agents by ~300 Elo. For
+comparing search agents, use direct search-vs-search matches (`match vs=exit_<i>`); for one scale
+across everything, the heuristic ladder (compressed near the ceiling, but transitive enough).
+
+Human-play analysis (thread 4) has one recorded game so far (Ventures, 2026-09-29): nothing to
+analyse yet.
 
 ### The play page follows the Ladder design system on every board (2026-10-26)
 

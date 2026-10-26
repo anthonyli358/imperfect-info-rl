@@ -442,7 +442,12 @@ recipe, which it never did on the card games.
 - [x] Ladder design system applied to the Ventures and Camel Stocks boards too (2026-10-26): its
   tokens as CSS variables, one contrast-based label rule for every piece, no piece colours on
   interface elements
-- [ ] More loop iterations; a 1,000-deal Elo ladder; per-move latency
+- [x] More loop iterations (24 → 48) and a 1,000-deal Tessera Elo ladder (2026-10-26): search 400
+  on the iteration-48 nets 2057 ± 21 Elo (iteration 24: 1993), 0.545 ± 0.016 head to head; raw
+  policy flat (1740 → 1754). A policy anchor inflates search agents ~300 Elo (non-transitive).
+  Play page now uses the iteration-48 nets.
+- [ ] Per-move latency of search 400 / 1600 (`experiments/rollout_latency.py` pattern)
+- [ ] More loop iterations (search still gaining ~+30 Elo per 12 iterations)
 - [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
 - [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
   the recipe and against audit-chosen rollouts
