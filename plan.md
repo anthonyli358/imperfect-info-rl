@@ -439,6 +439,9 @@ recipe, which it never did on the card games.
   the heuristic; 1,600 sims 0.986 vs the heuristic (Elo ~2242); +2 to +3 points over the original
   nets. Now the play-page opponent.
 - [x] Tessera board renderer in `viz/play.html` from the Ladder design system
+- [x] Ladder design system applied to the Ventures and Camel Stocks boards too (2026-10-26): its
+  tokens as CSS variables, one contrast-based label rule for every piece, no piece colours on
+  interface elements
 - [ ] More loop iterations; a 1,000-deal Elo ladder; per-move latency
 - [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
 - [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against

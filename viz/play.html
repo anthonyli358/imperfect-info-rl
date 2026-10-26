@@ -5,42 +5,52 @@
 <title>Play the Agents</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap">
 <style>
+  /* Tokens from the Ladder design system (https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5). */
   :root {
     --ground: #f0f2f6; --surface: #ffffff; --surface-2: #f6f7fa; --ink: #1b2230; --muted: #5c6678;
     --faint: #8b93a4; --line: #e1e5ee; --accent: #4f6aa8; --accent-soft: #e7ecf7;
-    --shadow: 0 1px 2px rgba(20, 28, 46, .06), 0 8px 24px rgba(20, 28, 46, .06);
+    --shadow-raised: 0 1px 2px rgba(20, 28, 46, .06), 0 8px 24px rgba(20, 28, 46, .06);
     --pos: #2f7d55; --neg: #b8414c; --on-accent: #ffffff; color-scheme: light;
+    /* Theme-independent: piece labels and the face-down back (piece colours come from the game's meta). */
+    --piece-ink: #1b2230; --piece-paper: #ffffff; --back-a: #5c6678; --back-b: #6b7688;
+    --font-display: "Archivo", system-ui, sans-serif; --font-body: "Hanken Grotesk", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+    --space-3: 3px; --space-4: 4px; --space-6: 6px; --space-8: 8px; --space-10: 10px; --space-12: 12px;
+    --space-14: 14px; --space-16: 16px; --space-22: 22px;
+    --radius-5: 5px; --radius-7: 7px; --radius-8: 8px; --radius-9: 9px; --radius-10: 10px; --radius-12: 12px;
+    --radius-16: 16px; --radius-pill: 999px; --radius-round: 50%;
+    --page-max: 1180px; --log-column: 280px; --stage-min: 420px;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --ground: #0f131b; --surface: #191e29; --surface-2: #131822; --ink: #e9edf4; --muted: #97a1b3;
       --faint: #6b7688; --line: #29303d; --accent: #8099c8; --accent-soft: #232c3d;
-      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
+      --shadow-raised: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
       --pos: #57b483; --neg: #e06b76; --on-accent: #0f131b; color-scheme: dark;
     }
   }
   :root[data-theme="dark"] {
     --ground: #0f131b; --surface: #191e29; --surface-2: #131822; --ink: #e9edf4; --muted: #97a1b3;
     --faint: #6b7688; --line: #29303d; --accent: #8099c8; --accent-soft: #232c3d;
-    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, .3), 0 10px 30px rgba(0, 0, 0, .35);
     --pos: #57b483; --neg: #e06b76; --on-accent: #0f131b; color-scheme: dark;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--ground); color: var(--ink); font-family: "Hanken Grotesk", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
   button { font: inherit; }
 
-  .wrap { max-width: 1180px; margin: 0 auto; padding: 22px 16px 40px; display: flex; flex-direction: column; gap: 16px; }
+  .wrap { max-width: var(--page-max); margin: 0 auto; padding: var(--space-22) var(--space-16) 40px; display: flex; flex-direction: column; gap: var(--space-16); }
   header { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 20px; }
-  .eyebrow { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--faint); margin: 0 0 6px; }
-  h1 { font-family: "Archivo", sans-serif; font-weight: 800; font-size: clamp(28px, 5vw, 40px); letter-spacing: -.02em; line-height: .95; margin: 0; }
+  .eyebrow { font-family: var(--font-display); font-weight: 700; font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--faint); margin: 0 0 6px; }
+  h1 { font-family: var(--font-display); font-weight: 800; font-size: clamp(28px, 5vw, 40px); letter-spacing: -.02em; line-height: .95; margin: 0; }
   .sub { color: var(--muted); font-size: 14px; margin-top: 8px; }
   .spacer { flex: 1; }
-  .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  select { font: inherit; font-size: 13px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 7px 8px; max-width: 100%; }
-  .btn { font-family: "Archivo", sans-serif; font-weight: 600; font-size: 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 8px 14px; cursor: pointer; }
+  .controls { display: flex; flex-wrap: wrap; gap: var(--space-8); align-items: center; }
+  select { font: inherit; font-size: 13px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-8); padding: 7px 8px; max-width: 100%; }
+  .btn { font-family: var(--font-display); font-weight: 600; font-size: 13px; border-radius: var(--radius-9); border: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 8px 14px; cursor: pointer; }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .btn:disabled { opacity: .4; cursor: not-allowed; }
   .btn:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
@@ -48,117 +58,103 @@
   .record { font-size: 12px; color: var(--muted); }
   .record b { color: var(--ink); }
 
-  .layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 16px; align-items: start; }
-  .stage { background: radial-gradient(120% 90% at 50% 42%, color-mix(in srgb, var(--accent) 5%, var(--surface)), var(--surface)); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 420px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) var(--log-column); gap: var(--space-16); align-items: start; }
+  .stage { background: radial-gradient(120% 90% at 50% 42%, color-mix(in srgb, var(--accent) 5%, var(--surface)), var(--surface)); border: 1px solid var(--line); border-radius: var(--radius-16); box-shadow: var(--shadow-raised); padding: var(--space-16); display: flex; flex-direction: column; gap: var(--space-12); min-height: var(--stage-min); }
 
-  .panel { border-radius: 12px; padding: 12px 14px; border: 1px solid transparent; }
+  .panel { border-radius: var(--radius-12); padding: var(--space-12) var(--space-14); border: 1px solid transparent; }
   .panel.active { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, transparent); }
-  .panel-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
-  .pname { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 15px; }
+  .panel-head { display: flex; align-items: center; gap: var(--space-10); margin-bottom: var(--space-10); flex-wrap: wrap; }
+  .pname { font-family: var(--font-display); font-weight: 700; font-size: 15px; }
   .kind { font-size: 11px; color: var(--faint); }
-  .pscore { margin-left: auto; font-weight: 700; font-size: 17px; }
+  .pscore { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 17px; }
   .pos { color: var(--pos); } .neg { color: var(--neg); }
 
-  .tableau { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
-  .route { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 6px 5px 5px; display: flex; flex-direction: column; gap: 4px; min-height: 58px; min-width: 0; }
-  .route-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
-  .route-name { font-size: 10px; font-weight: 600; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .route-score { font-size: 11px; font-weight: 700; }
-  .stack { display: flex; flex-direction: column; gap: 3px; }
+  .hand { display: flex; flex-wrap: wrap; gap: var(--space-6); margin-top: var(--space-10); align-items: flex-end; }
+  .hand-note { font-size: 11px; color: var(--muted); margin-top: var(--space-6); }
 
-  .card { --suit: var(--muted); position: relative; border-radius: 6px; border: 1px solid color-mix(in srgb, var(--suit) 32%, var(--line)); background: color-mix(in srgb, var(--suit) 13%, var(--surface)); color: color-mix(in srgb, var(--suit) 72%, var(--ink)); display: flex; align-items: center; justify-content: center; font-family: "JetBrains Mono", monospace; font-weight: 700; box-shadow: inset 3px 0 0 var(--suit); }
-  .card.mini { height: 22px; font-size: 12px; padding-left: 3px; }
-  .card.hand { height: 52px; min-width: 40px; font-size: 17px; border-radius: 8px; box-shadow: inset 0 3px 0 var(--suit), var(--shadow); flex-direction: column; cursor: pointer; padding: 0 4px; }
-  .card.hand .tag { font-family: "Hanken Grotesk", sans-serif; font-weight: 600; font-size: 9px; opacity: .8; }
-  .card.hand.playable::after { content: ""; position: absolute; top: 4px; right: 4px; width: 5px; height: 5px; border-radius: 50%; background: var(--pos); }
-  .card.hand.selected { outline: 2px solid var(--accent); outline-offset: 2px; transform: translateY(-4px); }
-  .card.hand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-  .card.hand.inert { cursor: default; }
-  .card.back { --suit: var(--faint); background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 5px, var(--surface) 5px, var(--surface) 10px); color: var(--faint); cursor: default; box-shadow: none; }
-  .card.known { box-shadow: inset 0 3px 0 var(--suit), 0 0 0 1px var(--suit); }
-  .card.good { height: 52px; min-width: 52px; font-family: "Hanken Grotesk", sans-serif; font-size: 12px; font-weight: 700; border-radius: 8px; box-shadow: inset 0 3px 0 var(--suit), var(--shadow); padding: 0 6px; cursor: default; }
-
-  .hand { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: flex-end; }
-  .hand-note { font-size: 11px; color: var(--faint); margin-top: 6px; }
-
-  .center { display: flex; align-items: stretch; gap: 10px; padding: 4px; flex-wrap: wrap; }
-  .deck { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 8px 14px; border-radius: 10px; border: 1px dashed var(--line); background: var(--surface-2); min-width: 84px; color: var(--ink); }
-  .deck .n { font-size: 22px; font-weight: 700; }
-  .deck .t { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--faint); }
-  .discards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; flex: 1; }
-  .pile { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 0; background: transparent; padding: 0; color: inherit; min-width: 0; }
-  .pile .slot { width: 100%; min-height: 30px; border-radius: 7px; border: 1px dashed var(--line); display: flex; align-items: center; justify-content: center; }
-  .pile .slot .card { width: 100%; }
-  .pile .cap { font-size: 9px; color: var(--faint); text-transform: uppercase; }
-  .target { cursor: pointer; outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 2px; border-radius: 10px; }
-  .target:hover { background: var(--accent-soft); }
-  .target:focus-visible { outline-color: var(--accent); }
-
-  /* Camel Stocks: goods cards, coins, market */
-  .gcard { --c: var(--muted); position: relative; width: 58px; height: 80px; border-radius: 9px; flex: none;
+  /* Pieces (GoodCard): --c is the piece colour; the label is piece-paper, or piece-ink with .on-light
+     (chosen by contrast in pieceClass). A .no-small piece reaches 4.5:1 with neither: no small text on it. */
+  .gcard { --c: var(--muted); --label: var(--piece-paper); position: relative; width: 58px; height: 80px; border-radius: var(--radius-9); flex: none;
     background: linear-gradient(160deg, color-mix(in srgb, var(--c) 88%, #fff), var(--c));
-    border: 1px solid color-mix(in srgb, var(--c) 70%, #000); color: #fff; box-shadow: var(--shadow);
+    border: 1px solid color-mix(in srgb, var(--c) 70%, #000); color: var(--label); box-shadow: var(--shadow-raised);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
-  .gcard .sym { font-size: 24px; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
-  .gcard .nm { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+  .gcard.on-light, .strip.on-light, .coin.top.on-light { --label: var(--piece-ink); }
+  .gcard.edge { border-color: var(--line); }
+  .gcard .sym { font-size: 24px; line-height: 1; }
+  .gcard .nm { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+  .gcard.no-small .nm { display: none; }
   .gcard.known { outline: 2px dashed var(--c); outline-offset: 2px; }
-  .gcard.back { --c: #6b7688; background: repeating-linear-gradient(45deg, #5c6678, #5c6678 6px, #6b7688 6px, #6b7688 12px); }
+  .gcard.back { --c: var(--back-b); background: repeating-linear-gradient(45deg, var(--back-a), var(--back-a) 6px, var(--back-b) 6px, var(--back-b) 12px); }
   .gcard.small { width: 44px; height: 60px; } .gcard.small .sym { font-size: 18px; } .gcard.small .nm { font-size: 8px; }
-  /* Ventures: rank cards, route strips, deck and discard piles */
-  .vcard .rank { font-family: "JetBrains Mono", monospace; font-size: 26px; font-weight: 700; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
-  .vcard .corner { position: absolute; top: 4px; left: 6px; font-size: 12px; opacity: .9; }
+  .vcard .rank { font-family: var(--font-mono); font-size: 26px; font-weight: 700; line-height: 1; }
+  .vcard .corner { position: absolute; top: 4px; left: 6px; font-size: 12px; }
   .vcard.small .rank { font-size: 19px; } .vcard.small .nm { display: none; }
   .gcard.hand { cursor: pointer; transition: transform .12s; }
   .gcard.hand.inert { cursor: default; }
-  .gcard.hand.playable::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px var(--pos); }
+  .gcard.hand.playable::after { content: ""; position: absolute; top: 5px; right: 5px; width: 7px; height: 7px; border-radius: var(--radius-round); background: var(--piece-paper); box-shadow: 0 0 0 2px var(--pos); }
   .gcard.hand.selected { transform: translateY(-8px); outline: 3px solid var(--accent); outline-offset: 2px; }
   .gcard.hand:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .gcard.hand { transition: none; } .gcard.hand.selected { transform: none; } }
   button.gcard { font: inherit; cursor: pointer; padding: 0; }
-  .deckcard .sym { font-family: "JetBrains Mono", monospace; font-size: 20px; }
-  .strip { height: 22px; border-radius: 5px; background: var(--c); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 0 6px;
-    font-family: "JetBrains Mono", monospace; font-weight: 700; font-size: 12px; border: 1px solid color-mix(in srgb, var(--c) 70%, #000); text-shadow: 0 1px 1px rgba(0,0,0,.3); }
-  .route { border-top: 3px solid var(--c); }
+  .deckcard .sym { font-family: var(--font-mono); font-size: 20px; }
+
+  /* Table: route columns (RouteColumn), the deck and discard piles (Pile) */
+  .center { display: flex; align-items: stretch; gap: var(--space-10); padding: var(--space-4); flex-wrap: wrap; }
+  .discards { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-8); flex: 1; }
+  .pile { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); border: 0; background: transparent; padding: 0; color: inherit; min-width: 0; }
+  .pile .cap { font-size: 9px; color: var(--faint); text-transform: uppercase; }
+  .target { cursor: pointer; outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent); outline-offset: 2px; border-radius: var(--radius-10); }
+  .target:hover { background: var(--accent-soft); }
+  .target:focus-visible { outline-color: var(--accent); }
+  .center .pile.target { padding: var(--space-3); }
+  .slot-empty { width: 44px; height: 60px; border-radius: var(--radius-9); border: 1px dashed var(--line); display: grid; place-items: center; font-size: 18px; opacity: .5; }
+  .tableau { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-8); }
+  .route { --c: var(--muted); background: var(--surface-2); border: 1px solid var(--line); border-top: 3px solid var(--c); border-radius: var(--radius-9); padding: 6px 5px 5px; display: flex; flex-direction: column; gap: var(--space-4); min-height: 58px; min-width: 0; }
   .route.hl { outline: 2px dashed var(--c); outline-offset: 1px; }
+  .route-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); }
+  .route-name { font-size: 10px; font-weight: 600; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .route-score { font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
+  .stack { display: flex; flex-direction: column; gap: var(--space-3); }
+  .strip { --label: var(--piece-paper); height: 22px; border-radius: var(--radius-5); background: var(--c); color: var(--label); display: flex; align-items: center; justify-content: space-between; padding: 0 6px;
+    font-family: var(--font-mono); font-weight: 700; font-size: 12px; border: 1px solid color-mix(in srgb, var(--c) 70%, #000); }
   .route-empty { font-size: 20px; opacity: .25; text-align: center; padding-top: 6px; }
-  .slot-empty { width: 44px; height: 60px; border-radius: 9px; border: 1px dashed var(--line); display: grid; place-items: center; font-size: 18px; opacity: .5; }
-  .center .pile { gap: 3px; }
-  .center .pile.target { padding: 3px; }
-  .coins { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
-  .coin { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-family: "JetBrains Mono", monospace; font-size: 11px; font-weight: 700;
-    background: color-mix(in srgb, var(--c) 22%, var(--surface)); color: color-mix(in srgb, var(--c) 75%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line)); }
-  .coin.top { width: 28px; height: 28px; font-size: 13px; background: var(--c); color: #fff; border-color: color-mix(in srgb, var(--c) 70%, #000); }
-  .zone { background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
-  .zone-title { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 8px; display: flex; gap: 10px; align-items: baseline; }
+
+  /* Camel Stocks: tokens (TokenPile), herd (Herd), market and moves (Zone, MoveGroup) */
+  .coins { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: 5px; }
+  .coin { width: 22px; height: 22px; border-radius: var(--radius-round); display: grid; place-items: center; font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+    background: color-mix(in srgb, var(--c) 22%, var(--surface)); color: color-mix(in srgb, var(--c) 45%, var(--ink)); border: 1px solid color-mix(in srgb, var(--c) 45%, var(--line)); }
+  .coin.top { --label: var(--piece-paper); width: 28px; height: 28px; font-size: 13px; background: var(--c); color: var(--label); border-color: color-mix(in srgb, var(--c) 70%, #000); }
+  .zone { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-12); padding: var(--space-10) var(--space-12); }
+  .zone-title { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: var(--space-8); display: flex; gap: var(--space-10); align-items: baseline; }
   .zone-title b { color: var(--ink); letter-spacing: 0; text-transform: none; font-size: 12px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  .herd { display: flex; align-items: center; gap: 6px; }
+  .row { display: flex; gap: var(--space-8); flex-wrap: wrap; align-items: center; }
+  .herd { display: flex; align-items: center; gap: var(--space-6); }
   .herd .gcard { width: 40px; height: 54px; } .herd .gcard .sym { font-size: 18px; } .herd .gcard .nm { display: none; }
-  .herd .n { font-family: "JetBrains Mono", monospace; font-weight: 700; }
-  .tokens { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
-  .tpile { background: var(--surface-2); border: 1px solid var(--line); border-radius: 9px; padding: 6px; min-width: 0; }
+  .herd .n { font-family: var(--font-mono); font-weight: 700; }
+  .tokens { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-8); }
+  .tpile { background: var(--surface-2); border: 1px solid var(--line); border-top: 3px solid var(--c); border-radius: var(--radius-9); padding: var(--space-6); min-width: 0; }
   .tpile .name { font-size: 10px; font-weight: 700; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tpile .vals { font-family: "JetBrains Mono", monospace; font-size: 11px; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
+  .tpile .vals { font-family: var(--font-mono); font-size: 11px; color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
   .tpile .vals b { color: var(--ink); font-size: 13px; }
   .tpile.empty { opacity: .45; }
-  .market { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-  .chips { display: flex; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
-  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; background: var(--surface-2); }
+  .chips { display: flex; gap: var(--space-6); flex-wrap: wrap; font-size: 12px; color: var(--muted); }
+  .chip { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 4px 10px; background: var(--surface-2); }
   .chip b { color: var(--ink); }
-  .moves { display: flex; flex-direction: column; gap: 8px; }
-  .move-group { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .moves { display: flex; flex-direction: column; gap: var(--space-8); }
+  .move-group { display: flex; gap: var(--space-6); flex-wrap: wrap; align-items: center; }
   .move-group .glabel { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--faint); min-width: 70px; }
 
   /* Tessera (Ladder design system: Tile, Factory, Wall) */
   :root { --tile: 30px; }
   @media (max-width: 560px) { :root { --tile: 22px; } .tile { font-size: 11px; } .tboard { gap: 8px; } }
-  .tile { --c: var(--muted); --label: #ffffff; width: var(--tile); height: var(--tile); border-radius: 5px; background: var(--c); color: var(--label);
+  .tile { --c: var(--muted); --label: var(--piece-paper); width: var(--tile); height: var(--tile); border-radius: var(--radius-5); background: var(--c); color: var(--label);
     border: 1px solid color-mix(in srgb, var(--c) 70%, var(--line)); display: grid; place-items: center; font-size: 14px; line-height: 1; flex: none; padding: 0;
     box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 35%, transparent); font-family: inherit; }
-  .tile.on-light { --label: #1b2230; }
+  .tile.on-light { --label: var(--piece-ink); }
   .tile.edge { border-color: var(--line); }
   .tile.ghost { background: color-mix(in srgb, var(--c) 16%, var(--surface-2)); color: color-mix(in srgb, var(--c) 60%, var(--muted)); border-style: dashed; box-shadow: none; }
   .tile.slot { background: transparent; border: 1px dashed var(--line); color: transparent; box-shadow: none; }
-  .tile.marker { --c: var(--surface); --label: var(--ink); font-family: "JetBrains Mono", monospace; font-weight: 700; border-color: var(--line); }
+  .tile.marker { --c: var(--surface); --label: var(--ink); font-family: var(--font-mono); font-weight: 700; border-color: var(--line); }
   button.tile { cursor: pointer; }
   button.tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .tile.picked { outline: 3px solid var(--accent); outline-offset: 2px; transform: translateY(-3px); transition: transform .12s; }
@@ -174,17 +170,17 @@
   .twall { grid-template-columns: repeat(5, var(--tile)); }
   .tfloor { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 8px; align-items: flex-start; border: 0; background: transparent; padding: 1px; border-radius: 7px; }
   .tfloor .cell { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-  .tfloor .pen { font-family: "JetBrains Mono", monospace; font-size: 10px; font-weight: 700; color: var(--neg); }
+  .tfloor .pen { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--neg); }
   .tline.target, .tfloor.target { cursor: pointer; }
   .prompt { text-align: center; font-size: 13px; color: var(--muted); min-height: 36px; display: flex; gap: 8px; justify-content: center; align-items: center; flex-wrap: wrap; }
   .prompt b { color: var(--ink); }
   .error { color: var(--neg); font-size: 12px; text-align: center; min-height: 16px; }
 
-  .banner { border-radius: 12px; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-  .banner .big { font-family: "Archivo", sans-serif; font-weight: 800; font-size: 20px; }
+  .banner { border-radius: 12px; padding: 12px 16px; border: 1px solid var(--line); background: var(--surface); box-shadow: var(--shadow-raised); display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .banner .big { font-family: var(--font-display); font-weight: 800; font-size: 20px; }
 
-  .log { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; display: flex; flex-direction: column; max-height: 620px; }
-  .log h2 { font-family: "Archivo", sans-serif; font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 0; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
+  .log { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow-raised); overflow: hidden; display: flex; flex-direction: column; max-height: 620px; }
+  .log h2 { font-family: var(--font-display); font-size: 12px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 0; padding: 14px 16px 10px; border-bottom: 1px solid var(--line); }
   .log-list { overflow-y: auto; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
   .log-list .you { color: var(--ink); } .log-list .opp { color: var(--muted); } .log-list .chance { color: var(--faint); font-style: italic; }
   .log-list .you::before { content: "● "; color: var(--accent); } .log-list .opp::before { content: "○ "; color: var(--faint); }
@@ -248,6 +244,20 @@
       '</span><span class="mono">by ' + Math.abs(m) + '</span><button class="btn primary" data-act="again">Play again</button></div>';
   }
   function prompt(text) { return '<div class="prompt">' + text + '</div><div class="error">' + esc(state.error || "") + "</div>"; }
+  function lum(hex) {
+    var c = [1, 3, 5].map(function (i) {
+      var v = parseInt(hex.substr(i, 2), 16) / 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  }
+  var INK_LUM = lum("#1b2230");  // piece-ink; piece-paper is white (luminance 1)
+  function pieceClass(hex) {
+    // The design system's label rule: print in whichever of piece-ink and piece-paper contrasts more
+    // (" on-light" for ink); a piece where neither reaches 4.5:1 is " no-small" (numerals and glyphs only).
+    var L = lum(hex), paper = 1.05 / (L + 0.05), ink = (L + 0.05) / (INK_LUM + 0.05);
+    return (ink > paper ? " on-light" : "") + (Math.max(ink, paper) < 4.5 ? " no-small" : "");
+  }
 
   // ======================= Ventures =======================
   var V = {
@@ -256,14 +266,15 @@
     name: function (meta, id) { var d = V.decode(meta, id); return meta.suit_names[d.suit] + " " + (d.backing ? "backing" : d.rank); },
     card: function (meta, id, cls, attrs) {
       // A full-colour card: the rank large (a backing card shows ×), the venture's symbol in the corner.
-      var d = V.decode(meta, id);
-      return '<div class="gcard vcard ' + cls + '" style="--c:' + meta.suit_colors[d.suit] + '" ' + (attrs || "") + ' title="' + esc(V.name(meta, id)) + '">' +
+      var d = V.decode(meta, id), hex = meta.suit_colors[d.suit];
+      return '<div class="gcard vcard ' + cls + pieceClass(hex) + '" style="--c:' + hex + '" ' + (attrs || "") + ' title="' + esc(V.name(meta, id)) + '">' +
         '<span class="corner">' + meta.suit_symbols[d.suit] + '</span><span class="rank">' + (d.backing ? "×" : d.rank) + '</span>' +
         '<span class="nm">' + (d.backing ? "backing" : esc(meta.suit_names[d.suit])) + "</span></div>";
     },
     strip: function (meta, id) {
       var d = V.decode(meta, id);
-      return '<div class="strip" style="--c:' + meta.suit_colors[d.suit] + '" title="' + esc(V.name(meta, id)) + '"><span>' + (d.backing ? "×" : d.rank) +
+      var hex = meta.suit_colors[d.suit];
+      return '<div class="strip' + pieceClass(hex) + '" style="--c:' + hex + '" title="' + esc(V.name(meta, id)) + '"><span>' + (d.backing ? "×" : d.rank) +
         "</span><span>" + meta.suit_symbols[d.suit] + "</span></div>";
     },
     routeScore: function (meta, cards) {
@@ -277,7 +288,7 @@
         var sc = V.routeScore(meta, cards);
         var body = cards.length ? cards.map(function (id) { return V.strip(meta, id); }).join("")
           : '<div class="route-empty" style="color:' + meta.suit_colors[s] + '">' + meta.suit_symbols[s] + "</div>";
-        return '<div class="route' + (highlight === s ? " hl" : "") + '" style="--c:' + meta.suit_colors[s] + '"><div class="route-head"><span class="route-name" style="color:' + meta.suit_colors[s] + '">' +
+        return '<div class="route' + (highlight === s ? " hl" : "") + '" style="--c:' + meta.suit_colors[s] + '"><div class="route-head"><span class="route-name">' +
           meta.suit_symbols[s] + " " + esc(meta.suit_names[s]) + "</span>" +
           (sc === null ? "" : '<span class="route-score ' + sign(sc) + '">' + signed(sc) + "</span>") +
           '</div><div class="stack">' + body + "</div></div>";
@@ -340,7 +351,7 @@
   var C = {
     rules: "Each turn, do one thing: take one good from the market (hand limit 7), take all the camels, exchange 2+ goods from the market for as many cards and/or camels (never giving back a good you take), or sell cards of one good (gems, gold, silver: at least 2) for its top tokens, with a bonus for 3, 4 or 5+ cards. The game ends when three token piles are empty or the deck cannot refill the market. The larger herd scores +5. Outlined opponent cards are goods they were seen taking.",
     card: function (meta, id, cls) {
-      return '<div class="gcard ' + (cls || "") + '" style="--c:' + meta.card_colors[id] + '" title="' + esc(meta.card_names[id]) + '">' +
+      return '<div class="gcard ' + (cls || "") + pieceClass(meta.card_colors[id]) + '" style="--c:' + meta.card_colors[id] + '" title="' + esc(meta.card_names[id]) + '">' +
         '<span class="sym">' + meta.card_symbols[id] + '</span><span class="nm">' + esc(meta.card_names[id]) + "</span></div>";
     },
     goodOf: function (meta, label) {
@@ -356,8 +367,8 @@
       var byGood = function (a, b) { return a - b; };
       var tokens = '<div class="zone"><div class="zone-title">Goods tokens <b>next sale takes the big coin first</b></div><div class="tokens">' +
         v.tokens.map(function (pile, g) {
-          var coins = pile.map(function (t, i) { return '<span class="coin' + (i === 0 ? " top" : "") + '">' + t + "</span>"; }).join("");
-          return '<div class="tpile' + (pile.length ? "" : " empty") + '" style="--c:' + meta.card_colors[g] + '"><div class="name" style="color:' + meta.card_colors[g] + '">' +
+          var coins = pile.map(function (t, i) { return '<span class="coin' + (i === 0 ? " top" + pieceClass(meta.card_colors[g]) : "") + '">' + t + "</span>"; }).join("");
+          return '<div class="tpile' + (pile.length ? "" : " empty") + '" style="--c:' + meta.card_colors[g] + '"><div class="name">' +
             meta.card_symbols[g] + " " + esc(names[g]) + (meta.precious.indexOf(g) >= 0 ? " ×2+" : "") +
             '</div><div class="coins">' + (coins || '<span class="vals">sold out</span>') + "</div></div>";
         }).join("") + '</div><div class="chips" style="margin-top:8px"><span class="chip">bonus tokens left for 3 / 4 / 5+ cards: <b>' + v.bonus_left.join(" / ") +
@@ -389,9 +400,9 @@
         });
         moves = '<div class="moves">' + ["Take", "Sell", "Exchange"].filter(function (k) { return groups[k]; }).map(function (k) {
           return '<div class="move-group"><span class="glabel">' + k + "</span>" + groups[k].map(function (a) {
+            // Buttons stay interface-coloured (piece colours belong to pieces); the good's glyph names it.
             var g = C.goodOf(meta, a.label);
-            var style = g >= 0 ? ' style="box-shadow: inset 4px 0 0 ' + meta.card_colors[g] + '"' : "";
-            return '<button class="btn" data-act="' + a.id + '"' + style + ">" + (g >= 0 ? meta.card_symbols[g] + " " : "") +
+            return '<button class="btn" data-act="' + a.id + '">' + (g >= 0 ? meta.card_symbols[g] + " " : "") +
               esc(a.label.replace(/^exchange: /, "")) + "</button>";
           }).join("") + "</div>";
         }).join("") + "</div>";
@@ -404,18 +415,10 @@
   // ======================= Tessera =======================
   var T = {
     rules: "Each turn take every tile of one colour from one display (its other tiles slide to the centre) or from the centre (the first to do so also takes the first-player marker, which fills a floor space). Put them on one pattern row (one colour per row, and not a colour that row already has on the wall) or on the floor; tiles that do not fit fall to the floor. When the displays and centre are empty, each full row moves one tile to the wall and scores 1, or the length of the rows and columns it joins; floor tiles cost the points under them. The game ends after the round in which someone completes a wall row: +2 per full row, +7 per full column, +10 per colour placed five times.",
-    lum: function (hex) {
-      var c = [1, 3, 5].map(function (i) {
-        var v = parseInt(hex.substr(i, 2), 16) / 255;
-        return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
-      });
-      return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-    },
     tile: function (meta, k, cls, attrs, tag) {
-      // Label colour by the design system's rule: ink on light tiles, white on dark ones; a tile
-      // close to either ground keeps its border.
-      var hex = meta.color_hex[k], L = T.lum(hex);
-      var extra = (L > 0.18 ? " on-light" : "") + (L < 0.04 || L > 0.6 ? " edge" : "");
+      // Label colour by the design system's rule (pieceClass); a tile close to either ground keeps its border.
+      var hex = meta.color_hex[k], L = lum(hex);
+      var extra = pieceClass(hex) + (L < 0.04 || L > 0.6 ? " edge" : "");
       tag = tag || "div";
       return "<" + tag + ' class="tile' + extra + (cls ? " " + cls : "") + '" style="--c:' + hex + '" title="' + esc(meta.color_names[k]) + '" ' +
         (attrs || "") + ">" + meta.color_symbols[k] + "</" + tag + ">";

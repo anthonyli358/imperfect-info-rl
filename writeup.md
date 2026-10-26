@@ -48,8 +48,10 @@ step, while expanding to more games and trying more approaches. Games so far:
 **Open threads, in the order I would take them:**
 
 1. ~~Tessera board renderer~~ Done 2026-10-24 (`viz/play.html`, from the **Ladder design system**:
-   https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5). Still open there: apply the system's
-   tokens and components to the Ventures and Camel Stocks boards (only `on-accent` is applied).
+   https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5). ~~Apply the system to the Ventures and
+   Camel Stocks boards~~ Done 2026-10-26 (findings log, "The play page follows the Ladder design
+   system"). Left: the system's own `bundle.css` still prints white labels with a text shadow and
+   could take the page's label rule.
 2. ~~Search with the AlphaZero loop's nets~~ Done: +2 to +3 points a game over the original nets.
    Still open: more loop iterations (the raw policy was still rising at iteration 24), a
    1,000-deal Elo ladder (`experiments/elo_ladder.py`, add a Tessera config), per-move latency
@@ -440,6 +442,28 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### The play page follows the Ladder design system on every board (2026-10-26)
+
+Before this change, the Ventures and Camel Stocks boards predated the design system. Only `on-accent`
+had been applied. Now all three boards in `viz/play.html` follow it:
+
+- **The system's tokens are CSS variables** (spacing, radius, type families, `piece-ink`,
+  `piece-paper`, the card-back stripes, `shadow-raised`, layout widths), and the CSS reads them.
+- **One label rule for every piece.** `pieceClass(hex)` prints a piece's label in whichever of
+  `piece-ink` and `piece-paper` contrasts more, and marks a piece where neither reaches 4.5:1 as
+  `no-small` (its small name is hidden; ranks and glyphs stay). It reproduces every token note in the
+  system: ink on summit, gold, silver, spice and camel; white on the rest; orchard the only
+  `no-small` piece (4.1:1). Before, labels were white with a text shadow everywhere, which fell to
+  2.4:1 on gold and 2.6:1 on camel cards and top coins. Tessera tiles use the same function.
+- **No piece colour on interface elements or small text.** Route names and token-pile names are now
+  in ink, not the suit colour (summit orange on white was about 3:1). Camel Stocks move buttons lose
+  their coloured side bar; the good's glyph names it. Token piles take the route columns' coloured
+  top edge instead. Lighter coin values now reach 5.5:1 or better in both themes.
+
+Checked by rendering real mid-game states from the engine in headless Edge, in both themes, at
+1200px and in a 390px frame (no horizontal scroll). One known gap: the card gradient's lightest
+corner drops white labels to 3.7–4.5:1 there. The name sits lower, on the full colour.
 
 ### Tessera: the AlphaGo recipe works where value search never did (2026-10-19)
 
