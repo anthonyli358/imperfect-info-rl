@@ -464,8 +464,8 @@ perfect exploiter wins about 70% of games.
 | uniform random | 0.78 | — |
 | PPO from scratch, 25 → 200 iterations | 0.42–0.72 / 0.42–0.58 (200: 0.56 / 0.50) | 0.83 |
 | + Nash phase as on Mini-Ventures (magnet 0.1, lr 1e-4), 200 its | 0.42–0.67 / 0.38–0.58 (200: 0.47 / 0.43) | 0.83 |
-| + strong magnet (1.0, lr 3e-5), 400 its | 0.33–0.64 / 0.34–0.51 (400: 0.42 / 0.35) | 0.84 |
-| + magnet 0.3, lr 1e-4, 400 its | 0.36–0.61 / 0.31–0.52 (400: 0.53 / 0.52) | 0.84 |
+| + strong magnet (1.0, lr 3e-5), 400 its | 0.33–0.64 / 0.34–0.51 (400: 0.42 / 0.35) | 0.82 |
+| + magnet 0.3, lr 1e-4, 400 its | 0.36–0.61 / 0.31–0.52 (400: 0.53 / 0.52) | 0.83 |
 | CFR+ (alternating), 1,000 iterations, 31 s | **0.00013** | — |
 
 - **PPO learns to play** (0.83 against random after 25 iterations) **but not to be safe.** Its
