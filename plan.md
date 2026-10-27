@@ -463,12 +463,18 @@ game, and why.
 
 Goal: implement CFR from scratch on a small game I built — the paradigm shift *before* poker, on something I can eyeball. Watch it converge to mixed (bluffing) strategies. Validate against OpenSpiel.
 
-- [ ] Engine: dice, bidding, challenge/dudo, two-player variant; chance nodes for rolls; information states
-- [ ] Engine unit tests
-- [ ] Tabular CFR (regret matching) + average-strategy accumulation in `agents/cfr/`
-- [ ] Best-response / exploitability computation for this game
-- [ ] CFR+ and MCCFR variants
-- [ ] Cross-validate equilibrium values vs OpenSpiel's `liars_dice` *(needs `[openspiel]`)* — checks both my engine and my CFR
+- [x] Engine: OpenSpiel's `liars_dice` (decided 2026-10-27: use DeepMind's engine) behind our
+  interface via `games/spiel.py`; any two-player zero-sum OpenSpiel game can be registered
+- [x] Adapter tests (`tests/test_spiel.py`; conformance suite)
+- [x] Tabular CFR (regret matching) + average-strategy accumulation in `agents/cfr/` (existing)
+- [x] Best-response / exploitability for this game (existing `eval/exact_br.py`; matches OpenSpiel
+  to 6 decimals)
+- [x] CFR+ (graph CFR+, now with alternating updates: identical to OpenSpiel's CFR+, ~4× faster);
+  MCCFR not yet
+- [x] Cross-validate vs OpenSpiel (2026-10-27): exploitability 0.00013 after 1,000 iterations,
+  first bidder's value −0.02713
+- [ ] Headline (from Stage 6): PPO self-play vs CFR on Liar's Dice, by exact exploitability
+- [ ] 2 dice each (a bigger game: graph CFR+ scale check)
 - [ ] Eval: CFR vs heuristic; inspect learned bluff/call frequencies for sanity
 
 **Done when:** exploitability drives toward zero and my values match OpenSpiel's reference.

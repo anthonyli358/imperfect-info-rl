@@ -31,6 +31,7 @@ step, while expanding to more games and trying more approaches. Games so far:
 | **Camel Stocks** | Original card game on Jaipur's mechanics | `camel_nash` policy + the same rollouts from 12 cards left | 0.620 vs the policy alone (+3.8 points); 0.978 / 0.988 vs the two heuristic styles | same page |
 | **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | Policy + value net + PUCT search, both nets improved by 48 iterations of an AlphaZero loop (`experiments/alphago_tessera.py`, `runs/tessera_ag/exit_*_48.pt`) | 400 sims: 2057 ± 21 Elo (heuristic = 1500; 0.961 vs the heuristic), 0.545 vs the same search on the iteration-24 nets | same page (400 sims), with a real board |
 | Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
+| Liar's Dice | OpenSpiel's engine (1 die each), through `games/spiel.py` | full-game CFR+ (alternating) | exploitability 0.00013 after 1,000 iterations; first bidder's value −0.0271 | — |
 
 **What we know works, by kind of game** (details in "What we learned" and the findings log):
 
@@ -60,8 +61,10 @@ step, while expanding to more games and trying more approaches. Games so far:
    (worst 0.26 s), 1,600 sims median 0.74 s (worst 1.0 s). Still open: more iterations (search
    was still gaining ~+30 Elo per 12 iterations); the `tessera_strong` ladder's last entry (low
    value: that anchor inflates search).
-3. **Next games:** Liar's Dice and small poker (plan.md Stages 4–5, where ReBeL should suit), then
-   Stage 7, an entity-token rung on The Confrontation's skeleton (plan.md).
+3. **Next games:** Liar's Dice started 2026-10-27 on OpenSpiel's engine (findings log, "Liar's
+   Dice through OpenSpiel"): solvers cross-checked; next is the plan's headline experiment, PPO
+   self-play vs CFR measured by exact exploitability, then 2 dice each, then small poker (Stage 5,
+   where ReBeL should suit), then Stage 7 (The Confrontation's skeleton).
 4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -80,6 +83,7 @@ step, while expanding to more games and trying more approaches. Games so far:
 
 **Practicalities.**
 
+- OpenSpiel games need the extra: `uv sync --extra openspiel` (a plain `uv sync` removes it).
 - Windows, Git Bash and PowerShell; Python via `uv` (`uv sync`, `uv run pytest`, `uv run ruff check .`
   and `ruff format`, line length 100, Google docstrings). Configs are dataclasses, not argparse
   (small `key=value` command-line overrides in experiment scripts).
@@ -446,6 +450,37 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Liar's Dice through OpenSpiel: our solvers match DeepMind's exactly (2026-10-27)
+
+Rather than build a fourth engine, Liar's Dice uses OpenSpiel's (`open_spiel` 2.0.2 has a Windows
+wheel; the `[openspiel]` extra). `games/spiel.py` puts any two-player zero-sum OpenSpiel game
+behind our `Game` interface: immutable states identified by their action history, OpenSpiel's
+information-state strings and tensors. Registered as `liars_dice` (1 die each, 6 faces, highest
+face wild: 294,883 states, 24,576 information sets). It passes the conformance suite, and
+`tests/test_spiel.py` checks it move for move against OpenSpiel on random games.
+
+**The cross-check** (`experiments/liars_dice.py crosscheck`, `runs/liars_dice/crosscheck.jsonl`):
+our graph CFR+ and OpenSpiel's C++ CFR+ for the same iterations, each average strategy scored by
+both exploitability evaluators (ours, `eval/exact_br.py`; OpenSpiel's `pyspiel.exploitability`).
+
+| Iterations | Ours, simultaneous | Ours, alternating | OpenSpiel CFR+ |
+|---|---|---|---|
+| 10 | 0.3500 | 0.1416 | 0.1416 |
+| 100 | 0.0370 | 0.0049 | 0.0049 |
+| 1,000 | 0.0034 | **0.00013** | 0.00013 |
+| time for 1,000 | 16 s | 31 s | 116 s |
+
+- **The evaluators agree to 6 decimals on every policy** (uniform: 0.780744 by both), so the adapter
+  and our exact best response are right.
+- **Our CFR+ with alternating updates reproduces OpenSpiel's CFR+ to 6 decimals at every
+  checkpoint**, about 4× faster (vectorized numpy over the state graph vs C++ tree walks).
+- **Simultaneous updates, which `GraphCFR` used until now, converge ~10–25× slower per
+  iteration.** `GraphCFR(alternating=True)` is now available; the default stays simultaneous so
+  the Mini-Ventures results reproduce. The Mini-Ventures equilibrium (0.0022 after up to 3,000
+  simultaneous iterations) was correct, just slower to reach than it needed to be.
+- **The first bidder's equilibrium value is −0.02713** (bracketed within ±0.00013 by the best
+  responses), equal to −7/258 to five decimals: going first is a small disadvantage.
 
 ### Tessera: 24 more loop iterations help the search, not the raw policy's score (2026-10-26)
 
