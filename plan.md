@@ -473,7 +473,9 @@ Goal: implement CFR from scratch on a small game I built — the paradigm shift 
   MCCFR not yet
 - [x] Cross-validate vs OpenSpiel (2026-10-27): exploitability 0.00013 after 1,000 iterations,
   first bidder's value −0.02713
-- [ ] Headline (from Stage 6): PPO self-play vs CFR on Liar's Dice, by exact exploitability
+- [x] Headline (from Stage 6, 2026-10-27): PPO self-play vs CFR on Liar's Dice, by exact
+  exploitability: PPO and three Nash-phase variants stay 0.3–0.5 (payoff ±1) and cycle; CFR+
+  0.00013 in 31 s
 - [ ] 2 dice each (a bigger game: graph CFR+ scale check)
 - [ ] Eval: CFR vs heuristic; inspect learned bluff/call frequencies for sanity
 
@@ -500,7 +502,7 @@ Goal: adopt the framework where it earns its place — CFR at scale, with verifi
 ## Stage 6 — Stretch / research edge *(optional, pick what stays fun)*
 
 - [ ] **PPO** in `agents/ppo/` — foundational algorithm to own (also the RLHF/post-training bridge to day-job + SLM work)
-- [ ] **Headline experiment:** PPO self-play vs CFR on Liar's Dice — measure the **exploitability gap**. Make "why the field uses regret minimisation, not vanilla policy gradients" something I've *watched happen*.
+- [x] **Headline experiment:** PPO self-play vs CFR on Liar's Dice — measure the **exploitability gap** (done 2026-10-27, Stage 4). Make "why the field uses regret minimisation, not vanilla policy gradients" something I've *watched happen*.
 - [x] **NFSP** (PPO best response; Camel Stocks, vs Nash PPO at equal budget: exploitability 0.515 vs 0.509, but weaker: 0.456 head to head) — the bridge that targets equilibrium with RL-style best-response; compare against CFR and PPO
 - [ ] **No-limit Hold'em (scoped)** — blueprint agent over a small fixed action abstraction, explicitly "functional, not frontier"; explore action/card abstraction + the translation problem. *Not* aimed at strength.
 - [ ] **Hanabi (OpenSpiel)** — cooperative, imperfect-info; self-play coordination, reaching toward the open zero-shot / cross-play problem. The highest-ceiling rung the framework makes cheap.

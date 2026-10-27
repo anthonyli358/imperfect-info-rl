@@ -62,9 +62,10 @@ step, while expanding to more games and trying more approaches. Games so far:
    was still gaining ~+30 Elo per 12 iterations); the `tessera_strong` ladder's last entry (low
    value: that anchor inflates search).
 3. **Next games:** Liar's Dice started 2026-10-27 on OpenSpiel's engine (findings log, "Liar's
-   Dice through OpenSpiel"): solvers cross-checked; next is the plan's headline experiment, PPO
-   self-play vs CFR measured by exact exploitability, then 2 dice each, then small poker (Stage 5,
-   where ReBeL should suit), then Stage 7 (The Confrontation's skeleton).
+   Dice through OpenSpiel" and "PPO cannot find Liar's Dice's equilibrium"): solvers
+   cross-checked; PPO self-play stays 0.3–0.5 exploitable against CFR+'s 0.00013. Next: 2 dice
+   each (graph CFR+ scale check; MCCFR), then small poker (Stage 5, where ReBeL should suit), then
+   Stage 7 (The Confrontation's skeleton).
 4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -450,6 +451,37 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### PPO cannot find Liar's Dice's equilibrium; CFR+ does in seconds (2026-10-27)
+
+The plan's headline experiment: the repo's PPO recipe trained by self-play on Liar's Dice (1 die
+each), every checkpoint's **exact** exploitability measured (`experiments/liars_dice.py ppo` and
+`magnet`; `runs/liars_dice/ppo_exact.json`). Payoffs are +1 / −1, so exploitability 0.4 means a
+perfect exploiter wins about 70% of games.
+
+| Agent | Exact exploitability (greedy / sampled) | vs random |
+|---|---|---|
+| uniform random | 0.78 | — |
+| PPO from scratch, 25 → 200 iterations | 0.42–0.72 / 0.42–0.58 (200: 0.56 / 0.50) | 0.83 |
+| + Nash phase as on Mini-Ventures (magnet 0.1, lr 1e-4), 200 its | 0.42–0.67 / 0.38–0.58 (200: 0.47 / 0.43) | 0.83 |
+| + strong magnet (1.0, lr 3e-5), 400 its | 0.33–0.64 / 0.34–0.51 (400: 0.42 / 0.35) | 0.84 |
+| + magnet 0.3, lr 1e-4, 400 its | 0.36–0.61 / 0.31–0.52 (400: 0.53 / 0.52) | 0.84 |
+| CFR+ (alternating), 1,000 iterations, 31 s | **0.00013** | — |
+
+- **PPO learns to play** (0.83 against random after 25 iterations) **but not to be safe.** Its
+  exploitability swings from checkpoint to checkpoint instead of falling: the strategy cycling
+  that motivates regret minimisation, watched happening.
+- **A strong magnet helps a little and slowly** (sampled 0.50 → 0.35 over 400 iterations); a
+  middling one does not. None comes within 2,000× of CFR+.
+- **Deploying the greedy policy costs more here than on the card games.** Liar's Dice needs mixed
+  play (bluffing bids, calling at the right frequency), and a deterministic policy is exploitable
+  by construction; the sampled policy is usually less exploitable.
+- **Contrast with Mini-Ventures,** where the same recipe got within 0.07 points of equilibrium
+  (about 1% of a typical margin). There, most decisions have a clearly best move; Liar's Dice's
+  value lies in the mixing, which policy gradients chase in circles.
+
+Next on this game: 2 dice each (graph CFR+ at a bigger scale, then MCCFR), and whether ReBeL or
+NFSP closes the gap PPO leaves.
 
 ### Liar's Dice through OpenSpiel: our solvers match DeepMind's exactly (2026-10-27)
 
