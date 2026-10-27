@@ -18,7 +18,19 @@ Run with (needs ``uv sync --extra openspiel``)::
 
     uv run python -m experiments.spiel_games crosscheck   # one process
     uv run python -m experiments.spiel_games ppo          # 4 workers
+    uv run python -m experiments.spiel_games nfsp game=leduc_poker iterations=400
+    uv run python -m experiments.spiel_games rebel game=kuhn_poker epochs=20
     uv run python -m experiments.spiel_games magnet tag=m1 magnet_coef=1.0 lr=3e-5 iterations=400
+
+``nfsp`` continues from the PPO phase with NFSP (``selfplay/nfsp.py``: a PPO best response
+against the anticipatory mix, plus a supervised average policy, which is what gets measured), the
+equilibrium-seeking RL method the literature uses on poker. ``key=value``: ``tag``,
+``iterations``, ``eta``.
+
+``rebel`` trains full-width ReBeL (``selfplay/rebel.py``: CFR over depth-limited subgames of
+public belief states, value networks at the cuts) and measures the exact exploitability of the
+policy it plays. Subgames start at ``BOUNDARIES[game]``, depths with no chance node. ``key=value``:
+``epochs``, ``cfr_iterations``.
 
 ``magnet`` continues from the PPO phase with other Nash-phase settings (``key=value``: any
 ``PPOConfig`` field, plus ``tag`` and ``iterations``), measuring exact exploitability as it goes.
@@ -35,6 +47,7 @@ from pathlib import Path
 
 import numpy as np
 import pyspiel
+import torch
 
 import iirl.games  # noqa: F401  (registers the OpenSpiel games)
 from experiments.train_ventures_league import _train
@@ -48,6 +61,10 @@ from iirl.selfplay import PPOConfig
 
 GAME = "liars_dice"
 OUT = Path("runs/liars_dice")
+
+
+# Depths where ReBeL's subgames start (no chance node there), ending with the last depth.
+BOUNDARIES = {"kuhn_poker": (2, 3, 5), "leduc_poker": (2, 7, 11), "liars_dice": (2, 5, 8, 15)}
 
 
 def prefix() -> str:
@@ -233,6 +250,89 @@ def magnet(config: Config) -> None:
         )
 
 
+def rebel(config: Config) -> None:
+    """Full-width ReBeL with exact evaluation every few epochs; curve to ``rebel.jsonl``."""
+    from iirl.selfplay.rebel import FullWidthReBeL, ReBeLConfig
+
+    torch.set_num_threads(4)  # keeps the machine cool
+    args = dict(item.split("=") for item in sys.argv[2:])
+    settings = ReBeLConfig(
+        boundaries=BOUNDARIES[GAME],
+        cfr_iterations=int(args.get("cfr_iterations", 100)),
+        eval_iterations=int(args.get("cfr_iterations", 100)),
+        epochs=int(args.get("epochs", 20)),
+        passes=3,
+    )
+    game = make(GAME)
+    t0 = time.perf_counter()
+    agent = FullWidthReBeL(game, settings)
+    sizes = {d: level.num_public for d, level in agent.levels.items()}
+    print(f"indexed in {time.perf_counter() - t0:.0f}s; public states per boundary {sizes}")
+    curve = OUT / "rebel.jsonl"
+    last = time.perf_counter()
+
+    def on_epoch(agent: FullWidthReBeL, losses: dict[int, float]) -> None:
+        nonlocal last
+        row = {"epoch": agent.epoch, "loss": {str(d): round(v, 5) for d, v in losses.items()}}
+        row["seconds"] = round(time.perf_counter() - last)
+        if agent.epoch % 5 == 0 or agent.epoch == settings.epochs:
+            row.update(agent.evaluate())
+        print(json.dumps(row), flush=True)
+        with curve.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+        last = time.perf_counter()
+
+    agent.train(on_epoch)
+
+
+def nfsp(config: Config) -> None:
+    """NFSP from the PPO phase's final checkpoint; exact exploitability of its average policy."""
+    from iirl.selfplay.nfsp import NFSPConfig, train_nfsp
+
+    args = dict(item.split("=") for item in sys.argv[2:])
+    tag = args.get("tag", "nfsp")
+    iterations = int(args.get("iterations", 400))
+    eta = float(args.get("eta", 0.1))
+    game = make(GAME)
+    graph = build_graph(game)
+    results = OUT / "ppo_exact.json"
+    exact = json.loads(results.read_text("utf-8")) if results.exists() else {}
+    settings = replace(config.ppo, iterations=iterations, lr=1e-4, seed=3, eval_interval=iterations)
+
+    def on_average(iteration: int, net) -> None:  # noqa: ANN001 - PolicyValueNet
+        label = f"{tag} {iteration}"
+        exact[label] = {
+            "checkpoint": None,
+            "greedy": round(
+                exploitability(game, net_policy(net, greedy=True), graph)["exploitability"], 6
+            ),
+            "sampled": round(exploitability(game, net_policy(net), graph)["exploitability"], 6),
+        }
+        print(
+            f"{label:<14} exact exploitability: greedy {exact[label]['greedy']:.4f}, "
+            f"sampled {exact[label]['sampled']:.4f}",
+            flush=True,
+        )
+        results.write_text(json.dumps(exact, indent=1), "utf-8")
+
+    avg = train_nfsp(
+        game,
+        {"random": RandomAgent()},
+        NFSPConfig(ppo=settings, eta=eta, eval_interval=config.save_every, eval_games=200),
+        PPOAgent.from_checkpoint(f"runs/{GAME}/{prefix()}_ppo.pt").net,
+        on_average=on_average,
+    )
+    torch.save(
+        {
+            "state_dict": avg.state_dict(),
+            "input_dim": avg.input_dim,
+            "num_actions": avg.num_actions,
+            "hidden": list(config.ppo.hidden),
+        },
+        OUT / f"{prefix()}_{tag}.pt",
+    )
+
+
 def ppo(config: Config) -> None:
     """Train PPO then Nash-seeking PPO; exact exploitability of every checkpoint."""
     OUT.mkdir(parents=True, exist_ok=True)
@@ -297,4 +397,11 @@ if __name__ == "__main__":
         GAME = item.split("=", 1)[1]
         OUT = Path(f"runs/{GAME}")
         sys.argv.remove(item)
-    {"crosscheck": crosscheck, "ppo": ppo, "magnet": magnet}[sys.argv[1]](Config())
+    stages = {
+        "crosscheck": crosscheck,
+        "ppo": ppo,
+        "magnet": magnet,
+        "nfsp": nfsp,
+        "rebel": rebel,
+    }
+    stages[sys.argv[1]](Config())

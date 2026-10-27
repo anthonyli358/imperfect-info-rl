@@ -45,8 +45,16 @@ class SpielState(State):
 class SpielGame(Game):
     """A two-player zero-sum OpenSpiel game as a ``Game``."""
 
-    def __init__(self, game_string: str, short_name: str, long_name: str) -> None:
-        """Load ``game_string`` (e.g. ``"liars_dice(numdice=1)"``) with pyspiel."""
+    def __init__(
+        self, game_string: str, short_name: str, long_name: str, private_deals: int = 0
+    ) -> None:
+        """Load ``game_string`` (e.g. ``"liars_dice(numdice=1)"``) with pyspiel.
+
+        ``private_deals = 2`` declares that the game's first two chance outcomes are player 0's
+        and player 1's private deal (a card, a die) and everything after them is public. That
+        enables the public-belief hooks ReBeL needs (``public_state_string`` and the like).
+        """
+        self.private_deals = private_deals
         if pyspiel is None:
             raise ImportError("OpenSpiel games need the extra: uv sync --extra openspiel")
         self.spiel = pyspiel.load_game(game_string)
@@ -123,6 +131,46 @@ class SpielGame(Game):
         """OpenSpiel's observation tensor."""
         return np.asarray(state.inner.observation_tensor(player), dtype=np.float32)
 
+    # --- Public-belief hooks (ReBeL), for games declared with ``private_deals=2`` ---------------
+
+    def _public(self, state: SpielState) -> tuple[int, ...]:
+        if self.private_deals != 2:
+            raise NotImplementedError(f"{self._type.short_name} declares no private deals")
+        return state.history[2:]
+
+    def num_private_states(self) -> int:
+        """Number of possible private deals (cards, die faces)."""
+        return self.spiel.max_chance_outcomes()
+
+    def private_state_index(self, state: SpielState, player: Player) -> int:
+        """``player``'s private deal: the ``player``-th chance outcome."""
+        self._public(state)
+        return state.history[player]
+
+    def public_state_string(self, state: SpielState) -> str:
+        """Everything after the private deals, which both players observe."""
+        return ",".join(map(str, self._public(state)))
+
+    def public_state_tensor(self, state: SpielState) -> np.ndarray:
+        """The public state as features: one-hot actions by position, then who is to move.
+
+        Player actions and chance outcomes get separate blocks at each position.
+        """
+        public = self._public(state)
+        actions, outcomes = self.spiel.num_distinct_actions(), self.spiel.max_chance_outcomes()
+        width = actions + outcomes
+        out = np.zeros(self.spiel.max_game_length() * width + 2, dtype=np.float32)
+        s = self.new_initial_state()
+        for a in state.history[:2]:
+            s = self.apply_action(s, a)
+        for t, a in enumerate(public):
+            out[t * width + (actions + a if self.is_chance_node(s) else a)] = 1.0
+            s = self.apply_action(s, a)
+        mover = self.current_player(state)
+        if mover >= 0:
+            out[-2 + mover] = 1.0
+        return out
+
     def action_to_string(self, state: SpielState, action: Action) -> str:
         """OpenSpiel's label for ``action``."""
         player = self.current_player(state)
@@ -153,13 +201,16 @@ if pyspiel is not None:
     @register("liars_dice")
     def _liars_dice() -> SpielGame:
         return SpielGame(
-            "liars_dice(numdice=1)", "liars_dice", "Liar's Dice (OpenSpiel, 1 die each)"
+            "liars_dice(numdice=1)",
+            "liars_dice",
+            "Liar's Dice (OpenSpiel, 1 die each)",
+            private_deals=2,
         )
 
     @register("kuhn_poker")
     def _kuhn_poker() -> SpielGame:
-        return SpielGame("kuhn_poker", "kuhn_poker", "Kuhn poker (OpenSpiel)")
+        return SpielGame("kuhn_poker", "kuhn_poker", "Kuhn poker (OpenSpiel)", private_deals=2)
 
     @register("leduc_poker")
     def _leduc_poker() -> SpielGame:
-        return SpielGame("leduc_poker", "leduc_poker", "Leduc poker (OpenSpiel)")
+        return SpielGame("leduc_poker", "leduc_poker", "Leduc poker (OpenSpiel)", private_deals=2)

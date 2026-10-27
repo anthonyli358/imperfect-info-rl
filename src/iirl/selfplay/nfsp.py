@@ -89,10 +89,13 @@ def train_nfsp(
     init_net: PolicyValueNet,
     on_eval: Callable[[int, dict[str, float]], None] | None = None,
     seed: int = 0,
+    on_average: Callable[[int, PolicyValueNet], None] | None = None,
 ) -> PolicyValueNet:
     """Run NFSP from ``init_net`` (both ``beta`` and ``pi`` start there); return ``pi``.
 
-    ``on_eval(iteration, score_vs_anchor)`` receives ``pi``'s score against each anchor.
+    ``on_eval(iteration, score_vs_anchor)`` receives ``pi``'s score against each anchor, and
+    ``on_average(iteration, pi)`` the average policy itself (e.g. to measure its exploitability),
+    both every ``config.eval_interval`` iterations.
     """
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
@@ -125,6 +128,8 @@ def train_nfsp(
                 for name, anchor in anchors.items()
             }
             on_eval(iteration, scores)
+        if on_average is not None and iteration % config.eval_interval == 0:
+            on_average(iteration, avg)
         return [copy.deepcopy(avg)]
 
     ppo = replace(config.ppo, past_opponent_frac=1.0 - config.eta, opponent_greedy=False)
