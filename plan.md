@@ -491,6 +491,8 @@ Goal: adopt the framework where it earns its place — CFR at scale, with verifi
 - [x] Add `[openspiel]` optional dependency (`uv sync --extra openspiel`; Windows wheel 2.0.2)
 - [x] **Kuhn poker** — CFR+ to the known equilibrium (value −1/18), exact exploitability (2026-10-27)
 - [x] **Leduc poker** — CFR+ 0.00023 in 0.9 s; PPO 1.3–2.2 exploitable (uniform 2.37) (2026-10-27); MCCFR not yet
+- [x] **NFSP and ReBeL on Leduc** — ReBeL 0.07 (plateau from epoch 20), NFSP 0.84 at best (2026-10-27)
+- [ ] ReBeL on Liar's Dice to 20 epochs (stopped at 9; 0.23 at epoch 5)
 - [ ] **Deep CFR** (neural) on Leduc / limit
 - [ ] **Heads-up limit Hold'em** — MCCFR/Deep CFR agent; sanity-check against known solved results (Cepheus as reference point)
 - [ ] Evaluation discipline: exploitability + large-sample head-to-head; variance-reduction (AIVAT-style) note/impl

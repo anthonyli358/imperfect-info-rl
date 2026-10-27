@@ -66,9 +66,12 @@ step, while expanding to more games and trying more approaches. Games so far:
    Dice through OpenSpiel" and "PPO cannot find Liar's Dice's equilibrium"): solvers
    cross-checked; PPO self-play stays 0.3–0.5 exploitable against CFR+'s 0.00013. Kuhn and Leduc
    poker added the same day ("Poker through the same adapter"): same picture. 2 dice each is out of
-   reach for exact methods (~2^24 bid sequences per roll). Next options: ReBeL or NFSP on Leduc
-   (does a learning method close the gap PPO leaves?), Deep CFR / MCCFR toward limit Hold'em
-   (Stage 5), or Stage 7 (The Confrontation's skeleton).
+   reach for exact methods (~2^24 bid sequences per roll). NFSP and ReBeL tried the same day
+   ("NFSP and ReBeL on the OpenSpiel games"): ReBeL reaches 0.07 on Leduc (PPO 1.3, CFR+ 0.0002);
+   NFSP only 0.84. Unfinished: the Liar's Dice ReBeL run was stopped at epoch 9 (0.23 at epoch 5);
+   rerun `rebel game=liars_dice epochs=20` (about 10 minutes at 4 threads). Next options after
+   that: Deep CFR / MCCFR toward limit Hold'em (Stage 5), or Stage 7 (The Confrontation's
+   skeleton).
 4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -454,6 +457,31 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### NFSP and ReBeL on the OpenSpiel games: ReBeL closes most of PPO's gap, NFSP a third of it (2026-10-27)
+
+Same yardstick as below: exact exploitability (NashConv / 2) of the policy each method plays, from
+`experiments/spiel_games.py` (`nfsp` and `rebel` stages; 4 workers / 4 torch threads). One seed per
+row, so differences under about 2× between rows are not established.
+
+| Method | Leduc (chips; uniform 2.37) | Liar's Dice (±1; uniform 0.78) | Kuhn |
+|---|---|---|---|
+| PPO, best variant | 1.28–1.38 | 0.31–0.52 | — |
+| NFSP from the PPO phase, 400 iterations (η 0.1), sampled | 1.87 → **0.84** (iteration 275) → 1.08 (400) | 0.50–0.59 (400: 0.59) | — |
+| ReBeL, 20 epochs, 100 CFR iterations per subgame | 0.099 | 0.23 at epoch 5 (run stopped at 9) | 0.015–0.019 |
+| ReBeL, 60 epochs, 200 CFR iterations | 0.63, 0.20, 0.15, **0.070** at epochs 5–20, then 0.069–0.092 to 60 | — | — |
+| CFR+, 1,000 iterations (full game) | 0.00023 | 0.00013 | 0.00009 |
+
+- **ReBeL is the only learning method within an order of magnitude of the solver**: on Leduc about
+  15–20× less exploitable than PPO, in 1–3 minutes of training. It plateaus at 0.07–0.09 from
+  epoch 20 on: tripling the epochs and doubling the subgame CFR iterations did not move it, so the
+  floor is the value networks' error at the cuts (losses ~1e-5 on Liar's Dice, but a small error
+  compounds across boundaries), not the CFR inside each subgame.
+- **NFSP is not monotone**: its average policy on Leduc fell to 0.84 then rose to 1.08; on Liar's
+  Dice it never beat PPO. This matches the Camel Stocks result (NFSP ≈ Nash PPO at equal budget).
+- Boundaries (subgame start depths, no chance node there): Kuhn (2, 3, 5), Leduc (2, 7, 11), Liar's
+  Dice (2, 5, 8, 15). Public states per boundary on Liar's Dice: 1, 220, 924. Curves in
+  `runs/<game>/rebel*.jsonl`; NFSP's in `runs/<game>/ppo_exact.json`.
 
 ### Poker through the same adapter: Kuhn and Leduc, and PPO is no safer than random on Leduc (2026-10-27)
 
