@@ -1,4 +1,4 @@
-"""Liar's Dice (OpenSpiel's engine): our solvers checked against OpenSpiel's on the same game.
+"""OpenSpiel games (Liar's Dice, Kuhn and Leduc poker): our solvers vs OpenSpiel's, and PPO vs CFR+.
 
 ``crosscheck`` runs our vectorized CFR+ (``agents.cfr.graph_cfr``; simultaneous and alternating
 updates) and OpenSpiel's C++ CFR+ for the same iterations, and scores each one's average strategy
@@ -11,13 +11,14 @@ averaged over seats (payoffs are +1 / -1).
 Nash-seeking phase with a magnet and past selves, as on Mini-Ventures) trained by self-play, and
 every checkpoint's *exact* exploitability, greedy (as deployed) and sampled, next to CFR+'s.
 Resumable (training continues from its last checkpoint; measurements are kept in
-``runs/liars_dice/ppo_exact.json``).
+``runs/<game>/ppo_exact.json``). Every stage takes ``game=`` (default ``liars_dice``; also
+``kuhn_poker``, ``leduc_poker``).
 
 Run with (needs ``uv sync --extra openspiel``)::
 
-    uv run python -m experiments.liars_dice crosscheck   # one process
-    uv run python -m experiments.liars_dice ppo          # 4 workers
-    uv run python -m experiments.liars_dice magnet tag=m1 magnet_coef=1.0 lr=3e-5 iterations=400
+    uv run python -m experiments.spiel_games crosscheck   # one process
+    uv run python -m experiments.spiel_games ppo          # 4 workers
+    uv run python -m experiments.spiel_games magnet tag=m1 magnet_coef=1.0 lr=3e-5 iterations=400
 
 ``magnet`` continues from the PPO phase with other Nash-phase settings (``key=value``: any
 ``PPOConfig`` field, plus ``tag`` and ``iterations``), measuring exact exploitability as it goes.
@@ -35,7 +36,7 @@ from pathlib import Path
 import numpy as np
 import pyspiel
 
-import iirl.games  # noqa: F401  (registers "liars_dice")
+import iirl.games  # noqa: F401  (registers the OpenSpiel games)
 from experiments.train_ventures_league import _train
 from iirl.agents.cfr.graph_cfr import GraphCFR
 from iirl.agents.ppo import PPOAgent
@@ -45,7 +46,13 @@ from iirl.core.registry import make
 from iirl.eval.exact_br import build_graph, exploitability, net_policy, uniform_policy
 from iirl.selfplay import PPOConfig
 
+GAME = "liars_dice"
 OUT = Path("runs/liars_dice")
+
+
+def prefix() -> str:
+    """Checkpoint name prefix (Liar's Dice keeps its original ``ld``)."""
+    return "ld" if GAME == "liars_dice" else GAME
 
 
 @dataclass(frozen=True)
@@ -109,7 +116,7 @@ def from_spiel(spiel_policy):  # noqa: ANN001, ANN201 - a BatchPolicy
 def crosscheck(config: Config) -> None:
     """Both solvers, both evaluators, at each checkpoint; saved to ``crosscheck.jsonl``."""
     OUT.mkdir(parents=True, exist_ok=True)
-    game = make("liars_dice")
+    game = make(GAME)
     spiel_game = game.spiel
     t0 = time.perf_counter()
     ours = GraphCFR(game)
@@ -206,22 +213,22 @@ def magnet(config: Config) -> None:
         **overrides,
     )
     _train(
-        "runs/liars_dice/ld_ppo.pt",
+        f"runs/{GAME}/{prefix()}_ppo.pt",
         settings,
-        f"liars_dice/ld_{tag}",
+        f"{GAME}/{prefix()}_{tag}",
         save_every=config.save_every,
-        game_name="liars_dice",
+        game_name=GAME,
         heuristic=RandomAgent(),
         anchor_elo=1000.0,
     )
-    game = make("liars_dice")
+    game = make(GAME)
     graph = build_graph(game)
     for i in range(config.save_every, iterations + 1, config.save_every):
         measure(
             game,
             graph,
             f"{tag} {i}",
-            f"runs/liars_dice/ld_{tag}_{i}.pt",
+            f"runs/{GAME}/{prefix()}_{tag}_{i}.pt",
             OUT / "ppo_exact.json",
         )
 
@@ -231,12 +238,15 @@ def ppo(config: Config) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     common = {
         "save_every": config.save_every,
-        "game_name": "liars_dice",
+        "game_name": GAME,
         "heuristic": RandomAgent(),
         "anchor_elo": 1000.0,
     }
     base = _train(
-        None, replace(config.ppo, iterations=config.ppo_iterations), "liars_dice/ld_ppo", **common
+        None,
+        replace(config.ppo, iterations=config.ppo_iterations),
+        f"{GAME}/{prefix()}_ppo",
+        **common,
     )
     nash = replace(
         config.ppo,
@@ -247,19 +257,19 @@ def ppo(config: Config) -> None:
         magnet_interval=20,
         seed=1,
     )
-    _train(base, nash, "liars_dice/ld_nash", **common)
+    _train(base, nash, f"{GAME}/{prefix()}_nash", **common)
 
-    game = make("liars_dice")
+    game = make(GAME)
     graph = build_graph(game)
     results = OUT / "ppo_exact.json"
     exact = json.loads(results.read_text("utf-8")) if results.exists() else {}
     checkpoints = [
         *(
-            (f"ppo {i}", f"runs/liars_dice/ld_ppo_{i}.pt")
+            (f"ppo {i}", f"runs/{GAME}/{prefix()}_ppo_{i}.pt")
             for i in range(config.save_every, config.ppo_iterations + 1, config.save_every)
         ),
         *(
-            (f"nash {i}", f"runs/liars_dice/ld_nash_{i}.pt")
+            (f"nash {i}", f"runs/{GAME}/{prefix()}_nash_{i}.pt")
             for i in range(config.save_every, config.nash_iterations + 1, config.save_every)
         ),
     ]
@@ -283,4 +293,8 @@ def ppo(config: Config) -> None:
 
 
 if __name__ == "__main__":
+    for item in [a for a in sys.argv[2:] if a.startswith("game=")]:
+        GAME = item.split("=", 1)[1]
+        OUT = Path(f"runs/{GAME}")
+        sys.argv.remove(item)
     {"crosscheck": crosscheck, "ppo": ppo, "magnet": magnet}[sys.argv[1]](Config())

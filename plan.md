@@ -476,7 +476,8 @@ Goal: implement CFR from scratch on a small game I built — the paradigm shift 
 - [x] Headline (from Stage 6, 2026-10-27): PPO self-play vs CFR on Liar's Dice, by exact
   exploitability: PPO and three Nash-phase variants stay 0.3–0.5 (payoff ±1) and cycle; CFR+
   0.00013 in 31 s
-- [ ] 2 dice each (a bigger game: graph CFR+ scale check)
+- [ ] ~~2 dice each~~ out of reach for exact methods (~2^24 bid sequences per roll); would need
+  MCCFR / Deep CFR and loses the exact yardstick
 - [ ] Eval: CFR vs heuristic; inspect learned bluff/call frequencies for sanity
 
 **Done when:** exploitability drives toward zero and my values match OpenSpiel's reference.
@@ -487,9 +488,9 @@ Goal: implement CFR from scratch on a small game I built — the paradigm shift 
 
 Goal: adopt the framework where it earns its place — CFR at scale, with verifiable results. Kuhn to learn the tooling, limit Hold'em as the substantive, checkable finale. No abstraction rabbit hole.
 
-- [ ] Add `[openspiel]` optional dependency + build/install docs
-- [ ] **Kuhn poker** — tabular CFR to the known equilibrium; compute exploitability (framework hello-world)
-- [ ] **Leduc poker** — scale check; MCCFR
+- [x] Add `[openspiel]` optional dependency (`uv sync --extra openspiel`; Windows wheel 2.0.2)
+- [x] **Kuhn poker** — CFR+ to the known equilibrium (value −1/18), exact exploitability (2026-10-27)
+- [x] **Leduc poker** — CFR+ 0.00023 in 0.9 s; PPO 1.3–2.2 exploitable (uniform 2.37) (2026-10-27); MCCFR not yet
 - [ ] **Deep CFR** (neural) on Leduc / limit
 - [ ] **Heads-up limit Hold'em** — MCCFR/Deep CFR agent; sanity-check against known solved results (Cepheus as reference point)
 - [ ] Evaluation discipline: exploitability + large-sample head-to-head; variance-reduction (AIVAT-style) note/impl

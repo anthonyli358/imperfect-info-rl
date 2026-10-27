@@ -32,6 +32,7 @@ step, while expanding to more games and trying more approaches. Games so far:
 | **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | Policy + value net + PUCT search, both nets improved by 48 iterations of an AlphaZero loop (`experiments/alphago_tessera.py`, `runs/tessera_ag/exit_*_48.pt`) | 400 sims: 2057 ± 21 Elo (heuristic = 1500; 0.961 vs the heuristic), 0.545 vs the same search on the iteration-24 nets | same page (400 sims), with a real board |
 | Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
 | Liar's Dice | OpenSpiel's engine (1 die each), through `games/spiel.py` | full-game CFR+ (alternating) | exploitability 0.00013 after 1,000 iterations; first bidder's value −0.0271 | — |
+| Kuhn, Leduc poker | OpenSpiel's engines, same adapter | full-game CFR+ (alternating) | 0.00009 / 0.00023 after 1,000 iterations; first player's value −0.0556 (= −1/18) / −0.0857 | — |
 
 **What we know works, by kind of game** (details in "What we learned" and the findings log):
 
@@ -63,9 +64,11 @@ step, while expanding to more games and trying more approaches. Games so far:
    value: that anchor inflates search).
 3. **Next games:** Liar's Dice started 2026-10-27 on OpenSpiel's engine (findings log, "Liar's
    Dice through OpenSpiel" and "PPO cannot find Liar's Dice's equilibrium"): solvers
-   cross-checked; PPO self-play stays 0.3–0.5 exploitable against CFR+'s 0.00013. Next: 2 dice
-   each (graph CFR+ scale check; MCCFR), then small poker (Stage 5, where ReBeL should suit), then
-   Stage 7 (The Confrontation's skeleton).
+   cross-checked; PPO self-play stays 0.3–0.5 exploitable against CFR+'s 0.00013. Kuhn and Leduc
+   poker added the same day ("Poker through the same adapter"): same picture. 2 dice each is out of
+   reach for exact methods (~2^24 bid sequences per roll). Next options: ReBeL or NFSP on Leduc
+   (does a learning method close the gap PPO leaves?), Deep CFR / MCCFR toward limit Hold'em
+   (Stage 5), or Stage 7 (The Confrontation's skeleton).
 4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -452,10 +455,40 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Poker through the same adapter: Kuhn and Leduc, and PPO is no safer than random on Leduc (2026-10-27)
+
+`kuhn_poker` and `leduc_poker` are registered through `games/spiel.py` (one line each), and the
+experiment script is now `experiments/spiel_games.py` (`game=` on every stage).
+
+**Solvers** (`crosscheck game=...`, `runs/<game>/crosscheck.jsonl`): exploitability evaluators agree
+to 6 decimals on every policy again. Kuhn: CFR+ 0.00009 after 1,000 iterations, first player's
+value −0.05559 (the known −1/18 = −0.05556). Leduc (9,457 states, 936 information sets): CFR+
+0.00023 after 1,000 iterations in 0.9 s, first player's value −0.0857. On Leduc our alternating
+CFR+ matches OpenSpiel's exactly to iteration 100, then differs slightly (0.000225 vs 0.000257 at
+1,000; identical throughout on Liar's Dice and Kuhn), presumably an implementation detail; both
+converge.
+
+**PPO on Leduc** (payoffs in chips, up to ±13; uniform random is 2.37 exploitable):
+
+| Agent | Exact exploitability (greedy / sampled) |
+|---|---|
+| PPO from scratch, 25 → 200 iterations | 1.38–3.42 / 1.15–3.29 (200: 2.18 / 2.04) |
+| + Nash phase (magnet 0.1), 200 iterations | 1.46–2.16 / 1.27–1.88 (200: 1.46 / 1.28) |
+| + strong magnet (1.0, lr 3e-5, reward scale 5), 400 iterations | 1.69–2.49 / 1.38–2.10 (400: 1.78 / 1.38) |
+| CFR+, 1,000 iterations | **0.00023** |
+
+- PPO is barely safer than uniform random (2.37) and at one checkpoint worse (3.4). Win rate
+  against random is a misleading yardstick in poker: 0.41–0.52, with a positive average margin
+  (+0.5 to +0.7 chips), because the agent folds many small pots.
+- The strong magnet again gives a slow, steady decline (sampled 2.03 → 1.38 over 400
+  iterations), as on Liar's Dice; nothing comes within three orders of magnitude of CFR+.
+- Confound noted and partly addressed: the first two runs used reward scale 1 on ±13 payoffs; the
+  magnet run used 5 and is no closer.
+
 ### PPO cannot find Liar's Dice's equilibrium; CFR+ does in seconds (2026-10-27)
 
 The plan's headline experiment: the repo's PPO recipe trained by self-play on Liar's Dice (1 die
-each), every checkpoint's **exact** exploitability measured (`experiments/liars_dice.py ppo` and
+each), every checkpoint's **exact** exploitability measured (`experiments/spiel_games.py ppo` and
 `magnet`; `runs/liars_dice/ppo_exact.json`). Payoffs are +1 / −1, so exploitability 0.4 means a
 perfect exploiter wins about 70% of games.
 
@@ -492,7 +525,7 @@ information-state strings and tensors. Registered as `liars_dice` (1 die each, 6
 face wild: 294,883 states, 24,576 information sets). It passes the conformance suite, and
 `tests/test_spiel.py` checks it move for move against OpenSpiel on random games.
 
-**The cross-check** (`experiments/liars_dice.py crosscheck`, `runs/liars_dice/crosscheck.jsonl`):
+**The cross-check** (`experiments/spiel_games.py crosscheck`, `runs/liars_dice/crosscheck.jsonl`):
 our graph CFR+ and OpenSpiel's C++ CFR+ for the same iterations, each average strategy scored by
 both exploitability evaluators (ours, `eval/exact_br.py`; OpenSpiel's `pyspiel.exploitability`).
 

@@ -13,6 +13,8 @@ Registered when ``pyspiel`` imports:
 - ``liars_dice``: OpenSpiel's Liar's Dice (a traditional game; DeepMind's implementation), one
   six-sided die each. Bids name a quantity and a face, each bid higher than the last; the
   alternative is to call the last bid. The highest face is wild. Winner +1, loser -1.
+- ``kuhn_poker``: Kuhn poker (3 cards, one bet).
+- ``leduc_poker``: Leduc poker (6 cards, two betting rounds, a public card).
 """
 
 from __future__ import annotations
@@ -153,3 +155,11 @@ if pyspiel is not None:
         return SpielGame(
             "liars_dice(numdice=1)", "liars_dice", "Liar's Dice (OpenSpiel, 1 die each)"
         )
+
+    @register("kuhn_poker")
+    def _kuhn_poker() -> SpielGame:
+        return SpielGame("kuhn_poker", "kuhn_poker", "Kuhn poker (OpenSpiel)")
+
+    @register("leduc_poker")
+    def _leduc_poker() -> SpielGame:
+        return SpielGame("leduc_poker", "leduc_poker", "Leduc poker (OpenSpiel)")
