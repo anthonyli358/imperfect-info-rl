@@ -55,11 +55,11 @@ step, while expanding to more games and trying more approaches. Games so far:
 2. ~~Search with the AlphaZero loop's nets~~ Done: +2 to +3 points a game over the original nets.
    ~~More loop iterations; a 1,000-deal Elo ladder~~ Done 2026-10-26 (findings log, "Tessera: 24
    more loop iterations"): search on the iteration-48 nets is 2057 ± 21 Elo and beats search on the
-   iteration-24 nets 0.545 ± 0.016; the play page now uses the iteration-48 nets. Still open:
-   per-move latency (`experiments/rollout_latency.py` pattern); the `tessera_strong` ladder's
-   last two search entries, if the detached run was stopped (rerun
-   `uv run python -m experiments.elo_ladder tessera_strong`; it skips rated entries); more
-   iterations (search was still gaining ~+30 Elo per 12 iterations).
+   iteration-24 nets 0.545 ± 0.016; the play page now uses the iteration-48 nets. ~~Per-move
+   latency~~ Done 2026-10-27 (`experiments/search_latency.py`, one thread): 400 sims median 0.14 s
+   (worst 0.26 s), 1,600 sims median 0.74 s (worst 1.0 s). Still open: more iterations (search
+   was still gaining ~+30 Elo per 12 iterations); the `tessera_strong` ladder's last entry (low
+   value: that anchor inflates search).
 3. **Next games:** Liar's Dice and small poker (plan.md Stages 4–5, where ReBeL should suit), then
    Stage 7, an entity-token rung on The Confrontation's skeleton (plan.md).
 4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
@@ -491,6 +491,13 @@ the iteration-24 nets 2310 ± 21. Search built on a policy's priors beats that s
 than its strength elsewhere predicts, so the policy anchor inflates search agents by ~300 Elo. For
 comparing search agents, use direct search-vs-search matches (`match vs=exit_<i>`); for one scale
 across everything, the heuristic ladder (compressed near the ceiling, but transitive enough).
+
+**Latency** (`experiments/search_latency.py`, 6 games each vs the policy, one thread, 2026-10-27):
+400 simulations take 0.14 s a move (median; 90th percentile 0.24 s, worst 0.26 s), 3.6 s of
+thinking a game; 1,600 take 0.74 s (0.94 s, worst 1.0 s), 16 s a game. About half of a
+simulation's ~0.35 ms is the two network calls (0.08 ms each at batch 1); the rest is the Python
+engine and tree. A GPU would not speed this up: batch-1 calls are dominated by launch and transfer
+overhead, and the batched cost on the CPU is already 7 µs a position.
 
 Human-play analysis (thread 4) has one recorded game so far (Ventures, 2026-09-29): nothing to
 analyse yet.

@@ -446,7 +446,8 @@ recipe, which it never did on the card games.
   on the iteration-48 nets 2057 ± 21 Elo (iteration 24: 1993), 0.545 ± 0.016 head to head; raw
   policy flat (1740 → 1754). A policy anchor inflates search agents ~300 Elo (non-transitive).
   Play page now uses the iteration-48 nets.
-- [ ] Per-move latency of search 400 / 1600 (`experiments/rollout_latency.py` pattern)
+- [x] Per-move latency (2026-10-27, `experiments/search_latency.py`, one thread): 400 sims median
+  0.14 s, worst 0.26 s, 3.6 s/game; 1,600 sims median 0.74 s, worst 1.0 s, 16 s/game
 - [ ] More loop iterations (search still gaining ~+30 Elo per 12 iterations)
 - [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
 - [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
