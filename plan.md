@@ -535,7 +535,9 @@ exact answers to compare every learner against.
   game 0.33 → 0.20, flat beyond 200 simulations; head to head +0.08 ± 0.05 (not significant)
 - [ ] **Next, in order** (each scored move by move against the exact solution, as in `search`,
   plus seat-balanced games against greedy PPO; 300 games per setting; one thread):
-  1. [ ] Endgame-only search: the PPO policy while many lots remain, PUCT search once K or fewer
+  1. [x] Endgame-only search (2026-10-28): from 2 lots left at 800 simulations, 0.168 ± 0.016
+     per game (full search 0.201, PPO 0.329), opening kept at 0.002, +0.10 ± 0.05 vs PPO.
+     Planned as: the PPO policy while many lots remain, PUCT search once K or fewer
      are left (K = 0, 1, 2). Cheap, and it tests why the opening got worse: if the PPO value head
      at the leaves is the problem, switching search on only near the end should keep the opening at
      0.002 per decision and the endgame at search's level

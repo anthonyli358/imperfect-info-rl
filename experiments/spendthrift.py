@@ -16,9 +16,16 @@ Output: ``runs/spendthrift/tempo.json``.
 its decisions give up against perfect play, by phase and by overbidding or underbidding. Output:
 ``runs/spendthrift/<game>_ppo_exact.json``.
 
+``search`` runs PUCT search on the final PPO net and scores every move it makes exactly (output:
+``runs/spendthrift/search.json``); ``endgame=K`` searches only once K or fewer lots are left.
+``value`` trains a value net on PPO's self-play outcomes, measures every leaf value against the
+exact values, and reruns the search with each (``value.json``).
+
     uv run python -m experiments.spendthrift solve
     uv run python -m experiments.spendthrift tempo
     uv run python -m experiments.spendthrift ppo game=spendthrift iterations=200
+    uv run python -m experiments.spendthrift search sims=0,50,200,800 endgame=0,1,2
+    uv run python -m experiments.spendthrift value
 """
 
 from __future__ import annotations
@@ -34,11 +41,15 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from iirl.agents.alphazero.agent import AlphaZeroAgent
+from iirl.agents.alphazero.mcts import PUCTConfig
+from iirl.agents.base import Agent
 from iirl.agents.ppo import PPOAgent
 from iirl.agents.random_agent import RandomAgent
 from iirl.core.registry import make
 from iirl.eval.perfect_info import Solution, nash_conv, solve
 from iirl.games.spendthrift import Phase, Spendthrift, SpendthriftState
+from iirl.nn.policy_value import NetEvaluator, PolicyValueNet, SplitEvaluator
 from iirl.selfplay import PPOConfig
 
 OUT = Path("runs/spendthrift")
@@ -405,37 +416,112 @@ def play_scored(
     return game.returns(s), losses
 
 
+class Greedy(Agent):
+    """The PPO net's most likely legal move."""
+
+    name = "ppo"
+
+    def __init__(self, net: PolicyValueNet) -> None:
+        """Wrap the PPO net."""
+        self.evaluator = NetEvaluator(net)
+
+    def step(self, game, state, rng) -> int:  # noqa: ANN001
+        """The argmax legal move."""
+        priors, _ = self.evaluator.evaluate(game, state)
+        legal = game.legal_actions(state)
+        return int(legal[int(np.argmax(priors[legal]))])
+
+
+class Endgame(Agent):
+    """Greedy PPO until ``k`` or fewer lots are left in the deck, then ``search``."""
+
+    def __init__(self, ppo: Agent, search: Agent, k: int) -> None:
+        """Switch from ``ppo`` to ``search`` at ``k`` lots left."""
+        self.ppo, self.search, self.k = ppo, search, k
+        self.name = f"{search.name}@k{k}"
+
+    def step(self, game, state, rng) -> int:  # noqa: ANN001
+        """Defer to whichever agent owns this phase."""
+        late = state.deck.bit_count() <= self.k
+        return (self.search if late else self.ppo).step(game, state, rng)
+
+
+class ExactLeaves:
+    """Search priors from the PPO net, leaf values from the exact solution (an upper bound)."""
+
+    def __init__(self, net: PolicyValueNet, sol: Solution) -> None:
+        """Priors from ``net``, values from ``sol``."""
+        self.priors, self.sol, self.net = NetEvaluator(net), sol, net
+
+    def evaluate(self, game, state):  # noqa: ANN001, ANN201
+        """``(priors, exact value for the mover)`` at one state."""
+        priors, _ = self.priors.evaluate(game, state)
+        return priors, float(self.sol.value(state)[state.to_move])
+
+    def evaluate_batch(self, game, states):  # noqa: ANN001, ANN201
+        """Batched :meth:`evaluate`."""
+        priors, _ = self.priors.evaluate_batch(game, states)
+        return priors, np.asarray([self.sol.value(s)[s.to_move] for s in states])
+
+
+def score_agent(game: Spendthrift, sol: Solution, agent: Agent, ppo: Agent, games: int) -> dict:
+    """``games`` self-play games scored move by move, and as many seat-balanced games vs ``ppo``.
+
+    Deal seeds are fixed (``0..games-1`` and ``10_000 + g``), so every agent sees the same deals.
+    """
+    t = time.perf_counter()
+    per_game, by_phase, n_phase = [], defaultdict(float), defaultdict(int)
+    for g in range(games):
+        _, losses = play_scored(game, sol, [agent, agent], seed=g)
+        per_game.append(sum(x for _, x in losses))
+        for k, x in losses:
+            by_phase[k] += x
+            n_phase[k] += 1
+    scores = []
+    for g in range(games):
+        seat = g % 2
+        seats = [agent, ppo] if seat == 0 else [ppo, agent]
+        rets, _ = play_scored(game, sol, seats, seed=10_000 + g)
+        scores.append(rets[seat])
+    lost, sc = np.asarray(per_game), np.asarray(scores)
+    return {
+        "games": games,
+        "lost_per_game": round(float(lost.mean()), 4),
+        "lost_per_game_se": round(float(lost.std(ddof=1) / np.sqrt(games)), 4),
+        "lost_per_decision_by_phase": {
+            k: round(by_phase[k] / n_phase[k], 4) for k in sorted(n_phase)
+        },
+        "vs_ppo_payoff": round(float(sc.mean()), 4),
+        "vs_ppo_payoff_se": round(float(sc.std(ddof=1) / np.sqrt(games)), 4),
+        "seconds_per_game": round((time.perf_counter() - t) / (2 * games), 3),
+    }
+
+
+def print_row(label: str, r: dict) -> None:
+    """One line per scored agent."""
+    print(
+        f"{label:>12}: lost per game {r['lost_per_game']:.4f} +- {r['lost_per_game_se']:.4f}"
+        f"; vs PPO {r['vs_ppo_payoff']:+.4f} +- {r['vs_ppo_payoff_se']:.4f}; "
+        f"{r['seconds_per_game']:.2f}s/game; by phase {r['lost_per_decision_by_phase']}",
+        flush=True,
+    )
+
+
 def run_search() -> None:
     """Does lookahead fix PPO's endgame errors? Two players; PUCT on the final PPO net.
 
     Priors and leaf values both come from the PPO checkpoint (``NetEvaluator``). For each budget,
     ``games`` self-play games score every decision exactly against the solution, and as many
     seat-balanced games against greedy PPO give the head-to-head score. Deals are shared across
-    budgets (same seeds). ``key=value``: ``games``, ``sims`` (comma-separated), ``checkpoint``.
-    Output: ``runs/spendthrift/search.json``.
+    budgets (same seeds). ``key=value``: ``games``, ``sims`` (comma-separated), ``checkpoint``,
+    ``endgame`` (comma-separated K: search only once K or fewer lots are left in the deck, greedy
+    PPO before then; results under ``"<sims>@k<K>"``). Output: ``runs/spendthrift/search.json``.
     """
-    from iirl.agents.alphazero.agent import AlphaZeroAgent
-    from iirl.agents.alphazero.mcts import PUCTConfig
-    from iirl.agents.base import Agent
-    from iirl.nn.policy_value import NetEvaluator
-
-    class Greedy(Agent):
-        """The PPO net's most likely legal move."""
-
-        name = "ppo"
-
-        def __init__(self, net) -> None:  # noqa: ANN001 - PolicyValueNet
-            self.evaluator = NetEvaluator(net)
-
-        def step(self, game, state, rng) -> int:  # noqa: ANN001
-            priors, _ = self.evaluator.evaluate(game, state)
-            legal = game.legal_actions(state)
-            return int(legal[int(np.argmax(priors[legal]))])
-
     args = dict(item.split("=") for item in sys.argv[2:])
     games = int(args.get("games", 300))
     budgets = [int(x) for x in args.get("sims", "0,50,200,800").split(",")]
     checkpoint = args.get("checkpoint", "runs/spendthrift/spendthrift_ppo_200.pt")
+    ks = [int(x) for x in args["endgame"].split(",")] if "endgame" in args else [None]
     torch.set_num_threads(1)
     game = make("spendthrift")
     sol = solve(game)
@@ -443,11 +529,10 @@ def run_search() -> None:
     ppo = Greedy(net)
     path = OUT / "search.json"
     results = json.loads(path.read_text("utf-8")) if path.exists() else {}
-    for sims in budgets:
-        label = str(sims)
+    for sims, k in [(sims, k) for sims in budgets for k in ks]:
+        label = str(sims) if k is None else f"{sims}@k{k}"
         if label in results:
             continue
-        t = time.perf_counter()
         agent = (
             ppo
             if sims == 0
@@ -455,41 +540,206 @@ def run_search() -> None:
                 NetEvaluator(net), PUCTConfig(simulations=sims, determinizations=1), f"search{sims}"
             )
         )
-        per_game, by_phase, n_phase = [], defaultdict(float), defaultdict(int)
-        for g in range(games):
-            _, losses = play_scored(game, sol, [agent, agent], seed=g)
-            per_game.append(sum(x for _, x in losses))
-            for k, x in losses:
-                by_phase[k] += x
-                n_phase[k] += 1
-        scores = []
-        for g in range(games):
-            seat = g % 2
-            seats = [agent, ppo] if seat == 0 else [ppo, agent]
-            rets, _ = play_scored(game, sol, seats, seed=10_000 + g)
-            scores.append(rets[seat])
-        lost, sc = np.asarray(per_game), np.asarray(scores)
-        results[label] = {
-            "games": games,
-            "lost_per_game": round(float(lost.mean()), 4),
-            "lost_per_game_se": round(float(lost.std(ddof=1) / np.sqrt(games)), 4),
-            "lost_per_decision_by_phase": {
-                k: round(by_phase[k] / n_phase[k], 4) for k in sorted(n_phase)
-            },
-            "vs_ppo_payoff": round(float(sc.mean()), 4),
-            "vs_ppo_payoff_se": round(float(sc.std(ddof=1) / np.sqrt(games)), 4),
-            "seconds_per_game": round((time.perf_counter() - t) / (2 * games), 3),
+        if k is not None:
+            agent = Endgame(ppo, agent, k)
+        results[label] = score_agent(game, sol, agent, ppo, games)
+        print_row(label, results[label])
+        path.write_text(json.dumps(results, indent=1), "utf-8")
+
+
+def self_play_values(game: Spendthrift, probs: dict) -> dict[SpendthriftState, np.ndarray]:
+    """Every player's exact expected return from each state when everyone plays ``probs``."""
+    memo: dict[SpendthriftState, np.ndarray] = {}
+
+    def value(s: SpendthriftState) -> np.ndarray:
+        v = memo.get(s)
+        if v is not None:
+            return v
+        if game.is_terminal(s):
+            v = np.asarray(game.returns(s), dtype=float)
+        elif game.is_chance_node(s):
+            v = sum(p * value(game.apply_action(s, a)) for a, p in game.chance_outcomes(s))
+        else:
+            v = sum(probs[s][a] * value(game.apply_action(s, a)) for a in game.legal_actions(s))
+        memo[s] = v
+        return v
+
+    value(game.new_initial_state())
+    return memo
+
+
+def self_play_positions(
+    game: Spendthrift, probs: dict, games: int, per_game: int, seed: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Play ``games`` games under ``probs``; sample positions with the mover's final return."""
+    rng = np.random.default_rng(seed)
+    feats, ys = [], []
+    for _ in range(games):
+        s, seen = game.new_initial_state(), []
+        while not game.is_terminal(s):
+            if game.is_chance_node(s):
+                acts, ps = zip(*game.chance_outcomes(s), strict=True)
+                s = game.apply_action(s, int(acts[rng.choice(len(acts), p=ps)]))
+                continue
+            seen.append(s)
+            p = probs[s]
+            s = game.apply_action(s, int(rng.choice(len(p), p=p / p.sum())))
+        rets = game.returns(s)
+        for i in rng.choice(len(seen), size=min(per_game, len(seen)), replace=False):
+            x = seen[i]
+            feats.append(game.information_state_tensor(x, x.to_move))
+            ys.append(rets[x.to_move])
+    return np.stack(feats).astype(np.float32), np.asarray(ys, dtype=np.float32)
+
+
+def fit_value(x_tr, y_tr, x_te, y_te, actions: int, epochs: int = 20):  # noqa: ANN001, ANN201
+    """A tanh value net regressed on outcomes; early-stopped on held-out games' MSE."""
+    torch.manual_seed(0)
+    net = PolicyValueNet(x_tr.shape[1], actions, (256, 256), "tanh")
+    net.set_feature_stats(x_tr.mean(axis=0), x_tr.std(axis=0))
+    opt = torch.optim.Adam(net.parameters(), lr=3e-4, weight_decay=1e-4)
+    xt, yt = torch.as_tensor(x_tr), torch.as_tensor(y_tr)
+    xv, yv = torch.as_tensor(x_te), torch.as_tensor(y_te)
+    best, best_state, curve = np.inf, None, []
+    for _ in range(epochs):
+        net.train()
+        perm = torch.randperm(len(xt))
+        for b in range(0, len(xt), 2048):
+            idx = perm[b : b + 2048]
+            loss = torch.nn.functional.mse_loss(net(xt[idx])[1], yt[idx])
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+        net.eval()
+        with torch.no_grad():
+            mse = float(torch.nn.functional.mse_loss(net(xv)[1], yv))
+        curve.append(round(mse, 4))
+        if mse < best:
+            best, best_state = mse, {k: v.clone() for k, v in net.state_dict().items()}
+    net.load_state_dict(best_state)
+    net.eval()
+    return net, best, curve
+
+
+def net_values(game: Spendthrift, net: PolicyValueNet, states: list) -> np.ndarray:
+    """The net's value head for the mover at every state in ``states``, batched."""
+    out = []
+    for i in range(0, len(states), 8192):
+        chunk = states[i : i + 8192]
+        feats = np.stack([game.information_state_tensor(s, s.to_move) for s in chunk])
+        with torch.no_grad():
+            out.append(net(torch.as_tensor(feats, dtype=torch.float32))[1].numpy())
+    return np.concatenate(out)
+
+
+def rms(err: np.ndarray, w: np.ndarray) -> float:
+    """Weighted root-mean-square of ``err``."""
+    return round(float(np.sqrt(np.sum(w * err**2) / w.sum())), 4)
+
+
+def run_value() -> None:
+    """Is the leaf value what spoils the opening? Leaf errors measured exactly, then search on each.
+
+    Trains a value net on positions from PPO's own (sampled) self-play, targeting the mover's final
+    return (the Tessera recipe), early-stopped on held-out games. Then, for the PPO value head and
+    the new net, the root-mean-square error at every player node against (a) the equilibrium value
+    and (b) the exact value of PPO's self-play, weighted by how often PPO's self-play reaches each
+    node, and unweighted over all nodes (search also visits positions self-play rarely reaches).
+    Finally PUCT with PPO priors and two more leaf values (the new net, and the exact equilibrium
+    values as an upper bound) is scored as in ``search``. ``key=value``: ``games`` (search games
+    per setting), ``sims``, ``train_games``. Output: ``runs/spendthrift/value.json``, ``value.pt``.
+    """
+    args = dict(item.split("=") for item in sys.argv[2:])
+    games = int(args.get("games", 300))
+    budgets = [int(x) for x in args.get("sims", "50,200,800").split(",")]
+    train_games = int(args.get("train_games", 100_000))
+    checkpoint = "runs/spendthrift/spendthrift_ppo_200.pt"
+    torch.set_num_threads(4)
+    game = make("spendthrift")
+    sol = solve(game)
+    nodes = list(sol.choice)
+    net = PPOAgent.from_checkpoint(checkpoint).net
+    probs = net_probs(game, net, nodes, greedy=False)
+    path, vpath = OUT / "value.json", OUT / "value.pt"
+    results = json.loads(path.read_text("utf-8")) if path.exists() else {}
+    actions = game.num_distinct_actions()
+    if vpath.exists():
+        ck = torch.load(vpath, map_location="cpu", weights_only=False)
+        vnet = PolicyValueNet(ck["input_dim"], actions, (256, 256), "tanh")
+        vnet.load_state_dict(ck["state_dict"])
+        vnet.eval()
+    else:
+        t = time.perf_counter()
+        x, y = self_play_positions(game, probs, train_games, per_game=4, seed=0)
+        cut = len(x) - len(x) // 12  # positions are grouped by game, so this splits by game
+        vnet, mse, curve = fit_value(x[:cut], y[:cut], x[cut:], y[cut:], actions)
+        torch.save({"state_dict": vnet.state_dict(), "input_dim": vnet.input_dim}, vpath)
+        results["training"] = {
+            "games": train_games,
+            "positions": len(x),
+            "held_out_mse": round(mse, 4),
+            "held_out_mse_constant": round(float(np.mean((y[cut:] - y[:cut].mean()) ** 2)), 4),
+            "curve": curve,
+            "minutes": round((time.perf_counter() - t) / 60, 1),
         }
-        r = results[label]
-        print(
-            f"sims {sims:>4}: lost per game {r['lost_per_game']:.4f} +- {r['lost_per_game_se']:.4f}"
-            f"; vs PPO {r['vs_ppo_payoff']:+.4f} +- {r['vs_ppo_payoff_se']:.4f}; "
-            f"{r['seconds_per_game']:.2f}s/game; by phase {r['lost_per_decision_by_phase']}",
-            flush=True,
+        print(f"value net: {results['training']}", flush=True)
+        path.write_text(json.dumps(results, indent=1), "utf-8")
+    if "leaf_error" not in results:
+        reach = reach_under(game, probs)
+        sp = self_play_values(game, probs)
+        eq = np.asarray([sol.value(s)[s.to_move] for s in nodes])
+        spv = np.asarray([sp[s][s.to_move] for s in nodes])
+        w = np.asarray([reach.get(s, 0.0) for s in nodes])
+        ones = np.ones_like(w)
+        lots = np.asarray([s.deck.bit_count() for s in nodes])
+        rows = {}
+        heads = {
+            "ppo_head": net_values(game, net, nodes),
+            "value_net": net_values(game, vnet, nodes),
+        }
+        for name, v in heads.items():
+            rows[name] = {
+                target: {
+                    "on_path": rms(v - ref, w),
+                    "everywhere": rms(v - ref, ones),
+                    "on_path_by_lots_left": {
+                        str(k): rms((v - ref)[lots == k], w[lots == k]) for k in range(game.lots)
+                    },
+                }
+                for target, ref in (("equilibrium", eq), ("self_play", spv))
+            }
+        rows["self_play_vs_equilibrium"] = {
+            "on_path": rms(spv - eq, w),
+            "everywhere": rms(spv - eq, ones),
+            "on_path_by_lots_left": {
+                str(k): rms((spv - eq)[lots == k], w[lots == k]) for k in range(game.lots)
+            },
+        }
+        results["leaf_error"] = rows
+        print(f"leaf error: {json.dumps(rows)}", flush=True)
+        path.write_text(json.dumps(results, indent=1), "utf-8")
+    torch.set_num_threads(1)
+    ppo = Greedy(net)
+    search = results.setdefault("search", {})
+    leaves = {"value_net": SplitEvaluator(net, vnet), "exact": ExactLeaves(net, sol)}
+    for leaf, sims in [(leaf, sims) for leaf in leaves for sims in budgets]:
+        label = f"{leaf}@{sims}"
+        if label in search:
+            continue
+        agent = AlphaZeroAgent(
+            leaves[leaf], PUCTConfig(simulations=sims, determinizations=1), label
         )
+        search[label] = score_agent(game, sol, agent, ppo, games)
+        print_row(label, search[label])
         path.write_text(json.dumps(results, indent=1), "utf-8")
 
 
 if __name__ == "__main__":
-    stages = {"solve": run_solve, "tempo": run_tempo, "ppo": run_ppo, "search": run_search}
+    stages = {
+        "solve": run_solve,
+        "tempo": run_tempo,
+        "ppo": run_ppo,
+        "search": run_search,
+        "value": run_value,
+    }
     stages[sys.argv[1]]()

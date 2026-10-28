@@ -84,8 +84,9 @@ step, while expanding to more games and trying more approaches. Games so far:
    in the last lots, where single coins decide the reserve penalty. Search on the PPO net
    ("Spendthrift: search fixes the endgame and spoils the opening") confirmed the prediction for
    the endgame (last-lot errors to 0) but made the opening worse at 800 simulations; overall loss
-   per game 0.33 → 0.20. Next, in order (plan.md Stage 6b): (a) search only for the last K lots,
-   PPO's policy before then, which tests whether the PPO value head spoils the opening; (b) a value
+   per game 0.33 → 0.20. ~~(a) Search only for the last K lots~~ Done ("Spendthrift: search only
+   at the end"): searching from 2 lots left is the best agent yet, 0.17 per game. Next, in order
+   (plan.md Stage 6b): (b) a value
    net trained on self-play outcomes (the Tessera recipe) under the same search; (c) 3-player
    search with a value per player. Then the knobs (end predictability, purses, a set bonus).
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
@@ -474,6 +475,43 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: search only at the end (2026-10-28)
+
+The previous entry found that search fixes the endgame but makes the opening worse. The cheap
+test: play greedy PPO while more than K lots are left in the deck and PUCT search (same net, same
+settings) from then on (`experiments/spendthrift.py search sims=200,800 endgame=0,1,2`,
+`runs/spendthrift/search.json`, labels `<sims>@k<K>`). Same 300 + 300 deal seeds as before, so
+every row plays the same deals; ± is one standard error over games (not paired, so differences
+between rows are measured more precisely than the ± suggests). One thread.
+
+| Agent | Payoff given up per game | vs greedy PPO | Time per game |
+|---|---|---|---|
+| greedy PPO | 0.329 ± 0.036 | — | — |
+| search everywhere, 800 simulations | 0.201 ± 0.017 | +0.02 ± 0.05 | 0.32 s |
+| search from 0 lots left (the last lot only) | 0.293 ± 0.029 | +0.01 ± 0.05 | 0.01 s |
+| search from 1 left, 200 / 800 simulations | 0.239 ± 0.022 / 0.195 ± 0.018 | +0.04 / +0.05 ± 0.05 | 0.01 / 0.04 s |
+| search from 2 left, 200 / 800 simulations | 0.217 ± 0.020 / **0.168 ± 0.016** | +0.08 / **+0.10 ± 0.05** | 0.03 / 0.10 s |
+
+Payoff given up per decision, by lots left (800 simulations):
+
+| Agent | 4 left (opening) | 3 | 2 | 1 | 0 |
+|---|---|---|---|---|---|
+| greedy PPO | 0.002 | 0.025 | 0.055 | 0.096 | 0.049 |
+| search everywhere | 0.019 | 0.023 | 0.040 | 0.034 | 0.000 |
+| search from 2 left | **0.002** | 0.025 | 0.041 | **0.025** | 0.000 |
+
+- **Switching search on late keeps the good opening and the fixed endgame.** From 2 lots left at
+  800 simulations it gives up 0.168 per game, the best Spendthrift agent so far (full search
+  0.201, PPO 0.329), at a third of full search's time. Its opening is PPO's (0.002 per decision),
+  and with 1 lot left it is slightly better than full search (0.025 vs 0.034).
+- So the opening damage comes from searching *early*, consistent with the leaf value being worse
+  than the prior far from the end (tested directly in the next entry).
+- Head to head, +0.10 ± 0.05 against greedy PPO (1.8 standard errors): suggestive, not yet
+  significant at 300 games.
+- With 3 or 4 lots left this agent is plain PPO, so what is left to gain is there: 0.025 per
+  decision with 3 left. Searching from 3 left was not run; the full-search row says search does
+  no better than PPO there (0.023 vs 0.025).
 
 ### Spendthrift: search fixes the endgame and spoils the opening (2026-10-28)
 
