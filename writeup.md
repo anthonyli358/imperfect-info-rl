@@ -75,7 +75,9 @@ step, while expanding to more games and trying more approaches. Games so far:
 4. **Tempo: Spendthrift** (started 2026-10-28; findings log, "Spendthrift: an auction game
    solved exactly"). The owner's question: how do we train the *tempo* part of an auction game
    (when to spend a purse that has to last an unknown number of rounds)? Engine, exact solver for
-   2 and 3 players, and the equilibrium's tempo profile are done. Next: train PPO self-play and
+   2 and 3 players, and the equilibrium's tempo profile are done; so is the controlled question
+   ("Spendthrift: what an end card changes"): an end card makes coins ~18% cheaper but barely
+   moves prices. Next: train PPO self-play and
    AlphaZero-style search on it and compare their spending with the exact solution, decision by
    decision (where in the game does each get tempo wrong, and what does it cost?).
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
@@ -464,6 +466,37 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: what an end card changes, position for position (2026-10-28)
+
+The earlier table compared different positions. Here (`experiments/spendthrift.py tempo`,
+`runs/spendthrift/tempo.json`) every auction opening reached in equilibrium play with no end card
+seen is paired with the *same* position (purses, lots, deck) with one end card seen, and both are
+played out under the solution. Weighted by how often each opening arises; exact, so no error bars,
+but the number of distinct openings is small (n below).
+
+| | 2 players (n = 285 openings) | 3 players (n = 59) |
+|---|---|---|
+| P(the lot sells): no end card seen / one seen | 0.857 / 0.847 | 0.946 / 0.971 |
+| Mean price | 1.91 / 1.95 | 2.49 / 2.42 |
+| Price goes up / down / unchanged | 7.7% / 4.7% / 87.6% | 5.0% / 12.5% / 82.5% |
+| A different player wins the lot | 27.0% | 21.3% |
+| Value of a player's last coin (expected payoff; a win is +1) | **0.471 / 0.385** | 0.314 / 0.321 |
+
+- **An end card makes money cheaper but barely moves prices (2 players).** The last coin loses
+  18% of its value (0.47 → 0.39), as expected when there are fewer rounds left to spend it in. But
+  the price is unchanged in 88% of positions: both bidders' coins lose value together, and with
+  prices of 1–3 coins the integer steps are coarse. What changes more often is *who* wins (27%),
+  usually at the same price; why is not yet checked (a guess: two bidders who value the lot about
+  equally swap places).
+- **Coins are worth a lot.** One coin is worth 0.3–0.6 of a win, because coins decide the reserve
+  penalty and ties. That is why lots sell so far below face value.
+- **Two clocks pull in opposite directions** (2 players, value of the last coin by lots left in the
+  deck, no end card / one seen): 4 lots left 0.43 / 0.34, 3 left 0.48 / 0.38, 2 left 0.53 / 0.41,
+  1 left 0.58 / 0.47. Coins gain value as the lots run out (the reserve penalty draws nearer and
+  every coin may decide it), and lose value when an end card shows. A learner has to track both.
+- **Three players: no clear tempo effect.** Coin value is flat (0.31 / 0.32), and prices fall
+  slightly more often than they rise (n = 59, and one tie-breaking rule among equilibria).
 
 ### Spendthrift: an auction game solved exactly, and what perfect tempo looks like (2026-10-28)
 

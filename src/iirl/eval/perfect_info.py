@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -32,15 +32,47 @@ Policy = Callable[[Game, State], np.ndarray]
 
 @dataclass
 class Solution:
-    """Backward-induction values (one per player) and the chosen action at every player node."""
+    """Backward-induction values (one per player) and the chosen action at every player node.
 
-    values: dict[State, np.ndarray]
-    choice: dict[State, Action]
+    :meth:`value` and :meth:`action` extend the solution to any state on demand (e.g. a
+    counterfactual position the game never reached), reusing everything already solved.
+    """
+
+    game: Game
+    values: dict[State, np.ndarray] = field(default_factory=dict)
+    choice: dict[State, Action] = field(default_factory=dict)
+
+    def value(self, s: State) -> np.ndarray:
+        """Every player's value of ``s`` under the solution."""
+        v = self.values.get(s)
+        if v is not None:
+            return v
+        game = self.game
+        if game.is_terminal(s):
+            v = np.asarray(game.returns(s), dtype=float)
+        elif game.is_chance_node(s):
+            v = sum(p * self.value(game.apply_action(s, a)) for a, p in game.chance_outcomes(s))
+        else:
+            p = game.current_player(s)
+            best_a = None
+            for a in sorted(game.legal_actions(s)):
+                child = self.value(game.apply_action(s, a))
+                if v is None or child[p] > v[p] + 1e-12:
+                    best_a, v = a, child
+            self.choice[s] = best_a
+        self.values[s] = v
+        return v
+
+    def action(self, s: State) -> Action:
+        """The solution's move at player node ``s``."""
+        if s not in self.choice:
+            self.value(s)
+        return self.choice[s]
 
     def policy(self, game: Game, state: State) -> np.ndarray:
         """The solution as a (deterministic) policy."""
         probs = np.zeros(game.num_distinct_actions())
-        probs[self.choice[state]] = 1.0
+        probs[self.action(state)] = 1.0
         return probs
 
 
@@ -52,30 +84,9 @@ def _check(game: Game) -> None:
 def solve(game: Game) -> Solution:
     """Backward induction over every reachable state; ties go to the lowest action id."""
     _check(game)
-    values: dict[State, np.ndarray] = {}
-    choice: dict[State, Action] = {}
-
-    def value(s: State) -> np.ndarray:
-        v = values.get(s)
-        if v is not None:
-            return v
-        if game.is_terminal(s):
-            v = np.asarray(game.returns(s), dtype=float)
-        elif game.is_chance_node(s):
-            v = sum(p * value(game.apply_action(s, a)) for a, p in game.chance_outcomes(s))
-        else:
-            p = game.current_player(s)
-            best_a, v = None, None
-            for a in sorted(game.legal_actions(s)):
-                child = value(game.apply_action(s, a))
-                if v is None or child[p] > v[p] + 1e-12:
-                    best_a, v = a, child
-            choice[s] = best_a
-        values[s] = v
-        return v
-
-    value(game.new_initial_state())
-    return Solution(values, choice)
+    sol = Solution(game)
+    sol.value(game.new_initial_state())
+    return sol
 
 
 def policy_values(game: Game, policy: Policy) -> np.ndarray:

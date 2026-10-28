@@ -524,8 +524,9 @@ exact answers to compare every learner against.
   backward induction, `nash_conv`)
 - [x] The equilibrium's tempo profile: prices by lot and end cards seen, unsold lots, reserve
   penalty frequency (`experiments/spendthrift.py solve`)
-- [ ] Controlled tempo question on the exact solution: the same position with and without an end
-  card seen (does the bid change?), and the value of a coin through the game
+- [x] Controlled tempo question on the exact solution (`tempo` stage, 2026-10-28): an end card
+  makes the last coin 18% cheaper (0.47 → 0.39 of a win) but leaves the price unchanged in 88% of
+  positions; coin value rises as lots run out
 - [ ] PPO self-play on both sizes: NashConv, and its spending against the solution decision by
   decision
 - [ ] AlphaZero-style search (the Tessera recipe): does lookahead fix the tempo errors?
