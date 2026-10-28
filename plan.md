@@ -530,8 +530,11 @@ exact answers to compare every learner against.
 - [x] PPO self-play on both sizes (2026-10-28; `selfplay/ppo.py` now seats n players): NashConv
   0.36 (2 players) / 0.29 (3) at 200 iterations; with two players the opening is learned (0.001 per
   decision) but the last lots are not (0.135), where coins decide the reserve penalty
-- [ ] AlphaZero-style search (the Tessera recipe): does lookahead fix the endgame errors PPO
-  leaves? (prediction: yes, the horizon is short there)
+- [x] PUCT search on the PPO net, 2 players (2026-10-28): the endgame errors go (last lot 0.049 →
+  0, 1 left 0.096 → 0.034 at 800 simulations) but the opening gets worse (0.002 → 0.019); loss per
+  game 0.33 → 0.20, flat beyond 200 simulations; head to head +0.08 ± 0.05 (not significant)
+- [ ] A value net trained on self-play outcomes (the Tessera recipe), or search only for the last
+  lots; then 3-player search (per-player values)
 - [ ] Knobs: end predictability (more or fewer end cards), tighter purses, a set bonus; then a size
   beyond exact reach
 

@@ -79,9 +79,11 @@ step, while expanding to more games and trying more approaches. Games so far:
    ("Spendthrift: what an end card changes"): an end card makes coins ~18% cheaper but barely
    moves prices. PPO self-play done ("Spendthrift: PPO learns the opening, not the endgame"):
    NashConv 0.36 (2 players) / 0.29 (3) after 200 iterations, and with two players its losses sit
-   in the last lots, where single coins decide the reserve penalty. Next: AlphaZero-style search
-   (the Tessera recipe). Prediction to test: lookahead fixes the endgame errors, the short horizon
-   being exactly what search handles.
+   in the last lots, where single coins decide the reserve penalty. Search on the PPO net
+   ("Spendthrift: search fixes the endgame and spoils the opening") confirmed the prediction for
+   the endgame (last-lot errors to 0) but made the opening worse at 800 simulations; overall loss
+   per game 0.33 → 0.20. Next: a value net trained on self-play outcomes (the Tessera recipe), or
+   search only for the last lots; then 3-player search (needs per-player values).
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -468,6 +470,47 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: search fixes the endgame and spoils the opening (2026-10-28)
+
+The prediction from the PPO result: lookahead should fix PPO's endgame errors, the horizon being
+short there. Test (`experiments/spendthrift.py search`, `runs/spendthrift/search.json`): PUCT
+search (the Tessera agent) on the final 2-player PPO net, which supplies both the priors and the
+leaf values (its own value head; no separate value net yet). Search cannot be scored by NashConv
+(that needs a search at all 700k states), so each budget plays 300 self-play games and every move
+is scored against the exact solution, plus 300 seat-balanced games against greedy PPO. Same deal
+seeds for every budget; ± is one standard error over games. One thread.
+
+| Search | Payoff given up per game | vs greedy PPO (payoff, a win is +1) | Time per game |
+|---|---|---|---|
+| none (greedy PPO) | 0.329 ± 0.036 | — | — |
+| 50 simulations | 0.269 ± 0.029 | +0.03 ± 0.05 | 0.02 s |
+| 200 simulations | **0.200 ± 0.019** | +0.08 ± 0.05 | 0.08 s |
+| 800 simulations | 0.201 ± 0.017 | +0.02 ± 0.05 | 0.32 s |
+
+Payoff given up per decision, by lots left in the deck:
+
+| Search | 4 lots left (opening) | 3 | 2 | 1 | 0 (the last lot) |
+|---|---|---|---|---|---|
+| none | 0.002 | 0.025 | 0.055 | 0.096 | 0.049 |
+| 200 simulations | 0.003 | 0.025 | 0.044 | 0.055 | **0.000** |
+| 800 simulations | **0.019** | 0.023 | 0.040 | **0.034** | **0.000** |
+
+- **The endgame prediction holds.** Errors on the last lot vanish from 200 simulations on, and
+  with 1 lot left they fall by two thirds at 800 (0.096 → 0.034). Near the end, search reaches
+  the terminal states, where values are exact.
+- **More search spoils the opening.** At 800 simulations the first decisions get ten times worse
+  (0.002 → 0.019 per decision). The likely reason, not yet tested: far from the end, search leans
+  on the PPO value head at its leaves, and that value is less accurate than the policy's own first
+  move, so more search overrides a good prior with a worse estimate. So the overall loss stops improving
+  after 200 simulations (0.200 vs 0.201).
+- **Head to head the gains do not show yet**: +0.08 ± 0.05 at 200 simulations (1.6 standard
+  errors), +0.02 ± 0.05 at 800. Losing 0.13 less payoff per game against *perfect* play does not
+  have to mean beating PPO by as much: a mistake costs only if the opponent punishes it, and PPO
+  is far from perfect itself.
+- What this suggests: the bottleneck in the opening is the leaf value, so the Tessera recipe (a
+  value net trained on self-play outcomes) is the next lever. A cheaper alternative is to search
+  only in the last lots and play the policy before then.
 
 ### Spendthrift: PPO learns the opening, not the endgame (2026-10-28)
 

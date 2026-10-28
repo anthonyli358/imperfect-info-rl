@@ -385,5 +385,111 @@ def run_ppo() -> None:
         results_path.write_text(json.dumps(results, indent=1), "utf-8")
 
 
+def play_scored(
+    game: Spendthrift, sol: Solution, agents: list, seed: int
+) -> tuple[list[float], list[tuple[str, float]]]:
+    """Play one game, ``agents[p]`` in seat ``p``: its returns and each move's exact loss."""
+    rng = np.random.default_rng(seed)
+    s, losses = game.new_initial_state(), []
+    while not game.is_terminal(s):
+        if game.is_chance_node(s):
+            acts, ps = zip(*game.chance_outcomes(s), strict=True)
+            s = game.apply_action(s, int(rng.choice(acts, p=ps)))
+            continue
+        p = s.to_move
+        a = agents[p].step(game, s, rng)
+        best = sol.value(game.apply_action(s, sol.action(s)))[p]
+        lost = float(best - sol.value(game.apply_action(s, a))[p])
+        losses.append((f"lots_left={s.deck.bit_count()}", lost))
+        s = game.apply_action(s, a)
+    return game.returns(s), losses
+
+
+def run_search() -> None:
+    """Does lookahead fix PPO's endgame errors? Two players; PUCT on the final PPO net.
+
+    Priors and leaf values both come from the PPO checkpoint (``NetEvaluator``). For each budget,
+    ``games`` self-play games score every decision exactly against the solution, and as many
+    seat-balanced games against greedy PPO give the head-to-head score. Deals are shared across
+    budgets (same seeds). ``key=value``: ``games``, ``sims`` (comma-separated), ``checkpoint``.
+    Output: ``runs/spendthrift/search.json``.
+    """
+    from iirl.agents.alphazero.agent import AlphaZeroAgent
+    from iirl.agents.alphazero.mcts import PUCTConfig
+    from iirl.agents.base import Agent
+    from iirl.nn.policy_value import NetEvaluator
+
+    class Greedy(Agent):
+        """The PPO net's most likely legal move."""
+
+        name = "ppo"
+
+        def __init__(self, net) -> None:  # noqa: ANN001 - PolicyValueNet
+            self.evaluator = NetEvaluator(net)
+
+        def step(self, game, state, rng) -> int:  # noqa: ANN001
+            priors, _ = self.evaluator.evaluate(game, state)
+            legal = game.legal_actions(state)
+            return int(legal[int(np.argmax(priors[legal]))])
+
+    args = dict(item.split("=") for item in sys.argv[2:])
+    games = int(args.get("games", 300))
+    budgets = [int(x) for x in args.get("sims", "0,50,200,800").split(",")]
+    checkpoint = args.get("checkpoint", "runs/spendthrift/spendthrift_ppo_200.pt")
+    torch.set_num_threads(1)
+    game = make("spendthrift")
+    sol = solve(game)
+    net = PPOAgent.from_checkpoint(checkpoint).net
+    ppo = Greedy(net)
+    path = OUT / "search.json"
+    results = json.loads(path.read_text("utf-8")) if path.exists() else {}
+    for sims in budgets:
+        label = str(sims)
+        if label in results:
+            continue
+        t = time.perf_counter()
+        agent = (
+            ppo
+            if sims == 0
+            else AlphaZeroAgent(
+                NetEvaluator(net), PUCTConfig(simulations=sims, determinizations=1), f"search{sims}"
+            )
+        )
+        per_game, by_phase, n_phase = [], defaultdict(float), defaultdict(int)
+        for g in range(games):
+            _, losses = play_scored(game, sol, [agent, agent], seed=g)
+            per_game.append(sum(x for _, x in losses))
+            for k, x in losses:
+                by_phase[k] += x
+                n_phase[k] += 1
+        scores = []
+        for g in range(games):
+            seat = g % 2
+            seats = [agent, ppo] if seat == 0 else [ppo, agent]
+            rets, _ = play_scored(game, sol, seats, seed=10_000 + g)
+            scores.append(rets[seat])
+        lost, sc = np.asarray(per_game), np.asarray(scores)
+        results[label] = {
+            "games": games,
+            "lost_per_game": round(float(lost.mean()), 4),
+            "lost_per_game_se": round(float(lost.std(ddof=1) / np.sqrt(games)), 4),
+            "lost_per_decision_by_phase": {
+                k: round(by_phase[k] / n_phase[k], 4) for k in sorted(n_phase)
+            },
+            "vs_ppo_payoff": round(float(sc.mean()), 4),
+            "vs_ppo_payoff_se": round(float(sc.std(ddof=1) / np.sqrt(games)), 4),
+            "seconds_per_game": round((time.perf_counter() - t) / (2 * games), 3),
+        }
+        r = results[label]
+        print(
+            f"sims {sims:>4}: lost per game {r['lost_per_game']:.4f} +- {r['lost_per_game_se']:.4f}"
+            f"; vs PPO {r['vs_ppo_payoff']:+.4f} +- {r['vs_ppo_payoff_se']:.4f}; "
+            f"{r['seconds_per_game']:.2f}s/game; by phase {r['lost_per_decision_by_phase']}",
+            flush=True,
+        )
+        path.write_text(json.dumps(results, indent=1), "utf-8")
+
+
 if __name__ == "__main__":
-    {"solve": run_solve, "tempo": run_tempo, "ppo": run_ppo}[sys.argv[1]]()
+    stages = {"solve": run_solve, "tempo": run_tempo, "ppo": run_ppo, "search": run_search}
+    stages[sys.argv[1]]()
