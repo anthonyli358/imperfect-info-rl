@@ -478,8 +478,9 @@ bid. Everything is public but the deck order, so it is perfect information with 
 **Solver** (`eval/perfect_info.py`): backward induction memoised by state, for any number of
 players, plus `nash_conv` (each player's best-response gain, summed). `exact_br` could not be
 reused: it is two-player and needs each information set at one depth, but here the same position
-is reached by different numbers of moves (raise to 1 then 3, or straight to 3). Three players have
-a unique solution (there can be several equilibria); ties go to the lowest action id (pass, then the smallest bid), and the 3-player
+is reached by different numbers of moves (raise to 1 then 3, or straight to 3). Three players need not have
+a unique solution (there can be several equilibria); ties go to the lowest action id (pass, then
+the smallest bid), and the 3-player
 numbers below are for that equilibrium. Pure Python costs about 10× per extra lot, so the
 registered sizes are the ones that solve in under 20 s:
 
