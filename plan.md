@@ -527,9 +527,11 @@ exact answers to compare every learner against.
 - [x] Controlled tempo question on the exact solution (`tempo` stage, 2026-10-28): an end card
   makes the last coin 18% cheaper (0.47 → 0.39 of a win) but leaves the price unchanged in 88% of
   positions; coin value rises as lots run out
-- [ ] PPO self-play on both sizes: NashConv, and its spending against the solution decision by
-  decision
-- [ ] AlphaZero-style search (the Tessera recipe): does lookahead fix the tempo errors?
+- [x] PPO self-play on both sizes (2026-10-28; `selfplay/ppo.py` now seats n players): NashConv
+  0.36 (2 players) / 0.29 (3) at 200 iterations; with two players the opening is learned (0.001 per
+  decision) but the last lots are not (0.135), where coins decide the reserve penalty
+- [ ] AlphaZero-style search (the Tessera recipe): does lookahead fix the endgame errors PPO
+  leaves? (prediction: yes, the horizon is short there)
 - [ ] Knobs: end predictability (more or fewer end cards), tighter purses, a set bonus; then a size
   beyond exact reach
 

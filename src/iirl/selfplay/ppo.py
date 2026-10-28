@@ -163,14 +163,20 @@ def _policy_batch(
 class _Env:
     """One in-flight game: its state, who controls each seat, and per-seat trajectories."""
 
-    def __init__(self, state: State, seats: tuple[object, object], learn: tuple[bool, bool]):
+    def __init__(self, state: State, seats: tuple[object, ...], learn: tuple[bool, ...]):
         self.state = state
         self.seats = seats
         self.learn = learn
         self.traj: list[dict[str, list]] = [
             {"feat": [], "mask": [], "action": [], "logp": [], "value": [], "phi": []}
-            for _ in range(2)
+            for _ in seats
         ]
+
+
+def _seated(learner: object, other: object, seat: int, n: int) -> tuple[tuple, tuple]:
+    """``learner`` in ``seat``, ``other`` in every other seat; only the learner's seat learns."""
+    seats = tuple(learner if i == seat else other for i in range(n))
+    return seats, tuple(i == seat for i in range(n))
 
 
 def _phi(game: Game, state: State, player: int, shaping: bool) -> float:
@@ -203,8 +209,10 @@ def _privileged(game: Game, state: State, player: int, own: np.ndarray) -> np.nd
     """Critic input: the player's own view plus the opponent's (their hidden hand included).
 
     Only the value baseline sees this, and only during training — the policy never does — so the
-    learned agent still acts on its own information alone (an asymmetric actor-critic).
+    learned agent still acts on its own information alone (an asymmetric actor-critic). Two-player
+    games only.
     """
+    assert game.num_players == 2, "the privileged critic is two-player only"
     return np.concatenate([own, game.information_state_tensor(state, 1 - player)])
 
 
@@ -336,33 +344,30 @@ def _collect(
     net.eval()
     keys = _BATCH_KEYS + (("cfeat",) if critic is not None else ())
     batch: dict[str, list] = {k: [] for k in keys}
+    n = game.num_players
     remaining = num_games
     while remaining > 0:
         envs = []
         for _ in range(min(remaining, config.num_envs)):
             if config.scripted_opponents and rng.random() < config.scripted_frac:
                 opp = config.scripted_opponents[int(rng.integers(len(config.scripted_opponents)))]
-                seat = int(rng.integers(2))
-                seats = (net, opp) if seat == 0 else (opp, net)
-                learn = (seat == 0, seat == 1)
+                seats, learn = _seated(net, opp, int(rng.integers(n)), n)
             elif pool and rng.random() < config.past_opponent_frac:
                 weights = config.opponent_weights
                 if weights and len(weights) == len(pool):
                     past = pool[int(rng.choice(len(pool), p=np.asarray(weights) / sum(weights)))]
                 else:
                     past = pool[int(rng.integers(len(pool)))]
-                seat = int(rng.integers(2))
-                seats = (net, past) if seat == 0 else (past, net)
-                learn = (seat == 0, seat == 1)
+                seats, learn = _seated(net, past, int(rng.integers(n)), n)
             else:
-                seats, learn = (net, net), (True, True)
+                seats, learn = (net,) * n, (True,) * n
             envs.append(_Env(game.new_initial_state(), seats, learn))
         remaining -= len(envs)
         rets_all = _run_envs(
             game, envs, rng, config.shaping, critic=critic, opponent_greedy=config.opponent_greedy
         )
         for env, rets in zip(envs, rets_all, strict=True):
-            for player in (0, 1):
+            for player in range(n):
                 t = env.traj[player]
                 if not env.learn[player] or not t["value"]:
                     continue
@@ -573,16 +578,16 @@ def evaluate_vs(
     """Play the greedy net vs ``opponent``, seat-balanced; return (score, win, margin, stderr).
 
     ``score`` counts a draw as half a win (the Elo convention); ``margin`` is the mean payoff to the
-    net with its standard error.
+    net with its standard error. With more than two players, ``opponent`` fills every other seat.
     """
     net.eval()
     net_returns: list[float] = []
     for start in range(0, num_games, num_envs):
         envs, net_seat = [], []
         for i in range(start, min(num_games, start + num_envs)):
-            seat = i % 2
-            seats = (net, opponent) if seat == 0 else (opponent, net)
-            envs.append(_Env(game.new_initial_state(), seats, (False, False)))
+            seat = i % game.num_players
+            seats, _ = _seated(net, opponent, seat, game.num_players)
+            envs.append(_Env(game.new_initial_state(), seats, (False,) * game.num_players))
             net_seat.append(seat)
         for rets, seat in zip(
             _run_envs(game, envs, rng, False, greedy=True), net_seat, strict=True

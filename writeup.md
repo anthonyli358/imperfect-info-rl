@@ -77,9 +77,11 @@ step, while expanding to more games and trying more approaches. Games so far:
    (when to spend a purse that has to last an unknown number of rounds)? Engine, exact solver for
    2 and 3 players, and the equilibrium's tempo profile are done; so is the controlled question
    ("Spendthrift: what an end card changes"): an end card makes coins ~18% cheaper but barely
-   moves prices. Next: train PPO self-play and
-   AlphaZero-style search on it and compare their spending with the exact solution, decision by
-   decision (where in the game does each get tempo wrong, and what does it cost?).
+   moves prices. PPO self-play done ("Spendthrift: PPO learns the opening, not the endgame"):
+   NashConv 0.36 (2 players) / 0.29 (3) after 200 iterations, and with two players its losses sit
+   in the last lots, where single coins decide the reserve penalty. Next: AlphaZero-style search
+   (the Tessera recipe). Prediction to test: lookahead fixes the endgame errors, the short horizon
+   being exactly what search handles.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -466,6 +468,53 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: PPO learns the opening, not the endgame (2026-10-28)
+
+PPO self-play (`experiments/spendthrift.py ppo`; 200 iterations of 2,048 games, 4 workers, a few
+minutes of training per run; exact scoring of the eight checkpoints took about 30 minutes) on both registered sizes, every 25th checkpoint scored exactly
+against the solution. `selfplay/ppo.py` now seats any number of players (two-player runs draw the
+same random seats as before; the privileged critic stays two-player only and was off here).
+
+Two measures, both exact (no sampling):
+- **NashConv**: each player's gain from best-responding to the policy, summed.
+- **Payoff given up per game**: at every decision the policy reaches in its own self-play
+  (weighted by how often), the equilibrium value of the best move minus the policy's expected
+  equilibrium value. In other words, what its mistakes cost against perfect play from then on.
+  For three players this is measured against the one equilibrium the solver picks, so NashConv is
+  the cleaner number there.
+
+| Iteration | 2 players: NashConv (sampled / greedy) | given up per game | 3 players: NashConv | given up per game |
+|---|---|---|---|---|
+| 25 | 0.73 / 0.73 | 0.78 | 0.82 / 0.94 | 0.84 |
+| 100 | 0.43 / 0.41 | 0.43 | 0.38 / 0.45 | 0.52 |
+| 200 | **0.36 / 0.35** | 0.32 | **0.29 / 0.36** | 0.41 |
+
+One seed per size. Both curves are still falling slowly at 200 (2 players: 0.38 → 0.37 → 0.36
+over the last 50 iterations), and the 3-player curve is noisier (it stalled at 50–75).
+
+**Where PPO's two-player mistakes are** (payoff given up per decision, by lots left in the deck,
+no end card seen / one seen):
+
+| Lots left | 4 | 3 | 2 | 1 | 0 (the last lot) |
+|---|---|---|---|---|---|
+| Iteration 100 | 0.026 / 0.036 | 0.041 / 0.022 | 0.070 / 0.040 | 0.156 / 0.100 | 0.137 / 0.094 |
+| Iteration 200 | **0.001 / 0.010** | 0.028 / 0.015 | 0.065 / 0.044 | **0.135 / 0.089** | 0.096 / 0.059 |
+
+- **PPO learns the opening and not the endgame.** By iteration 200 its first decisions are almost
+  perfect (0.001 per decision with 4 lots left), but with 1 lot left it still gives up 0.135 per
+  decision, barely better than at iteration 100 (0.156). This is the opposite of the usual
+  difficulty (endgames are short and easy to search). It lines up with the exact analysis: the
+  last coin is worth most with 1 lot left (0.58 of a win), because single coins decide the reserve
+  penalty, so a policy that is slightly off on coin counts pays most there.
+- **Errors cost less once an end card is seen** at every depth: the game may end before the
+  mistake matters.
+- **It overbids often and cheaply, underbids rarely and dearly** (iteration 200, per game):
+  1.66 overbids costing 0.18 in all (about 0.11 each), 0.18 underbids costing 0.13 (about 0.74
+  each; an underbid is usually a pass that hands over a lot).
+- **Three players:** errors are spread evenly across the game (0.02–0.07 per decision at every
+  depth), with no endgame spike. PPO plays the third seat worst: a best response in that seat
+  gains 0.17, against 0.05–0.07 in the other two.
 
 ### Spendthrift: what an end card changes, position for position (2026-10-28)
 

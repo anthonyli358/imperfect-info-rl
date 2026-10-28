@@ -11,12 +11,19 @@ with no end card seen yet and compares it with the *same* position with one end 
 whether it sells, who wins), and measures what a player's last coin is worth through the game.
 Output: ``runs/spendthrift/tempo.json``.
 
+``ppo`` trains PPO self-play (resumable; checkpoints every 25 iterations under
+``runs/spendthrift/``) and scores each checkpoint against the solution: NashConv, and the payoff
+its decisions give up against perfect play, by phase and by overbidding or underbidding. Output:
+``runs/spendthrift/<game>_ppo_exact.json``.
+
     uv run python -m experiments.spendthrift solve
     uv run python -m experiments.spendthrift tempo
+    uv run python -m experiments.spendthrift ppo game=spendthrift iterations=200
 """
 
 from __future__ import annotations
 
+import heapq
 import json
 import sys
 import time
@@ -24,9 +31,15 @@ from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
 
+import numpy as np
+import torch
+
+from iirl.agents.ppo import PPOAgent
+from iirl.agents.random_agent import RandomAgent
 from iirl.core.registry import make
-from iirl.eval.perfect_info import Solution, solve
+from iirl.eval.perfect_info import Solution, nash_conv, solve
 from iirl.games.spendthrift import Phase, Spendthrift, SpendthriftState
+from iirl.selfplay import PPOConfig
 
 OUT = Path("runs/spendthrift")
 
@@ -218,5 +231,159 @@ def run_tempo() -> None:
     (OUT / "tempo.json").write_text(json.dumps(results, indent=1), "utf-8")
 
 
+PPO = PPOConfig(
+    games_per_iter=2048,
+    num_envs=256,
+    num_workers=4,  # keeps the machine cool
+    epochs=4,
+    minibatch_size=1024,
+    lr=3e-4,
+    hidden=(256, 256),
+    win_bonus=0.0,  # the payoff is already win / lose
+    reward_scale=1.0,
+    eval_interval=25,
+    eval_games=1000,
+    feature_sample_games=200,
+    seed=0,
+)
+
+
+def net_probs(game: Spendthrift, net, states: list[SpendthriftState], greedy: bool):  # noqa: ANN001, ANN201
+    """The net's move probabilities at every state in ``states``, batched, as a dict."""
+    out: dict[SpendthriftState, np.ndarray] = {}
+    for i in range(0, len(states), 8192):
+        chunk = states[i : i + 8192]
+        feats = np.stack([game.information_state_tensor(s, s.to_move) for s in chunk])
+        with torch.no_grad():
+            logits = net(torch.as_tensor(feats, dtype=torch.float32))[0].numpy()
+        for s, row in zip(chunk, logits, strict=True):
+            legal = game.legal_actions(s)
+            probs = np.zeros(game.num_distinct_actions())
+            if greedy:
+                probs[legal[int(np.argmax(row[legal]))]] = 1.0
+            else:
+                z = row[legal] - row[legal].max()
+                probs[legal] = np.exp(z) / np.exp(z).sum()
+            out[s] = probs
+    return out
+
+
+def progress(game: Spendthrift, s: SpendthriftState) -> tuple[int, int, int, int]:
+    """A key that strictly increases with every move, for a forward pass in order."""
+    flipped = game.lots - s.deck.bit_count() + s.ends_seen
+    passes = game.players - s.active.bit_count() if s.phase == Phase.AUCTION else 0
+    return flipped, int(s.phase != Phase.AUCTION), s.bid, passes
+
+
+def reach_under(game: Spendthrift, probs: dict) -> dict[SpendthriftState, float]:
+    """Probability of reaching each player node when everyone plays ``probs``."""
+    reach: dict[SpendthriftState, float] = defaultdict(float)
+    root = game.new_initial_state()
+    reach[root] = 1.0
+    heap = [(progress(game, root), 0, root)]
+    queued, tick = {root}, 1
+    out: dict[SpendthriftState, float] = {}
+    while heap:
+        _, _, s = heapq.heappop(heap)
+        w = reach[s]
+        if game.is_terminal(s):
+            continue
+        if game.is_chance_node(s):
+            moves = game.chance_outcomes(s)
+        else:
+            out[s] = w
+            moves = [(a, probs[s][a]) for a in game.legal_actions(s) if probs[s][a] > 0]
+        for a, p in moves:
+            child = game.apply_action(s, a)
+            reach[child] += w * p
+            if child not in queued:
+                queued.add(child)
+                heapq.heappush(heap, (progress(game, child), tick, child))
+                tick += 1
+    return out
+
+
+def decision_quality(
+    game: Spendthrift, sol: Solution, probs: dict, reach: dict[SpendthriftState, float]
+) -> dict:
+    """Payoff given up per decision against perfect play, from the exact equilibrium values."""
+    lost = defaultdict(float)  # by phase
+    mass = defaultdict(float)
+    kinds = defaultdict(float)  # overbid / underbid / matched, probability-weighted
+    total_lost = 0.0
+    for s, w in reach.items():
+        p = s.to_move
+        legal = game.legal_actions(s)
+        q = {a: float(sol.value(game.apply_action(s, a))[p]) for a in legal}
+        best = sol.action(s)
+        gap = q[best] - sum(probs[s][a] * q[a] for a in legal)
+        key = f"ends_seen={s.ends_seen} lots_left={s.deck.bit_count()}"
+        lost[key] += w * gap
+        mass[key] += w
+        total_lost += w * gap
+        for a in legal:
+            kind = "matched" if a == best else ("overbid" if a > best else "underbid")
+            kinds[kind] += w * probs[s][a]
+            if a != best:
+                kinds[f"{kind}_lost"] += w * probs[s][a] * (q[best] - q[a])
+    return {
+        "lost_per_game": round(total_lost, 4),
+        "decisions_per_game": round(sum(reach.values()), 3),
+        "lost_per_decision_by_phase": {
+            k: round(lost[k] / mass[k], 4) for k in sorted(mass) if mass[k] > 1e-6
+        },
+        "moves": {k: round(v, 4) for k, v in sorted(kinds.items())},
+    }
+
+
+def run_ppo() -> None:
+    """PPO self-play, then NashConv and decision quality of every checkpoint against the solution.
+
+    ``key=value``: ``game`` (``spendthrift`` or ``spendthrift3``), ``iterations``.
+    """
+    from experiments.train_ventures_league import _train
+
+    args = dict(item.split("=") for item in sys.argv[2:])
+    name = args.get("game", "spendthrift")
+    iterations = int(args.get("iterations", 200))
+    torch.set_num_threads(4)
+    OUT.mkdir(parents=True, exist_ok=True)
+    tag = f"spendthrift/{name}_ppo"
+    _train(
+        None,
+        replace(PPO, iterations=iterations),
+        tag,
+        save_every=25,
+        game_name=name,
+        heuristic=RandomAgent(),
+        anchor_elo=1000.0,
+    )
+    game = make(name)
+    sol = solve(game)
+    nodes = list(sol.choice)
+    results_path = OUT / f"{name}_ppo_exact.json"
+    results = json.loads(results_path.read_text("utf-8")) if results_path.exists() else {}
+    for it in range(25, iterations + 1, 25):
+        label, path = str(it), Path(f"runs/{tag}_{it}.pt")
+        if label in results or not path.exists():
+            continue
+        net = PPOAgent.from_checkpoint(str(path)).net
+        row = {}
+        for mode in ("sampled", "greedy"):
+            probs = net_probs(game, net, nodes, greedy=mode == "greedy")
+            conv = nash_conv(game, lambda g, s, probs=probs: probs[s])
+            row[mode] = {k: round(v, 4) for k, v in conv.items()}
+            if mode == "sampled":
+                row["quality"] = decision_quality(game, sol, probs, reach_under(game, probs))
+        results[label] = row
+        print(
+            f"{name} ppo {it:>3}: NashConv sampled {row['sampled']['nash_conv']:.4f}, "
+            f"greedy {row['greedy']['nash_conv']:.4f}; lost per game "
+            f"{row['quality']['lost_per_game']:.4f}",
+            flush=True,
+        )
+        results_path.write_text(json.dumps(results, indent=1), "utf-8")
+
+
 if __name__ == "__main__":
-    {"solve": run_solve, "tempo": run_tempo}[sys.argv[1]]()
+    {"solve": run_solve, "tempo": run_tempo, "ppo": run_ppo}[sys.argv[1]]()
