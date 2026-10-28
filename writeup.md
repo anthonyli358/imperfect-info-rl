@@ -11,9 +11,9 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 Project: imperfect-info-rl in c:\Users\Ant\Documents\My Projects\GitHub\imperfect-info-rl
 (branch feat/rl-agent-ladder). Read the "Start here" section at the top of writeup.md, then
-continue with its "Open threads": thread 4 (Spendthrift) first, at the first unchecked step of
-plan.md's Stage 6b "Next, in order" list; after each step update writeup.md and plan.md and
-commit. Then the other threads in order.
+work through plan.md's "Finishing plan" (near the top of plan.md), phase by phase, starting
+at the first step not yet done; after each step update writeup.md and plan.md and commit. Stop at
+each step marked "owner decision" and ask.
 
 ---
 
@@ -50,7 +50,8 @@ step, while expanding to more games and trying more approaches. Games so far:
   policy's self-play, PUCT search with policy priors and value leaves. Strength climbs steadily with
   simulations. "Nash-seeking" is unnecessary there (minimax needs no mixing).
 
-**Open threads, in the order I would take them:**
+**Open threads, in the order I would take them** (the finishing plan in `plan.md` orders
+what is left into four phases and is the one to follow):
 
 1. ~~Tessera board renderer~~ Done 2026-10-24 (`viz/play.html`, from the **Ladder design system**:
    https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5). ~~Apply the system to the Ventures and

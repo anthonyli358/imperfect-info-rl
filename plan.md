@@ -61,6 +61,59 @@ Absolute imports everywhere (`from iirl.core.game import Game`), identical from 
 
 ---
 
+## Finishing plan (2026-10-28)
+
+What "finished" means here: every rung on the ladder ends with a stated best agent, its strength
+with error bars, and the reason each method won or failed. The repo is clean enough to hand over,
+and the branch is merged. What is left, in order (each step ends, as always, with `writeup.md`
+and `plan.md` updated and a commit):
+
+**Phase 1 — close Spendthrift (Stage 6b).** About two sessions.
+1. Resume PPO on the purse variants (`spendthrift_tight`, `spendthrift_loose`; command in Stage
+   6b). Is PPO's endgame worse where the exact solution says coins are precious late?
+2. A tie-robust three-player yardstick: score each move against the best and the worst tie-break,
+   then re-score the three-player PPO and search results. Settles whether 3-player search helps.
+3. **Owner decision:** add a set bonus (a new scoring rule), or close the knobs as they are.
+4. Stage summary in the writeup: what tempo is, and which learners get it right where.
+
+**Phase 2 — cheap loose ends on finished rungs.** One session; each is small.
+1. Liar's Dice: read off the CFR+ equilibrium's bluff and call frequencies by die face (exact,
+   minutes) and check they look sane; that closes Stage 4.
+2. Tessera: the search audit (`experiments/search_audit.py tessera`), so Stage 3's question
+   (policy vs rollouts vs value-based search) has all three answers; then 12 more loop iterations
+   only if the audit points at the value.
+3. Ventures: re-rate net-guided PIMC on today's yardstick (the last stale number), and analyse
+   the recorded human games (only one so far, so record a few more first or drop it).
+
+**Phase 3 — the last rung.** **Owner decision first:**
+- *Recommended:* **Stage 5's finale, heads-up limit Hold'em.** First Deep CFR on Leduc, where
+  exact exploitability checks it against CFR+ and ReBeL. Then external-sampling MCCFR on limit
+  Hold'em, too big for exact exploitability, so judged by head-to-head play with variance reduction
+  and a local best response. It completes the imperfect-information story the repo is named for.
+  A few sessions.
+- *Alternative:* **Stage 7** (an original game on The Confrontation's mechanics, an entity policy).
+  A new engine, a transformer encoder, baselines and training: the largest single item left. Better
+  as a project of its own.
+- No-limit Hold'em, Hanabi and the Rust engine (Stage 1b D) become "future work" in the
+  writeup, not rungs.
+
+**Phase 4 — wrap-up.** One or two sessions.
+1. The cross-cutting definition of done, checked game by game:
+   - Docstrings and lint: `ruff` already enforces both.
+   - The conformance suite runs on every registered game: already true, so confirm it.
+   - Seeds recorded for every headline result.
+   - Credits in every game module.
+2. README: replace the Ventures-only headline with the per-game table (best agent, strength, why),
+   and give each game a short section (rules in brief, encoding, agent, results).
+3. Checkpoints: `runs/` is git-ignored, so a fresh clone cannot run the play page or reproduce the
+   headline agents. **Owner decision:** publish the handful of headline checkpoints (for example
+   as a GitHub release), or document how to retrain them.
+4. Writeup: a closing "What we learned" across all games (when each method wins, and why), and
+   "Future work".
+5. Merge `feat/rl-agent-ladder` into `main` through a PR (about 150 commits).
+
+---
+
 ## Stage 0 — Foundation & shared spine *(minimal, on purpose)*
 
 Goal: the game-agnostic interface, baselines, and an evaluation skeleton — nothing more. Resist polishing the interface before real games exist.
@@ -208,7 +261,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
   batched search over hundreds of games with GPU leaf inference (CUDA torch in the venv), kept
   game-agnostic. Target: 50–100× more searched positions per hour. Prerequisite for E and for
   search-based learning on bigger games.
-- [ ] **E0. ReBeL where it is exact (started 2026-09-30).** Correction to E below: Ventures'
+- [x] **E0. ReBeL where it is exact (started 2026-09-30; concluded 2026-10-12: exact on
+  Mini-Ventures, loses at full Ventures, rollouts won instead).** Correction to E below: Ventures'
   hidden 8-card hand has ~10^8 possibilities, so exact public belief states are out of reach.
   ReBeL's published results are on small private-info spaces. So build it first on a small game,
   where it is exact and every claim can be checked:
@@ -229,7 +283,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      scored 1.30 without them), best-response last turn. Original item:
      public belief states, CFR over depth-limited subgames with value-net leaves,
      self-play value training; exact exploitability vs step 3.
-  5. [ ] **E1:** scale to full Ventures with factored (per-card) beliefs; judge vs `diverse_sym`.
+  5. [x] **E1:** scale to full Ventures with factored (per-card) beliefs; judge vs `diverse_sym`
+     (done: ReBeL loses; the audit led to opponent-robust rollouts, the best Ventures agent).
      - [x] **Price the approximations on Mini-Ventures** (2026-10-01): factored beliefs 0.0037,
        + per-hand values 0.0028, + 256 sampled public states per pass 0.0035 (exact: 0.0025;
        PPO 0.07). Sampling needs data: 0.093 at 2.5k last-turn examples, 0.006 at 5k.
@@ -281,7 +336,7 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
      - [ ] **Possible next steps.** Stronger exploiter recipes at full budget (~10 h each at
        this speed); rollouts from earlier than 6 cards with the faster code; the rollout agent in
        the play page; or leave Ventures here and carry the lessons to the next game.
-- [ ] **E. The principled endgame — ReBeL / Student of Games.** Search over public belief states
+- [x] **E. The principled endgame — ReBeL / Student of Games** (superseded by E0/E1 above). Search over public belief states
   (the only hidden information is one 8-card hand, so beliefs are tractable), CFR at each search
   step, value net over belief states, trained by self-play. Only if B + C plateau above zero
   exploitability.
@@ -308,8 +363,10 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
 3b. [ ] **Fix the leaky anchor (found 2026-09-29).** Against a heuristic that never gifts a
    playable card (`ventures_careful`), `league_control` scores only 0.570 (+6.8), against 0.816
    vs the plain one; PPO v2 loses (0.441). Next:
-   - [ ] Re-anchor the Ventures ladder on the careful heuristic (report both anchors).
-   - [ ] Continue Nash training with the careful heuristic in the league instead of the plain
+   - [x] Re-anchor the Ventures ladder on the careful heuristic (report both anchors): done,
+     the best agent is 2070 (plain) / 1960 (careful).
+   - [x] (done as the careful-only league, then `diverse` and `diverse_sym`, step 3c)
+     Continue Nash training with the careful heuristic in the league instead of the plain
      one; judge by score vs careful and by exploitability (max of ≥ 2 runs).
    - [x] A "careful" Camel Stocks heuristic (`camel_stocks_careful`): no dependence found. The
      agent beats it 0.966, more than the plain one (0.940).
@@ -334,7 +391,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
       the fix is Phase E, not tuning) **Endgame search**: few cards left means a small tree; search it deeply, where a human can
       out-calculate a policy (clock management, the stall).
    5. **Human games as a test set**: where does a human beat it, and in which positions?
-4. [ ] **Decision point: go deeper on Ventures, or move to Jaipur.**
+4. [x] **Decision point: go deeper on Ventures, or move to Jaipur** (both, in the end: E0/E1
+   on Ventures, then Camel Stocks).
    - *Move on* if the exploiter edge is at or below ~+2 points/game, or if step 3 gives nothing.
      Jaipur (Stage 2) then tests the recipe and interface on a second game, and brings the planned
      interface hardening (including a generic `player_view` hook, so the play UI works for any
@@ -450,9 +508,10 @@ recipe, which it never did on the card games.
   0.14 s, worst 0.26 s, 3.6 s/game; 1,600 sims median 0.74 s, worst 1.0 s, 16 s/game
 - [ ] More loop iterations (search still gaining ~+30 Elo per 12 iterations)
 - [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
-- [ ] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
-  the recipe and against audit-chosen rollouts
-- [ ] Eval: Elo-vs-iteration curve; play page
+- [x] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
+  the recipe (done: the AlphaGo recipe and loop above; the comparison with audit-chosen rollouts
+  moves to the search-audit item)
+- [x] Eval: Elo-vs-iteration curve (the 1,000-deal ladder over iterations 24/36/48); play page
 
 **Done when:** we know which of policy, rollouts and value-based search wins on a perfect-information
 game, and why.
@@ -476,7 +535,7 @@ Goal: implement CFR from scratch on a small game I built — the paradigm shift 
 - [x] Headline (from Stage 6, 2026-10-27): PPO self-play vs CFR on Liar's Dice, by exact
   exploitability: PPO and three Nash-phase variants stay 0.3–0.5 (payoff ±1) and cycle; CFR+
   0.00013 in 31 s
-- [ ] ~~2 dice each~~ out of reach for exact methods (~2^24 bid sequences per roll); would need
+- [x] ~~2 dice each~~ dropped: out of reach for exact methods (~2^24 bid sequences per roll); would need
   MCCFR / Deep CFR and loses the exact yardstick
 - [ ] Eval: CFR vs heuristic; inspect learned bluff/call frequencies for sanity
 
@@ -504,12 +563,12 @@ Goal: adopt the framework where it earns its place — CFR at scale, with verifi
 
 ## Stage 6 — Stretch / research edge *(optional, pick what stays fun)*
 
-- [ ] **PPO** in `agents/ppo/` — foundational algorithm to own (also the RLHF/post-training bridge to day-job + SLM work)
+- [x] **PPO** in `agents/ppo/` (built in Stage 1, the base of every recipe since) — foundational algorithm to own (also the RLHF/post-training bridge to day-job + SLM work)
 - [x] **Headline experiment:** PPO self-play vs CFR on Liar's Dice — measure the **exploitability gap** (done 2026-10-27, Stage 4). Make "why the field uses regret minimisation, not vanilla policy gradients" something I've *watched happen*.
 - [x] **NFSP** (PPO best response; Camel Stocks, vs Nash PPO at equal budget: exploitability 0.515 vs 0.509, but weaker: 0.456 head to head) — the bridge that targets equilibrium with RL-style best-response; compare against CFR and PPO
 - [ ] **No-limit Hold'em (scoped)** — blueprint agent over a small fixed action abstraction, explicitly "functional, not frontier"; explore action/card abstraction + the translation problem. *Not* aimed at strength.
 - [ ] **Hanabi (OpenSpiel)** — cooperative, imperfect-info; self-play coordination, reaching toward the open zero-shot / cross-play problem. The highest-ceiling rung the framework makes cheap.
-- [ ] Short writeup / notebook per experiment
+- [x] Short writeup / notebook per experiment (every experiment has a `writeup.md` findings entry)
 
 ---
 
@@ -533,7 +592,7 @@ exact answers to compare every learner against.
 - [x] PUCT search on the PPO net, 2 players (2026-10-28): the endgame errors go (last lot 0.049 →
   0, 1 left 0.096 → 0.034 at 800 simulations) but the opening gets worse (0.002 → 0.019); loss per
   game 0.33 → 0.20, flat beyond 200 simulations; head to head +0.08 ± 0.05 (not significant)
-- [ ] **Next, in order** (each scored move by move against the exact solution, as in `search`,
+- [x] **Next, in order** (each scored move by move against the exact solution, as in `search`,
   plus seat-balanced games against greedy PPO; 300 games per setting; one thread):
   1. [x] Endgame-only search (2026-10-28): from 2 lots left at 800 simulations, 0.168 ± 0.016
      per game (full search 0.201, PPO 0.329), opening kept at 0.002, +0.10 ± 0.05 vs PPO.
