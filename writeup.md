@@ -90,8 +90,10 @@ step, while expanding to more games and trying more approaches. Games so far:
    0.14 per game, and exact leaves 0.085 with the opening intact. ~~(c) 3-player search~~ Done
    ("Spendthrift: three-player search, and ties that break the yardstick"): +0.09 ± 0.04 against
    PPO at 200 simulations with an every-view value net; the exact per-move score is unreliable for
-   3 players because of kingmaking ties. Next (plan.md Stage 6b): the knobs (end predictability,
-   purses, a set bonus), then a tie-robust 3-player yardstick.
+   3 players because of kingmaking ties. Knobs, exact part done ("Spendthrift: what the knobs
+   change"): equilibrium spending per lot flipped does not depend on how predictable the end is;
+   the purse sets prices. Next (plan.md Stage 6b): PPO on the extreme variants, then a tie-robust
+   3-player yardstick.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -478,6 +480,57 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: what the knobs change (2026-10-28)
+
+Two-player Spendthrift, five lots, solved exactly for every combination of 1, 2 or 3 end cards
+(the game ends on the last one, or when the lots run out) and purses of 6, 8 or 10 coins
+(`experiments/spendthrift.py knobs`, `runs/spendthrift/knobs.json`; 168k to 1.9M states, 4–63 s
+each, one thread). Every number is exact. The registered game is the middle row (2 end cards, 8
+coins) and reproduces the earlier entries. A set bonus was not tried: it is a new scoring rule, so
+a design decision for the owner.
+
+How predictable the end is, before any play: lots flipped per game 2.50 ± 1.71 (1 end card), 3.33
+± 1.49 (2), 3.75 ± 1.30 (3) (mean ± standard deviation over deck orders).
+
+| End cards | Coins | Sold | Coins paid per point | Coins spent per lot flipped | Coins left at the end | Penalty decides | Last coin's value, 4 / 1 / 0 lots left |
+|---|---|---|---|---|---|---|---|
+| 1 | 6 | 0.83 | 0.52 | 0.72 | 70% | 42% | 0.42 / 0.48 / 0.37 |
+| 2 | 6 | 0.84 | 0.52 | 0.72 | 60% | 45% | 0.48 / 0.53 / 0.45 |
+| 3 | 6 | 0.84 | 0.51 | 0.71 | 56% | 46% | 0.53 / 0.57 / 0.49 |
+| 1 | 8 | 0.82 | 0.65 | 0.88 | 72% | 42% | 0.34 / 0.47 / 0.27 |
+| 2 | 8 | 0.84 | 0.64 | 0.88 | 63% | 47% | 0.40 / 0.50 / 0.36 |
+| 3 | 8 | 0.85 | 0.63 | 0.87 | 59% | 47% | 0.47 / 0.54 / 0.40 |
+| 1 | 10 | 0.94 | 0.81 | 1.18 | 71% | 42% | 0.28 / 0.29 / 0.23 |
+| 2 | 10 | 0.93 | 0.81 | 1.17 | 61% | 49% | 0.33 / 0.37 / 0.24 |
+| 3 | 10 | 0.94 | 0.79 | 1.15 | 57% | 51% | 0.39 / 0.38 / 0.26 |
+
+("Coins spent per lot flipped" is the coins spent per game divided by the expected number of lots
+flipped. A coin's value is in payoff, where a win is +1.)
+
+- **How predictable the end is does not change how fast coins are spent.** For a given purse,
+  equilibrium play spends the same per lot flipped whether the game has 1, 2 or 3 end cards
+  (0.72, 0.88 or about 1.17 coins, within 0.02 across end cards), and pays the same per point.
+  More coins are left over when the end comes early (70% with 1 end card, 57% with 3), but only
+  because fewer lots came up, not because anyone saved more. This is the "spend at a steady rate,
+  don't time the end" answer, now across rule variants (the earlier paired test found the same
+  within one game: an end card leaves the price unchanged in 88% of positions).
+- **The purse sets the price.** Coins per point rise 0.52 → 0.64 → 0.81 from 6 to 10 coins, about
+  8% of the purse per point in every case, and with 10 coins nearly every lot sells (93% against
+  83%: the 1-point lot stops going unsold).
+- **Tight purses make coins precious late; loose ones don't.** With 6 or 8 coins the last coin is
+  worth most with 1 lot left (0.53 vs 0.48, 0.50 vs 0.40 with 2 end cards). With 10 coins the
+  endgame peak almost disappears (0.37 vs 0.33; with 3 end cards none at all). That is where PPO
+  went wrong in the registered game, so the prediction for learners: the 10-coin variants should
+  be easier for PPO's endgame and the 6-coin ones harder.
+- **More end cards make a coin worth more throughout** (8 coins, 4 lots left: 0.34, 0.40, 0.47
+  for 1, 2, 3 end cards): a longer expected game leaves more chances for the penalty to bite (42%
+  → 47%).
+- **An end card matters more with a bigger purse.** Paired positions with 2 end cards, one seen vs
+  none: the auction's winner changes in 18%, 27% and 46% of positions with 6, 8 and 10 coins, and
+  the price is unchanged in 88%, 88% and 68%. With 3 end cards, seeing the first barely matters
+  (the winner changes in 2–5%).
+- The first opener's edge stays small (+0.003 to +0.083).
 
 ### Spendthrift: three-player search, and ties that break the yardstick (2026-10-28)
 

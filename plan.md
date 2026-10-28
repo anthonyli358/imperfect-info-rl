@@ -554,8 +554,12 @@ exact answers to compare every learner against.
      player (`spendthrift3` is not zero-sum
      between any two seats), scored the same way against the solver's equilibrium and by NashConv
      where affordable
-- [ ] Knobs: end predictability (more or fewer end cards), tighter purses, a set bonus; then a size
-  beyond exact reach
+- [x] Knobs, exact (2026-10-28; `knobs` stage, 1–3 end cards × 6–10 coins): spending per lot
+  flipped does not depend on how predictable the end is; the purse sets prices (~8% of it per
+  point); only tight purses make the last coin precious late
+- [ ] PPO on the extreme variants (6 vs 10 coins): is its endgame worse where coins are
+  precious late, as predicted?
+- [ ] A set bonus (a new scoring rule; needs the owner's design call); a size beyond exact reach
 - [ ] 3 players: a tie-robust yardstick (best and worst tie-break per move, or perturbed payoffs
   for a unique equilibrium); more head-to-head games
 

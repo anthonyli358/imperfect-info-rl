@@ -28,6 +28,7 @@ number of players with max-n PUCT (a value per player; ``maxn_<game>.json``).
     uv run python -m experiments.spendthrift search sims=0,50,200,800 endgame=0,1,2
     uv run python -m experiments.spendthrift value
     uv run python -m experiments.spendthrift maxn game=spendthrift3
+    uv run python -m experiments.spendthrift knobs ends=1,2,3 coins=6,8,10
 """
 
 from __future__ import annotations
@@ -195,6 +196,50 @@ def coin_value(sol: Solution, s: SpendthriftState, p: int) -> float:
     return float(sol.value(s)[p] - sol.value(fewer)[p])
 
 
+def tempo_stats(game: Spendthrift, sol: Solution) -> dict:
+    """Paired end-card openings and the value of a coin through the game, under ``sol``."""
+    reach = openings(game, sol)
+    # Pairs: every opening with no end card seen yet, against the same with one seen.
+    base = {s: w for s, w in reach.items() if s.ends_seen == 0 and game.ends >= 2}
+    total = sum(base.values())
+    acc = defaultdict(float)
+    for s, w in base.items():
+        t = toggle_end(game, s)
+        (wa, pa), (wb, pb) = auction_outcome(game, sol, s), auction_outcome(game, sol, t)
+        w /= total
+        acc["sold_before"] += w * (wa >= 0)
+        acc["sold_after"] += w * (wb >= 0)
+        acc["price_before"] += w * pa
+        acc["price_after"] += w * pb
+        acc["price_up"] += w * (pb > pa)
+        acc["price_down"] += w * (pb < pa)
+        acc["winner_changes"] += w * (wa != wb)
+        for p in range(game.players):
+            if s.coins[p]:
+                acc["coin_before"] += w * coin_value(sol, s, p) / game.players
+                acc["coin_after"] += w * coin_value(sol, t, p) / game.players
+    # The value of a coin through the game, by end cards seen and lots left in the deck.
+    by_phase = defaultdict(lambda: [0.0, 0.0])
+    by_lots = defaultdict(lambda: [0.0, 0.0])
+    for s, w in reach.items():
+        for p in range(game.players):
+            if s.coins[p]:
+                v = coin_value(sol, s, p)
+                key = f"ends_seen={s.ends_seen} lots_left={s.deck.bit_count()}"
+                by_phase[key][0] += w * v
+                by_phase[key][1] += w
+                by_lots[s.deck.bit_count()][0] += w * v
+                by_lots[s.deck.bit_count()][1] += w
+    return {
+        "pairs": len(base),
+        "paired": {k: round(v, 4) for k, v in acc.items()},
+        "coin_value": {k: round(v / n, 4) for k, (v, n) in sorted(by_phase.items())},
+        "coin_value_by_lots_left": {
+            str(k): round(v / n, 4) for k, (v, n) in sorted(by_lots.items(), reverse=True)
+        },
+    }
+
+
 def run_tempo() -> None:
     """Paired positions: does the same auction go differently once an end card is seen?"""
     OUT.mkdir(parents=True, exist_ok=True)
@@ -202,40 +247,8 @@ def run_tempo() -> None:
     for name in ("spendthrift", "spendthrift3"):
         game = make(name)
         sol = solve(game)
-        reach = openings(game, sol)
-        # Pairs: every opening with no end card seen yet, against the same with one seen.
-        base = {s: w for s, w in reach.items() if s.ends_seen == 0 and game.ends >= 2}
-        total = sum(base.values())
-        acc = defaultdict(float)
-        for s, w in base.items():
-            t = toggle_end(game, s)
-            (wa, pa), (wb, pb) = auction_outcome(game, sol, s), auction_outcome(game, sol, t)
-            w /= total
-            acc["sold_before"] += w * (wa >= 0)
-            acc["sold_after"] += w * (wb >= 0)
-            acc["price_before"] += w * pa
-            acc["price_after"] += w * pb
-            acc["price_up"] += w * (pb > pa)
-            acc["price_down"] += w * (pb < pa)
-            acc["winner_changes"] += w * (wa != wb)
-            for p in range(game.players):
-                if s.coins[p]:
-                    acc["coin_before"] += w * coin_value(sol, s, p) / game.players
-                    acc["coin_after"] += w * coin_value(sol, t, p) / game.players
-        # The value of a coin through the game, by end cards seen and lots left in the deck.
-        by_phase = defaultdict(lambda: [0.0, 0.0])
-        for s, w in reach.items():
-            for p in range(game.players):
-                if s.coins[p]:
-                    key = f"ends_seen={s.ends_seen} lots_left={s.deck.bit_count()}"
-                    by_phase[key][0] += w * coin_value(sol, s, p)
-                    by_phase[key][1] += w
-        results[name] = {
-            "pairs": len(base),
-            "paired": {k: round(v, 4) for k, v in acc.items()},
-            "coin_value": {k: round(v / n, 4) for k, (v, n) in sorted(by_phase.items())},
-        }
-        print(f"\n{game.game_type.long_name}: {len(base):,} paired openings")
+        results[name] = tempo_stats(game, sol)
+        print(f"\n{game.game_type.long_name}: {results[name]['pairs']:,} paired openings")
         for k, v in results[name]["paired"].items():
             print(f"  {k:<15} {v:.4f}")
         print("  value of the last coin (expected payoff; a win is +1):")
@@ -243,6 +256,84 @@ def run_tempo() -> None:
             print(f"    {k:<26} {v:.4f}")
         del sol
     (OUT / "tempo.json").write_text(json.dumps(results, indent=1), "utf-8")
+
+
+def lots_auctioned(lots: int, ends: int) -> tuple[float, float]:
+    """Mean and standard deviation of how many lots are flipped before the game ends.
+
+    The deck is shuffled lots and end cards; the game ends on the last end card or when no lots
+    are left, whichever comes first. This is the end's unpredictability, before any play.
+    """
+    dist: dict[int, float] = defaultdict(float)
+
+    def walk(lots_left: int, ends_left: int, flipped: int, prob: float) -> None:
+        if ends_left == 0 or lots_left == 0:
+            dist[flipped] += prob
+            return
+        total = lots_left + ends_left
+        walk(lots_left, ends_left - 1, flipped, prob * ends_left / total)
+        walk(lots_left - 1, ends_left, flipped + 1, prob * lots_left / total)
+
+    walk(lots, ends, 0, 1.0)
+    mean = sum(k * p for k, p in dist.items())
+    sd = sum((k - mean) ** 2 * p for k, p in dist.items()) ** 0.5
+    return mean, sd
+
+
+def run_knobs() -> None:
+    """The tempo profile of the exact solution across rule variants (two players, five lots).
+
+    Knobs: ``ends`` (end cards in the deck; the game ends on the last one), and ``coins`` (each
+    purse). Every variant is solved exactly and summarised as in ``solve`` and ``tempo``.
+    ``key=value``: ``ends``, ``coins`` (comma-separated). Output: ``runs/spendthrift/knobs.json``
+    (resumable by variant).
+    """
+    args = dict(item.split("=") for item in sys.argv[2:])
+    ends_list = [int(x) for x in args.get("ends", "1,2,3").split(",")]
+    coins_list = [int(x) for x in args.get("coins", "6,8,10").split(",")]
+    path = OUT / "knobs.json"
+    results = json.loads(path.read_text("utf-8")) if path.exists() else {}
+    for ends, coins in [(e, c) for e in ends_list for c in coins_list]:
+        label = f"ends={ends} coins={coins}"
+        if label in results:
+            continue
+        game = Spendthrift(2, lots=5, ends=ends, coins=coins)
+        t = time.perf_counter()
+        sol = solve(game)
+        seconds = time.perf_counter() - t
+        stats = on_path(game, sol)
+        mean, sd = lots_auctioned(game.lots, ends)
+        auctions = stats["auctions"]
+        p_any = sum(r["p_auctioned"] for r in auctions)
+        p_sold = sum(r["p_auctioned"] * r["p_sold"] for r in auctions)
+        paid = sum(r["p_auctioned"] * r["p_sold"] * (r["mean_price"] or 0) for r in auctions)
+        face = sum(r["p_auctioned"] * r["p_sold"] * r["lot"] for r in auctions)
+        share = sum(
+            r["p_auctioned"] * r["p_sold"] * (r["mean_share_of_purse"] or 0) for r in auctions
+        )
+        results[label] = {
+            "states": len(sol.values),
+            "solve_seconds": round(seconds, 1),
+            "first_opener_value": round(float(sol.value(game.new_initial_state())[0]), 4),
+            "lots_auctioned_mean": round(mean, 3),
+            "lots_auctioned_sd": round(sd, 3),
+            "p_sold": round(p_sold / p_any, 4),
+            "coins_per_point": round(paid / face, 4),
+            "share_of_purse": round(share / p_sold, 4),
+            "coins_left_share": round(stats["end"]["coins_left"] / coins, 4),
+            **{k: v for k, v in stats["end"].items() if k != "coins_left"},
+            **tempo_stats(game, sol),
+        }
+        r = results[label]
+        print(
+            f"{label}: {r['states']:,} states, {seconds:.0f}s; lots auctioned {mean:.2f} +- "
+            f"{sd:.2f}; sold {r['p_sold']:.3f}; {r['coins_per_point']:.2f} coins per point; "
+            f"coins left {r['coins_left_share']:.2f}; penalty bites {r['penalty_bites']:.3f}; "
+            f"coin value by lots left {r['coin_value_by_lots_left']}; paired {r['paired']}",
+            flush=True,
+        )
+        path.write_text(json.dumps(results, indent=1), "utf-8")
+        del sol
 
 
 PPO = PPOConfig(
@@ -870,5 +961,6 @@ if __name__ == "__main__":
         "search": run_search,
         "value": run_value,
         "maxn": run_maxn,
+        "knobs": run_knobs,
     }
     stages[sys.argv[1]]()
