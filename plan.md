@@ -66,7 +66,7 @@ Absolute imports everywhere (`from iirl.core.game import Game`), identical from 
 What "finished" means here: every rung on the ladder ends with a stated best agent, its strength
 with error bars, and the reason each method won or failed. The repo is clean enough to hand over,
 and the branch is merged. What is left, in order (each step ends, as always, with `writeup.md`
-and `plan.md` updated and a commit):
+and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's call):
 
 **Phase 1 — close Spendthrift (Stage 6b).** About two sessions.
 1. Resume PPO on the purse variants (`spendthrift_tight`, `spendthrift_loose`; command in Stage
@@ -85,19 +85,31 @@ and `plan.md` updated and a commit):
 3. Ventures: re-rate net-guided PIMC on today's yardstick (the last stale number), and analyse
    the recorded human games (only one so far, so record a few more first or drop it).
 
-**Phase 3 — the last rung.** **Owner decision first:**
-- *Recommended:* **Stage 5's finale, heads-up limit Hold'em.** First Deep CFR on Leduc, where
-  exact exploitability checks it against CFR+ and ReBeL. Then external-sampling MCCFR on limit
-  Hold'em, too big for exact exploitability, so judged by head-to-head play with variance reduction
-  and a local best response. It completes the imperfect-information story the repo is named for.
-  A few sessions.
-- *Alternative:* **Stage 7** (an original game on The Confrontation's mechanics, an entity policy).
-  A new engine, a transformer encoder, baselines and training: the largest single item left. Better
-  as a project of its own.
-- No-limit Hold'em, Hanabi and the Rust engine (Stage 1b D) become "future work" in the
-  writeup, not rungs.
+**Phase 3 — poker's finale, heads-up limit Hold'em (Stage 5).** A few sessions.
+1. Deep CFR on Leduc, where exact exploitability checks it against CFR+ (0.0002) and ReBeL (0.07).
+2. External-sampling MCCFR on heads-up limit Hold'em (OpenSpiel's engine). Too big for exact
+   exploitability, so it is judged by large-sample head-to-head play against baselines, with
+   variance reduction and a local best response.
+3. OpenSpiel agents wired into the `iirl/eval/` tournament runner.
 
-**Phase 4 — wrap-up.** One or two sessions.
+**Phase 4 — the entity rung (Stage 7, owner's choice, 2026-10-28).** The largest item left:
+several sessions.
+1. **Owner decision:** the original design on The Confrontation's mechanical skeleton. That means
+   its name, theme, the two asymmetric rosters of nine, the region graph and the combat cards, all
+   our own (Reiner Knizia credited as inspiration only). I draft it, the owner approves it.
+2. Engine behind the `Game`/`State` interface (hidden identities, legal-move masks), with unit
+   tests and the conformance suite; a heuristic and ISMCTS (the existing PIMC) as baselines.
+3. Flat-MLP PPO with the usual recipe: the baseline every entity result is measured against.
+4. Entity encoder (a token per piece plus a global token; transformer; pointer head for the
+   piece, target head for the region), trained by PPO self-play plus a league, then R-NaD.
+5. Evaluation: Elo against the baselines, the entity-vs-flat encoder ablation, and an exploiter
+   (approximate exploitability). Done when the entity agent beats both flat PPO and ISMCTS.
+6. Play page board.
+
+No-limit Hold'em, Hanabi and the Rust engine (Stage 1b D) become "future work" in the writeup,
+not rungs.
+
+**Phase 5 — wrap-up.** One or two sessions.
 1. The cross-cutting definition of done, checked game by game:
    - Docstrings and lint: `ruff` already enforces both.
    - The conformance suite runs on every registered game: already true, so confirm it.

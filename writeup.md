@@ -51,7 +51,7 @@ step, while expanding to more games and trying more approaches. Games so far:
   simulations. "Nash-seeking" is unnecessary there (minimax needs no mixing).
 
 **Open threads, in the order I would take them** (the finishing plan in `plan.md` orders
-what is left into four phases and is the one to follow):
+what is left into five phases, limit Hold'em then Stage 7, and is the one to follow):
 
 1. ~~Tessera board renderer~~ Done 2026-10-24 (`viz/play.html`, from the **Ladder design system**:
    https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5). ~~Apply the system to the Ventures and
