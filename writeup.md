@@ -90,8 +90,8 @@ step, while expanding to more games and trying more approaches. Games so far:
    0.14 per game, and exact leaves 0.085 with the opening intact. ~~(c) 3-player search~~ Done
    ("Spendthrift: three-player search, and ties that break the yardstick"): +0.09 ± 0.04 against
    PPO at 200 simulations with an every-view value net; the exact per-move score is unreliable for
-   3 players because of kingmaking ties. Next (plan.md Stage 6b): (c, was) 3-player
-   search with a value per player. Then the knobs (end predictability, purses, a set bonus).
+   3 players because of kingmaking ties. Next (plan.md Stage 6b): the knobs (end predictability,
+   purses, a set bonus), then a tie-robust 3-player yardstick.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
