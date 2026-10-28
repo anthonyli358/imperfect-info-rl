@@ -87,8 +87,10 @@ step, while expanding to more games and trying more approaches. Games so far:
    per game 0.33 → 0.20. ~~(a) Search only for the last K lots~~ Done ("Spendthrift: search only
    at the end"): searching from 2 lots left gives 0.17 per game. ~~(b) A value net trained on
    self-play outcomes~~ Done ("Spendthrift: the leaf value was the problem"): search on it gives
-   0.14 per game, and exact leaves 0.085 with the opening intact. Next, in order (plan.md Stage
-   6b): (c) 3-player
+   0.14 per game, and exact leaves 0.085 with the opening intact. ~~(c) 3-player search~~ Done
+   ("Spendthrift: three-player search, and ties that break the yardstick"): +0.09 ± 0.04 against
+   PPO at 200 simulations with an every-view value net; the exact per-move score is unreliable for
+   3 players because of kingmaking ties. Next (plan.md Stage 6b): (c, was) 3-player
    search with a value per player. Then the knobs (end predictability, purses, a set bonus).
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
@@ -476,6 +478,60 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: three-player search, and ties that break the yardstick (2026-10-28)
+
+`agents/alphazero/mcts.py` backs up one number and flips its sign between two players, so it
+cannot search three. New: `agents/alphazero/multiplayer.py`, max-n PUCT. Every edge keeps a value
+per player, a simulation backs up the whole vector, and each node selects by its own mover's
+component; leaves are batched with virtual loss on the mover's component. Tested
+(`tests/test_multiplayer_search.py`): with exact leaves it finds near-equilibrium moves for 2 and 3
+players. Run: `experiments/spendthrift.py maxn` (`runs/spendthrift/maxn_<game>.json`). PPO priors
+throughout; 300 self-play games scored move by move plus 300 games with the searcher in one seat
+(rotated) and greedy PPO in the others; ± one standard error; one thread.
+
+A max-n search needs every player's value at a leaf, so the value net is trained on *every*
+player's view of each sampled position (100,000 PPO self-play games, 4 positions each, one row
+per player; same net and early stopping as before).
+
+**Check on two players:** max-n with exact leaves at 200 simulations gives 0.1521 ± 0.0153 per
+game, exactly the two-player search's number (same seeds; with two zero-sum players the two
+searches build the same tree). With the every-view value net: 0.184 ± 0.021 (the mover-only net
+under the two-player search: 0.154 ± 0.017).
+
+**Three players** (payoff: a win is +1, a loss −0.5):
+
+| Leaves | Given up per game vs the solver's equilibrium | vs greedy PPO (2 opponents) |
+|---|---|---|
+| none (greedy PPO) | 0.412 ± 0.031 | +0.06 ± 0.04 (PPO against itself, seat noise) |
+| PPO value head, 200 / 800 | 1.43 / 1.64 | −0.19 / −0.31 ± 0.03 (broken, see below) |
+| every-view value net, 200 / 800 | 0.397 ± 0.023 / 0.453 ± 0.027 | **+0.09 ± 0.04** / +0.00 ± 0.04 |
+| exact equilibrium values, 200 / 800 | 0.329 ± 0.015 / 0.335 ± 0.016 | +0.02 / +0.01 ± 0.04 |
+
+- **PPO's value head cannot value a position for anyone but the mover.** Read from a non-mover's
+  view it is off by ~10⁵: its "it is my turn" input was always 1 in training, its standard
+  deviation was floored at 1e-6 by the feature normalisation, and a 0 there becomes an input of
+  −10⁶. The PPO-head rows say nothing about search. A max-n search needs a value net trained on
+  every view.
+- **The per-move yardstick breaks down for three players.** Even with exact leaves, search agreed
+  with PPO in the opening and "gave up" 0.33 per game. The cause is ties. At the very first
+  auction, after player 0 bids 2, the game reaches positions (with probability 0.1–0.2) where
+  another player is exactly indifferent between two moves that move player 0's value by up to
+  0.5: kingmaking. The solver breaks such ties towards passing; the search breaks them by noise.
+  A move is scored against one equilibrium's tie-breaks, so a lot of this "loss" is disagreement
+  about ties, not error. For three players the per-move score is not a measure of skill; NashConv
+  (for policies) and head-to-head play are.
+- **Head to head, the every-view value net helps at 200 simulations** (+0.09 ± 0.04, 2.4 standard
+  errors above PPO; the PPO-vs-itself control is +0.06 ± 0.04, so the margin over that is within
+  noise) **and not at 800** (+0.00). Exact equilibrium leaves give nothing (+0.02): they value
+  positions as if the others play the solver's equilibrium, and greedy PPO opponents do not.
+- **So for three players, search on top of PPO is roughly neutral here.** The two-player picture
+  (search fixes the endgame and, with a good value, beats PPO) does not carry over. With more than
+  two players a position's value depends on how the others break ties among themselves, which no
+  single value function captures.
+- Next for three players: a yardstick that is robust to ties (score a move against the best and
+  worst tie-breaks, or perturb payoffs so the equilibrium is unique); more head-to-head games
+  (the ± is 0.04 at 300).
 
 ### Spendthrift: the leaf value was the problem (2026-10-28)
 

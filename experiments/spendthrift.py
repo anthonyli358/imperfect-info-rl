@@ -19,13 +19,15 @@ its decisions give up against perfect play, by phase and by overbidding or under
 ``search`` runs PUCT search on the final PPO net and scores every move it makes exactly (output:
 ``runs/spendthrift/search.json``); ``endgame=K`` searches only once K or fewer lots are left.
 ``value`` trains a value net on PPO's self-play outcomes, measures every leaf value against the
-exact values, and reruns the search with each (``value.json``).
+exact values, and reruns the search with each (``value.json``). ``maxn`` does the same for any
+number of players with max-n PUCT (a value per player; ``maxn_<game>.json``).
 
     uv run python -m experiments.spendthrift solve
     uv run python -m experiments.spendthrift tempo
     uv run python -m experiments.spendthrift ppo game=spendthrift iterations=200
     uv run python -m experiments.spendthrift search sims=0,50,200,800 endgame=0,1,2
     uv run python -m experiments.spendthrift value
+    uv run python -m experiments.spendthrift maxn game=spendthrift3
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ import torch
 
 from iirl.agents.alphazero.agent import AlphaZeroAgent
 from iirl.agents.alphazero.mcts import PUCTConfig
+from iirl.agents.alphazero.multiplayer import MultiPUCTAgent, NetMultiEvaluator
 from iirl.agents.base import Agent
 from iirl.agents.ppo import PPOAgent
 from iirl.agents.random_agent import RandomAgent
@@ -465,22 +468,23 @@ class ExactLeaves:
 
 
 def score_agent(game: Spendthrift, sol: Solution, agent: Agent, ppo: Agent, games: int) -> dict:
-    """``games`` self-play games scored move by move, and as many seat-balanced games vs ``ppo``.
+    """``games`` self-play games scored move by move, and as many seat-rotated games vs ``ppo``.
 
     Deal seeds are fixed (``0..games-1`` and ``10_000 + g``), so every agent sees the same deals.
     """
     t = time.perf_counter()
     per_game, by_phase, n_phase = [], defaultdict(float), defaultdict(int)
     for g in range(games):
-        _, losses = play_scored(game, sol, [agent, agent], seed=g)
+        _, losses = play_scored(game, sol, [agent] * game.num_players, seed=g)
         per_game.append(sum(x for _, x in losses))
         for k, x in losses:
             by_phase[k] += x
             n_phase[k] += 1
     scores = []
     for g in range(games):
-        seat = g % 2
-        seats = [agent, ppo] if seat == 0 else [ppo, agent]
+        seat = g % game.num_players
+        seats = [ppo] * game.num_players
+        seats[seat] = agent  # the others are all greedy PPO
         rets, _ = play_scored(game, sol, seats, seed=10_000 + g)
         scores.append(rets[seat])
     lost, sc = np.asarray(per_game), np.asarray(scores)
@@ -569,9 +573,13 @@ def self_play_values(game: Spendthrift, probs: dict) -> dict[SpendthriftState, n
 
 
 def self_play_positions(
-    game: Spendthrift, probs: dict, games: int, per_game: int, seed: int
+    game: Spendthrift, probs: dict, games: int, per_game: int, seed: int, all_views: bool = False
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Play ``games`` games under ``probs``; sample positions with the mover's final return."""
+    """Play ``games`` games under ``probs``; sample positions with the mover's final return.
+
+    With ``all_views`` each sampled position gives one row per player (that player's view and
+    return), for a value net that can value a position for anyone.
+    """
     rng = np.random.default_rng(seed)
     feats, ys = [], []
     for _ in range(games):
@@ -587,8 +595,9 @@ def self_play_positions(
         rets = game.returns(s)
         for i in rng.choice(len(seen), size=min(per_game, len(seen)), replace=False):
             x = seen[i]
-            feats.append(game.information_state_tensor(x, x.to_move))
-            ys.append(rets[x.to_move])
+            for p in range(game.num_players) if all_views else (x.to_move,):
+                feats.append(game.information_state_tensor(x, p))
+                ys.append(rets[p])
     return np.stack(feats).astype(np.float32), np.asarray(ys, dtype=np.float32)
 
 
@@ -734,6 +743,125 @@ def run_value() -> None:
         path.write_text(json.dumps(results, indent=1), "utf-8")
 
 
+class ExactMulti:
+    """Priors from the PPO net, every player's exact equilibrium value at the leaves."""
+
+    def __init__(self, net: PolicyValueNet, sol: Solution) -> None:
+        """Priors from ``net``, values from ``sol``."""
+        self.priors, self.sol = NetEvaluator(net), sol
+
+    def evaluate_batch(self, game, states):  # noqa: ANN001, ANN201
+        """Per-state priors and a ``(len(states), num_players)`` value array."""
+        priors, _ = self.priors.evaluate_batch(game, states)
+        return priors, np.stack([self.sol.value(s) for s in states])
+
+
+def view_values(game: Spendthrift, net: PolicyValueNet, states: list) -> np.ndarray:
+    """The value head read from every player's view: a ``(len(states), num_players)`` array."""
+    n = game.num_players
+    out = []
+    for i in range(0, len(states), 4096):
+        chunk = states[i : i + 4096]
+        feats = np.stack([game.information_state_tensor(s, p) for s in chunk for p in range(n)])
+        with torch.no_grad():
+            v = net(torch.as_tensor(feats, dtype=torch.float32))[1].numpy()
+        out.append(v.reshape(len(chunk), n))
+    return np.concatenate(out)
+
+
+def run_maxn() -> None:
+    """Max-n PUCT (a value per player) on PPO priors, with three kinds of leaf value.
+
+    Leaves: the PPO value head read from each player's view (``ppo_head``), a value net trained on
+    every player's view of PPO's self-play positions (``value_net``, as in ``value``), and the
+    exact equilibrium values (``exact``, the upper bound). Leaf errors are measured exactly over
+    every (player node, player) pair, weighted by PPO's self-play reach and unweighted. Each agent
+    plays ``games`` self-play games scored move by move against the solution, and ``games`` games
+    in one seat (rotated) against greedy PPO in the others. ``key=value``: ``game``, ``games``,
+    ``sims``, ``leaves`` (comma-separated), ``train_games``. Output:
+    ``runs/spendthrift/maxn_<game>.json`` (value net ``maxn_<game>_value.pt``).
+    """
+    args = dict(item.split("=") for item in sys.argv[2:])
+    name = args.get("game", "spendthrift3")
+    games = int(args.get("games", 300))
+    budgets = [int(x) for x in args.get("sims", "200,800").split(",")]
+    kinds = args.get("leaves", "ppo_head,value_net,exact").split(",")
+    train_games = int(args.get("train_games", 100_000))
+    torch.set_num_threads(4)
+    game = make(name)
+    sol = solve(game)
+    nodes = list(sol.choice)
+    net = PPOAgent.from_checkpoint(f"runs/spendthrift/{name}_ppo_200.pt").net
+    probs = net_probs(game, net, nodes, greedy=False)
+    path, vpath = OUT / f"maxn_{name}.json", OUT / f"maxn_{name}_value.pt"
+    results = json.loads(path.read_text("utf-8")) if path.exists() else {}
+    actions = game.num_distinct_actions()
+    if vpath.exists():
+        ck = torch.load(vpath, map_location="cpu", weights_only=False)
+        vnet = PolicyValueNet(ck["input_dim"], actions, (256, 256), "tanh")
+        vnet.load_state_dict(ck["state_dict"])
+        vnet.eval()
+    else:
+        t = time.perf_counter()
+        x, y = self_play_positions(game, probs, train_games, per_game=4, seed=0, all_views=True)
+        cut = len(x) - len(x) // 12  # rows are grouped by game, so this splits by game
+        vnet, mse, curve = fit_value(x[:cut], y[:cut], x[cut:], y[cut:], actions)
+        torch.save({"state_dict": vnet.state_dict(), "input_dim": vnet.input_dim}, vpath)
+        results["training"] = {
+            "games": train_games,
+            "rows": len(x),
+            "held_out_mse": round(mse, 4),
+            "held_out_mse_constant": round(float(np.mean((y[cut:] - y[:cut].mean()) ** 2)), 4),
+            "curve": curve,
+            "minutes": round((time.perf_counter() - t) / 60, 1),
+        }
+        print(f"value net: {results['training']}", flush=True)
+        path.write_text(json.dumps(results, indent=1), "utf-8")
+    if "leaf_error" not in results:
+        reach = reach_under(game, probs)
+        sp = self_play_values(game, probs)
+        eq = np.stack([sol.value(s) for s in nodes])
+        spv = np.stack([sp[s] for s in nodes])
+        w = np.repeat(np.asarray([reach.get(s, 0.0) for s in nodes])[:, None], game.players, 1)
+        ones = np.ones_like(w)
+        rows = {}
+        heads = {
+            "ppo_head": view_values(game, net, nodes),
+            "value_net": view_values(game, vnet, nodes),
+        }
+        for key, v in heads.items():
+            rows[key] = {
+                target: {"on_path": rms(v - ref, w), "everywhere": rms(v - ref, ones)}
+                for target, ref in (("equilibrium", eq), ("self_play", spv))
+            }
+        rows["self_play_vs_equilibrium"] = {
+            "on_path": rms(spv - eq, w),
+            "everywhere": rms(spv - eq, ones),
+        }
+        results["leaf_error"] = rows
+        print(f"leaf error: {json.dumps(rows)}", flush=True)
+        path.write_text(json.dumps(results, indent=1), "utf-8")
+    torch.set_num_threads(1)
+    ppo = Greedy(net)
+    search = results.setdefault("search", {})
+    if "ppo" not in search:
+        search["ppo"] = score_agent(game, sol, ppo, ppo, games)
+        print_row("ppo", search["ppo"])
+    leaves = {
+        "ppo_head": NetMultiEvaluator(net, net),
+        "value_net": NetMultiEvaluator(net, vnet),
+        "exact": ExactMulti(net, sol),
+    }
+    for kind, sims in [(kind, sims) for kind in kinds for sims in budgets]:
+        label = f"{kind}@{sims}"
+        if label in search:
+            continue
+        agent = MultiPUCTAgent(leaves[kind], sims, label)
+        search[label] = score_agent(game, sol, agent, ppo, games)
+        print_row(label, search[label])
+        path.write_text(json.dumps(results, indent=1), "utf-8")
+
+
 if __name__ == "__main__":
     stages = {
         "solve": run_solve,
@@ -741,5 +869,6 @@ if __name__ == "__main__":
         "ppo": run_ppo,
         "search": run_search,
         "value": run_value,
+        "maxn": run_maxn,
     }
     stages[sys.argv[1]]()

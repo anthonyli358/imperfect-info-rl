@@ -547,11 +547,17 @@ exact answers to compare every learner against.
      value net trained on self-play outcomes (the Tessera recipe), then search on it at
      50–800 simulations: does a better leaf value stop the opening getting worse as simulations
      grow?
-  3. [ ] 3-player search: PUCT backing up a value per player (`spendthrift3` is not zero-sum
+  3. [x] 3-player search (2026-10-28; `agents/alphazero/multiplayer.py`, max-n PUCT): +0.09 ±
+     0.04 vs PPO at 200 simulations with an every-view value net, +0.00 at 800; exact leaves
+     +0.02. The per-move score against the solver is unreliable for 3 players (kingmaking ties).
+     PPO's critic is unusable from a non-mover's view. Planned as: PUCT backing up a value per
+     player (`spendthrift3` is not zero-sum
      between any two seats), scored the same way against the solver's equilibrium and by NashConv
      where affordable
 - [ ] Knobs: end predictability (more or fewer end cards), tighter purses, a set bonus; then a size
   beyond exact reach
+- [ ] 3 players: a tie-robust yardstick (best and worst tie-break per move, or perturbed payoffs
+  for a unique equilibrium); more head-to-head games
 
 ---
 
