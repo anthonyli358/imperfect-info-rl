@@ -85,9 +85,10 @@ step, while expanding to more games and trying more approaches. Games so far:
    ("Spendthrift: search fixes the endgame and spoils the opening") confirmed the prediction for
    the endgame (last-lot errors to 0) but made the opening worse at 800 simulations; overall loss
    per game 0.33 → 0.20. ~~(a) Search only for the last K lots~~ Done ("Spendthrift: search only
-   at the end"): searching from 2 lots left is the best agent yet, 0.17 per game. Next, in order
-   (plan.md Stage 6b): (b) a value
-   net trained on self-play outcomes (the Tessera recipe) under the same search; (c) 3-player
+   at the end"): searching from 2 lots left gives 0.17 per game. ~~(b) A value net trained on
+   self-play outcomes~~ Done ("Spendthrift: the leaf value was the problem"): search on it gives
+   0.14 per game, and exact leaves 0.085 with the opening intact. Next, in order (plan.md Stage
+   6b): (c) 3-player
    search with a value per player. Then the knobs (end predictability, purses, a set bonus).
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
@@ -475,6 +476,59 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: the leaf value was the problem (2026-10-28)
+
+Direct test of the explanation from the last two entries: search spoils the opening because PPO's
+value head, which search uses at its leaves, is worse than PPO's policy far from the end.
+`experiments/spendthrift.py value` (`runs/spendthrift/value.json`):
+
+- **A value net, the Tessera recipe:** 100,000 games of PPO's own sampled self-play, 4 positions
+  each (366k positions), target the mover's final return, a (256, 256) tanh net early-stopped on
+  held-out games (1/12). Held-out MSE 0.774, against 0.946 for a constant; under a minute.
+- **Exact leaf errors:** every value is compared with the exact values at all 700k player nodes,
+  weighted by how often PPO's self-play reaches each one ("on path") or unweighted ("everywhere",
+  since search also visits positions self-play rarely reaches).
+- **Search on each leaf value,** PPO priors throughout, scored as before (300 + 300 games on the
+  same seeds, ± one standard error, one thread). Exact equilibrium values at the leaves are the
+  upper bound.
+
+Leaf errors (root-mean-square, payoffs are ±1):
+
+| Leaf value | vs equilibrium, on path | vs PPO's self-play value, on path | vs equilibrium, everywhere |
+|---|---|---|---|
+| PPO value head | 0.31 | 0.18 | **1.34** |
+| value net (self-play outcomes) | 0.32 | 0.18 | **0.69** |
+| PPO's exact self-play value (the target itself) | 0.28 | 0 | 0.27 |
+
+Search results:
+
+| Leaves | 50 simulations | 200 | 800 | vs greedy PPO at 800 |
+|---|---|---|---|---|
+| PPO value head (earlier entry) | 0.269 ± 0.029 | 0.200 ± 0.019 | 0.201 ± 0.017 | +0.02 ± 0.05 |
+| value net | 0.282 ± 0.030 | 0.154 ± 0.017 | **0.140 ± 0.014** | **+0.11 ± 0.05** |
+| exact equilibrium values | 0.266 ± 0.030 | 0.152 ± 0.015 | **0.085 ± 0.011** | +0.09 ± 0.05 |
+
+Payoff given up per decision in the opening (4 lots left) at 800 simulations: PPO head 0.019,
+value net 0.005, exact 0.002 (greedy PPO 0.002).
+
+- **The explanation holds.** With exact leaves the opening is not spoiled at any budget (0.002),
+  and loss keeps falling with simulations (0.27 → 0.15 → 0.085) instead of stalling at 200. So
+  it was the leaves, not search itself.
+- **What was wrong with PPO's value head is off the path.** On positions self-play reaches, the
+  PPO head and the new net are equally accurate (0.18 from the value they both learn). Over all
+  positions the PPO head is off by 1.34, outside the payoff range: it is an unbounded linear
+  output trained only where PPO plays, and search's expansions go elsewhere. The new net is tanh
+  bounded and trained on more varied positions; its error everywhere is half (0.69).
+- **The new net makes search the best agent so far:** 0.140 ± 0.014 per game at 800 simulations,
+  better than searching only from 2 lots left (0.168), and the first head-to-head edge over PPO
+  that clears two standard errors (+0.11 ± 0.05).
+- **The remaining gap to exact leaves (0.14 vs 0.085) is mostly the target, not the fit.** Both
+  nets learn the value of *PPO against PPO*, and that value is itself 0.28 from the equilibrium
+  value on path, about as far as either net is. A better fit of the same target cannot close it;
+  improving the target (search self-play, the AlphaZero loop) can.
+- Why it matters for tempo: the leaf value is where a coin's worth is judged several lots ahead.
+  The policy learned the opening's tempo; the value did not, and search inherits the value.
 
 ### Spendthrift: search only at the end (2026-10-28)
 

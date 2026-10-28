@@ -541,7 +541,10 @@ exact answers to compare every learner against.
      are left (K = 0, 1, 2). Cheap, and it tests why the opening got worse: if the PPO value head
      at the leaves is the problem, switching search on only near the end should keep the opening at
      0.002 per decision and the endgame at search's level
-  2. [ ] A value net trained on self-play outcomes (the Tessera recipe), then search on it at
+  2. [x] Value net (2026-10-28): search on it 0.140 ± 0.014 per game at 800 simulations (+0.11 ±
+     0.05 vs PPO), exact leaves 0.085 with the opening intact; PPO's head was off by 1.34 off the
+     path. Remaining gap is the target (PPO-vs-PPO value, 0.28 from equilibrium). Planned as: a
+     value net trained on self-play outcomes (the Tessera recipe), then search on it at
      50–800 simulations: does a better leaf value stop the opening getting worse as simulations
      grow?
   3. [ ] 3-player search: PUCT backing up a value per player (`spendthrift3` is not zero-sum
