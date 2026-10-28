@@ -2,6 +2,13 @@
 
 # Importing each engine registers it.
 # ``spiel`` registers OpenSpiel games only when the [openspiel] extra is installed.
-from iirl.games import camel_stocks, mini_ventures, spiel, tessera, ventures  # noqa: F401
+from iirl.games import (  # noqa: F401
+    camel_stocks,
+    mini_ventures,
+    spendthrift,
+    spiel,
+    tessera,
+    ventures,
+)
 
-__all__ = ["camel_stocks", "mini_ventures", "spiel", "tessera", "ventures"]
+__all__ = ["camel_stocks", "mini_ventures", "spendthrift", "spiel", "tessera", "ventures"]

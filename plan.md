@@ -513,6 +513,27 @@ Goal: adopt the framework where it earns its place — CFR at scale, with verifi
 
 ---
 
+## Stage 6b — Spendthrift *(tempo in an auction game; original design, 2-3 players)*
+
+The owner's question: how do we train the tempo part of an auction game (when to spend a purse
+that must last an unknown number of rounds)? Perfect information with chance, so small sizes have
+exact answers to compare every learner against.
+
+- [x] Engine (`games/spendthrift/`), 2 and 3 players, registered at exactly solvable sizes (2026-10-28)
+- [x] Exact solver for perfect-information games with any number of players (`eval/perfect_info.py`:
+  backward induction, `nash_conv`)
+- [x] The equilibrium's tempo profile: prices by lot and end cards seen, unsold lots, reserve
+  penalty frequency (`experiments/spendthrift.py solve`)
+- [ ] Controlled tempo question on the exact solution: the same position with and without an end
+  card seen (does the bid change?), and the value of a coin through the game
+- [ ] PPO self-play on both sizes: NashConv, and its spending against the solution decision by
+  decision
+- [ ] AlphaZero-style search (the Tessera recipe): does lookahead fix the tempo errors?
+- [ ] Knobs: end predictability (more or fewer end cards), tighter purses, a set bonus; then a size
+  beyond exact reach
+
+---
+
 ## Stage 7 — LotR: The Confrontation *(entity rung)*
 
 > **IP note:** as with Ventures and Camel Stocks, ship it under an original name and theme on the

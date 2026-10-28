@@ -33,6 +33,7 @@ step, while expanding to more games and trying more approaches. Games so far:
 | Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
 | Liar's Dice | OpenSpiel's engine (1 die each), through `games/spiel.py` | full-game CFR+ (alternating) | exploitability 0.00013 after 1,000 iterations; first bidder's value −0.0271 | — |
 | Kuhn, Leduc poker | OpenSpiel's engines, same adapter | full-game CFR+ (alternating) | 0.00009 / 0.00023 after 1,000 iterations; first player's value −0.0556 (= −1/18) / −0.0857 | — |
+| Spendthrift (2 and 3 players) | Original auction game about tempo (fixed purse, random end, the poorest loses their best lot); perfect information with chance | backward induction (exact) | first opener's value +0.056 (2 players); seats +0.060 / −0.044 / −0.015 (3) | — |
 
 **What we know works, by kind of game** (details in "What we learned" and the findings log):
 
@@ -71,7 +72,13 @@ step, while expanding to more games and trying more approaches. Games so far:
    and 0.047 on Liar's Dice (PPO 0.31–0.52); NFSP only 0.84 on Leduc and no better than PPO on
    Liar's Dice. Next options: Deep CFR / MCCFR toward limit Hold'em (Stage 5), or Stage 7 (The
    Confrontation's skeleton).
-4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
+4. **Tempo: Spendthrift** (started 2026-10-28; findings log, "Spendthrift: an auction game
+   solved exactly"). The owner's question: how do we train the *tempo* part of an auction game
+   (when to spend a purse that has to last an unknown number of rounds)? Engine, exact solver for
+   2 and 3 players, and the equilibrium's tempo profile are done. Next: train PPO self-play and
+   AlphaZero-style search on it and compare their spending with the exact solution, decision by
+   decision (where in the game does each get tempo wrong, and what does it cost?).
+5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
 **How the owner likes to work** (please keep to these):
@@ -93,7 +100,8 @@ step, while expanding to more games and trying more approaches. Games so far:
 - Windows, Git Bash and PowerShell; Python via `uv` (`uv sync`, `uv run pytest`, `uv run ruff check .`
   and `ruff format`, line length 100, Google docstrings). Configs are dataclasses, not argparse
   (small `key=value` command-line overrides in experiment scripts).
-- 12 CPU cores, 16 GB; the venv's torch is CPU-only. Most experiments use 10 worker processes.
+- 12 CPU cores, 16 GB; the venv's torch is CPU-only. Use **4 worker processes or torch threads**:
+  the machine overheated on 10-worker runs (2026-10-26).
 - Long runs: launch detached (`Start-Process cmd /c "uv run python -m experiments.<x> >> runs\<x>.log"`),
   because background shell commands are killed after about an hour. Everything long is resumable
   from `runs/`.
@@ -456,6 +464,56 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: an auction game solved exactly, and what perfect tempo looks like (2026-10-28)
+
+The owner asked for an auction game in High Society's family to study *tempo*: a purse that must
+last an unknown number of rounds, with the poorest player punished at the end. Spendthrift
+(`games/spendthrift/`) is an original design on that genre skeleton, not a copy: coins are one
+pool, lots are plain values 1..L, separate end cards are never auctioned, and the poorest player
+(or tied players) discards their best lot instead of being eliminated, so the rule also works for
+two players. Ascending auction with a rotating opener; passers pay nothing; the winner pays their
+bid. Everything is public but the deck order, so it is perfect information with chance.
+
+**Solver** (`eval/perfect_info.py`): backward induction memoised by state, for any number of
+players, plus `nash_conv` (each player's best-response gain, summed). `exact_br` could not be
+reused: it is two-player and needs each information set at one depth, but here the same position
+is reached by different numbers of moves (raise to 1 then 3, or straight to 3). Three players have
+a unique solution (there can be several equilibria); ties go to the lowest action id (pass, then the smallest bid), and the 3-player
+numbers below are for that equilibrium. Pure Python costs about 10× per extra lot, so the
+registered sizes are the ones that solve in under 20 s:
+
+| Size | States | Solve | Value by seat (first opener first) |
+|---|---|---|---|
+| 2 players, 5 lots, 2 end cards, 8 coins (`spendthrift`) | 699,636 | 19 s | +0.056 / −0.056 |
+| 3 players, 4 lots, 2 end cards, 6 coins (`spendthrift3`) | 739,357 | 17 s | +0.060 / −0.044 / −0.015 |
+| 2 players, 6 lots, 2 end cards, 10 coins | 6,979,502 | 218 s | +0.053 / −0.053 |
+
+**The equilibrium's tempo** (`experiments/spendthrift.py solve`, `runs/spendthrift/solve.json`):
+every deck order played out along the solution, weighted by its probability. These are exact
+expectations, not samples, so there are no error bars; the caveat is that they describe one
+equilibrium (and for three players, one tie-breaking rule).
+
+| 2 players | Lot 1 | 2 | 3 | 4 | 5 |
+|---|---|---|---|---|---|
+| P(sold), no end card seen / one seen | 0.37 / 0.48 | 0.94 / 0.78 | 0.99 / 0.88 | 0.99 / 0.98 | 0.99 / 0.98 |
+| Mean price, no end card seen / one seen | 1.03 / 1.04 | 1.77 / 1.56 | 2.00 / 2.05 | 2.79 / 2.35 | 2.79 / 2.31 |
+| Price as share of the winner's purse | 0.17 / 0.20 | 0.26 / 0.27 | 0.30 / 0.33 | 0.38 / 0.39 | 0.41 / 0.36 |
+
+- **Lots sell far below face value and the top two sell for the same price** (2.79 coins for a 4
+  or a 5 early on): with 8 coins against 15 points of lots, money is the scarce resource. The
+  1-point lot goes unsold 52–63% of the time.
+- **No rush to spend as the end nears.** One might expect coins to lose value once the game could
+  end at any moment, but they never do here: they also decide the reserve penalty and ties. Prices
+  fall after the first end card (4: 2.79 → 2.35), but as a share of the winner's purse they are
+  flat (0.38 → 0.39), so the drop mostly reflects poorer bidders, not a change of tempo. Confound:
+  the two columns compare different positions (purses already spent), not the same position with
+  and without an end card; the controlled comparison is the next step.
+- **The reserve penalty decides about half of games**: removing it would change the winner 47%
+  of the time (2 players) and 58% (3 players). Average coins left per player at the end: 5.1 of 8
+  (2 players), 3.9 of 6 (3 players).
+- **Three players spend more of their purse** (0.34–0.60 per lot, against 0.17–0.41) and the 1-lot
+  sells 78% of the time: with two rivals, leaving a lot to someone else is more costly.
 
 ### NFSP and ReBeL on the OpenSpiel games: ReBeL closes most of PPO's gap, NFSP a third of it (2026-10-27, Liar's Dice ReBeL 10-28)
 
