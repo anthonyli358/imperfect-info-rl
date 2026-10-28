@@ -67,11 +67,10 @@ step, while expanding to more games and trying more approaches. Games so far:
    cross-checked; PPO self-play stays 0.3–0.5 exploitable against CFR+'s 0.00013. Kuhn and Leduc
    poker added the same day ("Poker through the same adapter"): same picture. 2 dice each is out of
    reach for exact methods (~2^24 bid sequences per roll). NFSP and ReBeL tried the same day
-   ("NFSP and ReBeL on the OpenSpiel games"): ReBeL reaches 0.07 on Leduc (PPO 1.3, CFR+ 0.0002);
-   NFSP only 0.84. Unfinished: the Liar's Dice ReBeL run was stopped at epoch 9 (0.23 at epoch 5);
-   rerun `rebel game=liars_dice epochs=20` (about 10 minutes at 4 threads). Next options after
-   that: Deep CFR / MCCFR toward limit Hold'em (Stage 5), or Stage 7 (The Confrontation's
-   skeleton).
+   ("NFSP and ReBeL on the OpenSpiel games"): ReBeL reaches 0.07 on Leduc (PPO 1.3, CFR+ 0.0002)
+   and 0.047 on Liar's Dice (PPO 0.31–0.52); NFSP only 0.84 on Leduc and no better than PPO on
+   Liar's Dice. Next options: Deep CFR / MCCFR toward limit Hold'em (Stage 5), or Stage 7 (The
+   Confrontation's skeleton).
 4. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -458,7 +457,7 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
-### NFSP and ReBeL on the OpenSpiel games: ReBeL closes most of PPO's gap, NFSP a third of it (2026-10-27)
+### NFSP and ReBeL on the OpenSpiel games: ReBeL closes most of PPO's gap, NFSP a third of it (2026-10-27, Liar's Dice ReBeL 10-28)
 
 Same yardstick as below: exact exploitability (NashConv / 2) of the policy each method plays, from
 `experiments/spiel_games.py` (`nfsp` and `rebel` stages; 4 workers / 4 torch threads). One seed per
@@ -468,7 +467,7 @@ row, so differences under about 2× between rows are not established.
 |---|---|---|---|
 | PPO, best variant | 1.28–1.38 | 0.31–0.52 | — |
 | NFSP from the PPO phase, 400 iterations (η 0.1), sampled | 1.87 → **0.84** (iteration 275) → 1.08 (400) | 0.50–0.59 (400: 0.59) | — |
-| ReBeL, 20 epochs, 100 CFR iterations per subgame | 0.099 | 0.23 at epoch 5 (run stopped at 9) | 0.015–0.019 |
+| ReBeL, 20 epochs, 100 CFR iterations per subgame | 0.099 | 0.241, **0.051**, 0.053, **0.047** at epochs 5–20 (sampled evaluation, see below) | 0.015–0.019 |
 | ReBeL, 60 epochs, 200 CFR iterations | 0.63, 0.20, 0.15, **0.070** at epochs 5–20, then 0.069–0.092 to 60 | — | — |
 | CFR+, 1,000 iterations (full game) | 0.00023 | 0.00013 | 0.00009 |
 
@@ -477,6 +476,18 @@ row, so differences under about 2× between rows are not established.
   epoch 20 on: tripling the epochs and doubling the subgame CFR iterations did not move it, so the
   floor is the value networks' error at the cuts (losses ~1e-5 on Liar's Dice, but a small error
   compounds across boundaries), not the CFR inside each subgame.
+- **Liar's Dice**: ReBeL plateaus from epoch 10 at about 0.05, 6–10× below PPO and about 350×
+  above CFR+, the same shape as Leduc. 20 epochs train in under 3 minutes; the evaluation was the
+  cost.
+- **Evaluating ReBeL exactly is expensive with three cuts.** The played policy averages over the
+  random stopping iteration at every cut, so the exact policy needs cfr_iterations^cuts solves of
+  the deepest subgame: 100² on Leduc, 100³ on Liar's Dice (the first attempt ran 25,000
+  CPU-seconds and was stopped). `eval_samples` branches from a weighted sample of stopping
+  iterations instead; that is still a policy ReBeL could play, measured exactly, but a slightly
+  different one. On Liar's Dice at epoch 5 (training is deterministic, so the same nets): exact
+  0.230967; sampling the last two cuts (10 each) 0.230971 in 1,422 s; sampling all three
+  (`10,10,10`, now the default there) 0.2408 in 145 s. So the reported Liar's Dice figures may
+  read about 0.01 high.
 - **NFSP is not monotone**: its average policy on Leduc fell to 0.84 then rose to 1.08; on Liar's
   Dice it never beat PPO. This matches the Camel Stocks result (NFSP ≈ Nash PPO at equal budget).
 - Boundaries (subgame start depths, no chance node there): Kuhn (2, 3, 5), Leduc (2, 7, 11), Liar's

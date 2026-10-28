@@ -30,7 +30,8 @@ equilibrium-seeking RL method the literature uses on poker. ``key=value``: ``tag
 ``rebel`` trains full-width ReBeL (``selfplay/rebel.py``: CFR over depth-limited subgames of
 public belief states, value networks at the cuts) and measures the exact exploitability of the
 policy it plays. Subgames start at ``BOUNDARIES[game]``, depths with no chance node. ``key=value``:
-``epochs``, ``cfr_iterations``.
+``epochs``, ``cfr_iterations``, ``eval_samples`` (per cut, e.g. ``all,10,10``; see
+``EVAL_SAMPLES``).
 
 ``magnet`` continues from the PPO phase with other Nash-phase settings (``key=value``: any
 ``PPOConfig`` field, plus ``tag`` and ``iterations``), measuring exact exploitability as it goes.
@@ -65,6 +66,18 @@ OUT = Path("runs/liars_dice")
 
 # Depths where ReBeL's subgames start (no chance node there), ending with the last depth.
 BOUNDARIES = {"kuhn_poker": (2, 3, 5), "leduc_poker": (2, 7, 11), "liars_dice": (2, 5, 8, 15)}
+# Stopping iterations the evaluated policy branches from at each cut ("all" is exact). Exact costs
+# cfr_iterations^cuts solves of the deepest subgame: fine with two cuts, ~10^6 with Liar's Dice's
+# three. A sample still gives a policy ReBeL could play, measured exactly. On Liar's Dice at
+# epoch 5, all,10,10 (24 min) gave 0.230971 against exact's 0.230967.
+EVAL_SAMPLES = {"liars_dice": "10,10,10"}
+
+
+def parse_samples(text: str | None) -> tuple[int | None, ...] | None:
+    """``"all,10,10"`` -> ``(None, 10, 10)``; ``None`` -> exact at every cut."""
+    if text is None:
+        return None
+    return tuple(None if n == "all" else int(n) for n in text.split(","))
 
 
 def prefix() -> str:
@@ -260,6 +273,7 @@ def rebel(config: Config) -> None:
         boundaries=BOUNDARIES[GAME],
         cfr_iterations=int(args.get("cfr_iterations", 100)),
         eval_iterations=int(args.get("cfr_iterations", 100)),
+        eval_samples=parse_samples(args.get("eval_samples", EVAL_SAMPLES.get(GAME))),
         epochs=int(args.get("epochs", 20)),
         passes=3,
     )
@@ -276,7 +290,9 @@ def rebel(config: Config) -> None:
         row = {"epoch": agent.epoch, "loss": {str(d): round(v, 5) for d, v in losses.items()}}
         row["seconds"] = round(time.perf_counter() - last)
         if agent.epoch % 5 == 0 or agent.epoch == settings.epochs:
+            t = time.perf_counter()
             row.update(agent.evaluate())
+            row["eval_seconds"] = round(time.perf_counter() - t)
         print(json.dumps(row), flush=True)
         with curve.open("a", encoding="utf-8") as f:
             f.write(json.dumps(row) + "\n")
