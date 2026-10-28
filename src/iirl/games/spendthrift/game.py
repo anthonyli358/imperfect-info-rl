@@ -275,3 +275,16 @@ def _make_spendthrift() -> Spendthrift:
 def _make_spendthrift3() -> Spendthrift:
     """Three players: 4 lots, 2 end cards, 6 coins."""
     return Spendthrift(players=3, lots=4, ends=2, coins=6)
+
+
+# Purse variants of the two-player game for the knobs study (2 end cards, 5 lots).
+@register("spendthrift_tight")
+def _make_spendthrift_tight() -> Spendthrift:
+    """Two players: 5 lots, 2 end cards, 6 coins (coins are precious late)."""
+    return Spendthrift(players=2, lots=5, ends=2, coins=6)
+
+
+@register("spendthrift_loose")
+def _make_spendthrift_loose() -> Spendthrift:
+    """Two players: 5 lots, 2 end cards, 10 coins (no late premium on a coin)."""
+    return Spendthrift(players=2, lots=5, ends=2, coins=10)

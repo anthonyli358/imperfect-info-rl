@@ -444,13 +444,15 @@ def decision_quality(
 def run_ppo() -> None:
     """PPO self-play, then NashConv and decision quality of every checkpoint against the solution.
 
-    ``key=value``: ``game`` (``spendthrift`` or ``spendthrift3``), ``iterations``.
+    ``key=value``: ``game`` (any registered Spendthrift size), ``iterations``, ``score_every``
+    (checkpoints are saved every 25 iterations; score every that many).
     """
     from experiments.train_ventures_league import _train
 
     args = dict(item.split("=") for item in sys.argv[2:])
     name = args.get("game", "spendthrift")
     iterations = int(args.get("iterations", 200))
+    score_every = int(args.get("score_every", 25))
     torch.set_num_threads(4)
     OUT.mkdir(parents=True, exist_ok=True)
     tag = f"spendthrift/{name}_ppo"
@@ -468,7 +470,7 @@ def run_ppo() -> None:
     nodes = list(sol.choice)
     results_path = OUT / f"{name}_ppo_exact.json"
     results = json.loads(results_path.read_text("utf-8")) if results_path.exists() else {}
-    for it in range(25, iterations + 1, 25):
+    for it in range(score_every, iterations + 1, score_every):
         label, path = str(it), Path(f"runs/{tag}_{it}.pt")
         if label in results or not path.exists():
             continue

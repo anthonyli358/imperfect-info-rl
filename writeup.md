@@ -92,7 +92,8 @@ step, while expanding to more games and trying more approaches. Games so far:
    PPO at 200 simulations with an every-view value net; the exact per-move score is unreliable for
    3 players because of kingmaking ties. Knobs, exact part done ("Spendthrift: what the knobs
    change"): equilibrium spending per lot flipped does not depend on how predictable the end is;
-   the purse sets prices. Next (plan.md Stage 6b): PPO on the extreme variants, then a tie-robust
+   the purse sets prices. Next (plan.md Stage 6b): PPO on the extreme variants (paused mid-run;
+   the resume command is in plan.md), then a tie-robust
    3-player yardstick.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).

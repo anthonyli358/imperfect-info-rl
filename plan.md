@@ -558,7 +558,11 @@ exact answers to compare every learner against.
   flipped does not depend on how predictable the end is; the purse sets prices (~8% of it per
   point); only tight purses make the last coin precious late
 - [ ] PPO on the extreme variants (6 vs 10 coins): is its endgame worse where coins are
-  precious late, as predicted?
+  precious late, as predicted? **In progress, paused 2026-10-28** at iteration ~25 of
+  `spendthrift_tight` (registered with `spendthrift_loose`); resume, which continues from
+  `runs/spendthrift/spendthrift_tight_ppo_partial.pt`:
+  `for g in spendthrift_tight spendthrift_loose; do uv run python -m experiments.spendthrift
+  ppo game=$g score_every=100; done`
 - [ ] A set bonus (a new scoring rule; needs the owner's design call); a size beyond exact reach
 - [ ] 3 players: a tie-robust yardstick (best and worst tie-break per move, or perturbed payoffs
   for a unique equilibrium); more head-to-head games
