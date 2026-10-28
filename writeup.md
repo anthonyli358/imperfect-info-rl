@@ -11,7 +11,9 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 
 Project: imperfect-info-rl in c:\Users\Ant\Documents\My Projects\GitHub\imperfect-info-rl
 (branch feat/rl-agent-ladder). Read the "Start here" section at the top of writeup.md, then
-continue with its "Open threads", starting with thread 1.
+continue with its "Open threads": thread 4 (Spendthrift) first, at the first unchecked step of
+plan.md's Stage 6b "Next, in order" list; after each step update writeup.md and plan.md and
+commit. Then the other threads in order.
 
 ---
 
@@ -82,8 +84,10 @@ step, while expanding to more games and trying more approaches. Games so far:
    in the last lots, where single coins decide the reserve penalty. Search on the PPO net
    ("Spendthrift: search fixes the endgame and spoils the opening") confirmed the prediction for
    the endgame (last-lot errors to 0) but made the opening worse at 800 simulations; overall loss
-   per game 0.33 → 0.20. Next: a value net trained on self-play outcomes (the Tessera recipe), or
-   search only for the last lots; then 3-player search (needs per-player values).
+   per game 0.33 → 0.20. Next, in order (plan.md Stage 6b): (a) search only for the last K lots,
+   PPO's policy before then, which tests whether the PPO value head spoils the opening; (b) a value
+   net trained on self-play outcomes (the Tessera recipe) under the same search; (c) 3-player
+   search with a value per player. Then the knobs (end predictability, purses, a set bonus).
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 

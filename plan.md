@@ -57,7 +57,7 @@ Absolute imports everywhere (`from iirl.core.game import Game`), identical from 
 
 - **Battle Line** — protected. It's the game I want to keep playing; its deck-probability layer is exactly the un-see-able checklist that building an agent would spoil. Left off the ladder on purpose.
 - **Viticulture / Dune: Imperium** — engine-cost sinks (bespoke card-effect logic dwarfs the RL). Someday-maybe, not a rung.
-- **3+ player variants** — non-stationary multiplayer breaks the clean two-player zero-sum equilibrium/self-play story. All rungs are two-player.
+- **3+ player variants** — non-stationary multiplayer breaks the clean two-player zero-sum equilibrium/self-play story. All rungs are two-player, with one deliberate exception: Spendthrift (Stage 6b) runs 3 players too, because it is perfect information and solved exactly, so NashConv still measures every learner.
 
 ---
 
@@ -533,8 +533,18 @@ exact answers to compare every learner against.
 - [x] PUCT search on the PPO net, 2 players (2026-10-28): the endgame errors go (last lot 0.049 →
   0, 1 left 0.096 → 0.034 at 800 simulations) but the opening gets worse (0.002 → 0.019); loss per
   game 0.33 → 0.20, flat beyond 200 simulations; head to head +0.08 ± 0.05 (not significant)
-- [ ] A value net trained on self-play outcomes (the Tessera recipe), or search only for the last
-  lots; then 3-player search (per-player values)
+- [ ] **Next, in order** (each scored move by move against the exact solution, as in `search`,
+  plus seat-balanced games against greedy PPO; 300 games per setting; one thread):
+  1. [ ] Endgame-only search: the PPO policy while many lots remain, PUCT search once K or fewer
+     are left (K = 0, 1, 2). Cheap, and it tests why the opening got worse: if the PPO value head
+     at the leaves is the problem, switching search on only near the end should keep the opening at
+     0.002 per decision and the endgame at search's level
+  2. [ ] A value net trained on self-play outcomes (the Tessera recipe), then search on it at
+     50–800 simulations: does a better leaf value stop the opening getting worse as simulations
+     grow?
+  3. [ ] 3-player search: PUCT backing up a value per player (`spendthrift3` is not zero-sum
+     between any two seats), scored the same way against the solver's equilibrium and by NashConv
+     where affordable
 - [ ] Knobs: end predictability (more or fewer end cards), tighter purses, a set bonus; then a size
   beyond exact reach
 
