@@ -74,8 +74,8 @@ and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's c
 2. [x] Tie-robust three-player yardstick (2026-10-29, `robust` stage): certain loss PPO 0.094,
    search 0.077–0.086 ± 0.01; about three quarters of the old per-move loss was ties. Search
    helps three players little.
-3. **Owner decision:** add a set bonus (a new scoring rule), or close the knobs as they are.
-4. Stage summary in the writeup: what tempo is, and which learners get it right where.
+3. [x] **Owner decision** (2026-10-29): close the knobs, no set bonus.
+4. [x] Stage summary in the writeup ("Spendthrift: what we learned about training tempo").
 
 **Phase 2 — cheap loose ends on finished rungs.** One session; each is small.
 1. Liar's Dice: read off the CFR+ equilibrium's bluff and call frequencies by die face (exact,
@@ -632,7 +632,7 @@ exact answers to compare every learner against.
 - [x] PPO on the extreme variants (2026-10-29; `spendthrift_tight`, `spendthrift_loose`): the
   prediction failed. 6 coins is easiest (NashConv 0.24, 0.20 per game), the registered 8 coins
   hardest (0.36, 0.32), 10 coins between (0.30, 0.25). One seed each.
-- [ ] A set bonus (a new scoring rule; needs the owner's design call); a size beyond exact reach
+- [x] A set bonus: closed by the owner (2026-10-29). A size beyond exact reach: future work
 - [x] 3 players: a tie-robust yardstick (2026-10-29): certain loss PPO 0.094, search
   0.077–0.086; three quarters of the old per-move loss was ties
 

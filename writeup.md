@@ -35,7 +35,7 @@ step, while expanding to more games and trying more approaches. Games so far:
 | Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
 | Liar's Dice | OpenSpiel's engine (1 die each), through `games/spiel.py` | full-game CFR+ (alternating) | exploitability 0.00013 after 1,000 iterations; first bidder's value −0.0271 | — |
 | Kuhn, Leduc poker | OpenSpiel's engines, same adapter | full-game CFR+ (alternating) | 0.00009 / 0.00023 after 1,000 iterations; first player's value −0.0556 (= −1/18) / −0.0857 | — |
-| Spendthrift (2 and 3 players) | Original auction game about tempo (fixed purse, random end, the poorest loses their best lot); perfect information with chance | backward induction (exact) | first opener's value +0.056 (2 players); seats +0.060 / −0.044 / −0.015 (3) | — |
+| Spendthrift (2 and 3 players) | Original auction game about tempo (fixed purse, random end, the poorest loses their best lot); perfect information with chance | exact: backward induction. Learned: PPO priors + PUCT on a value net trained on self-play (2 players) | learned agent gives up 0.140 ± 0.014 a game against perfect play (PPO 0.33); 3 players: PPO 0.094 a game of tie-robust mistakes, search barely better | — |
 
 **What we know works, by kind of game** (details in "What we learned" and the findings log):
 
@@ -97,7 +97,8 @@ what is left into five phases, limit Hold'em then Stage 7, and is the one to fol
    the prediction failed; the 6-coin game is the easiest, the registered 8-coin one the hardest.
    Tie-robust 3-player scores ("Spendthrift: three-player mistakes once ties are set aside"):
    about three quarters of the old per-move loss was ties; search cuts the certain loss by at most
-   a fifth. Next (plan.md finishing plan, Phase 1): the set-bonus decision, then the stage summary.
+   a fifth. **Closed 2026-10-29** (the owner closed the knobs without a set bonus); summary in
+   "Spendthrift: what we learned about training tempo".
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -484,6 +485,47 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: what we learned about training tempo (summary, 2026-10-29)
+
+The owner's question was how to train the *tempo* of an auction game: when to spend a purse that
+has to last an unknown number of rounds. Spendthrift (original; High Society's family) was built
+small enough to solve exactly, so every learner is measured against perfect play move by move.
+The entries below have the details; this is the stage in one place.
+
+**What perfect tempo looks like.**
+- Spend at a steady rate; don't time the end. Equilibrium spending per lot flipped is the same
+  however predictable the end is (1, 2 or 3 end cards). An end card makes a coin about 18%
+  cheaper but leaves the price unchanged in 88% of positions.
+- The purse sets prices: about 8% of the purse per point, whatever the end looks like. Lots sell
+  far below face value, and the cheapest lot often goes unsold.
+- A coin is worth most late, because single coins decide the reserve penalty, which decides
+  about half of games. Only with a tight purse, though: with 10 coins the late premium vanishes.
+
+**How learners get it.**
+- **PPO learns the opening, not the endgame** (two players: 0.001 per decision given up with 4
+  lots left, 0.135 with 1 left). Its NashConv is 0.36 after 200 iterations, still falling.
+- **Search fixes the endgame but needs a good leaf value.** On PPO's own value head it spoils the
+  opening, because that head is badly wrong away from positions PPO visits (off by 1.34 RMS on a
+  ±1 scale). Searching only near the end avoids that (0.168 a game). A separate value net trained
+  on self-play outcomes fixes it (0.140, the best learned agent, +0.11 ± 0.05 head to head
+  against PPO). Exact leaves reach 0.085: the rest of the gap is that the value learns PPO's
+  self-play value, which is 0.28 off the equilibrium value, not a fitting problem.
+- **The exact profile does not predict what PPO finds hard.** The tight purse, where coins
+  matter most late, is the one PPO plays best; the registered 8-coin purse is the hardest (one
+  seed each).
+- **Three players are a different problem.** Kingmaking ties (a player indifferent between moves
+  that decide another's result) make one-equilibrium scoring misleading: three quarters of PPO's
+  apparent loss was ties. Under tie-robust scoring PPO makes 0.094 a game of real mistakes, and
+  max-n search on any leaf value only gets that to 0.077–0.086.
+
+**The recipe for tempo, in short:** PPO for the policy; then a value net trained on its self-play
+outcomes, never PPO's own critic; PUCT search from mid-game on. Judge with an exact solution when
+one exists, and with two players; with three, judge by tie-robust scores and head-to-head play.
+
+**Left open:** a set bonus (closed by the owner); a Spendthrift size beyond exact reach (the
+recipe above would then be judged by head-to-head play only); more seeds for the purse result;
+search self-play (the AlphaZero loop) to improve the value's target.
 
 ### Spendthrift: three-player mistakes once ties are set aside (2026-10-29)
 
