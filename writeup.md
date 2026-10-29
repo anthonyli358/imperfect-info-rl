@@ -486,6 +486,48 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Tessera: the search audit, and why value-based search is the right tool there (2026-10-29)
+
+Stage 3 asked which of policy, rollouts and value-based search wins on a perfect-information
+game. Value-based search was measured long ago (2057 Elo at 400 simulations); the paired-rollout
+audit (`experiments/search_audit.py`, as on Ventures and Camel Stocks) was the missing third.
+Adapted to Tessera (`tessera` config): phases by round instead of cards left, every decision is a
+turn, nothing hidden (one world), and in place of deck shuffles, 16 chance streams shared by every
+candidate move (`play_out(..., deck=False)`). At 974 positions from the iteration-48 loop policy's
+own sampled self-play, every legal move was played to the end with the greedy policy in both seats.
+Points per turn; 4 workers, 18.5 minutes; `runs/audit_tessera.pkl`.
+
+| Round | Positions | Legal moves | Policy's move is best | Better move's gain: upper / **lower bound** | Luck (sd over draws) | Rollouts per move to resolve 1 point |
+|---|---|---|---|---|---|---|
+| 1 | 232 | 40.6 | 0.16 | +5.7 / **+0.3 ± 0.5** | 18.7 | 1,395 |
+| 2 | 211 | 32.6 | 0.24 | +6.8 / **+3.6 ± 0.6** | 16.4 | 1,070 |
+| 3 | 186 | 25.1 | 0.31 | +5.6 / **+3.0 ± 0.5** | 13.5 | 726 |
+| 4 | 203 | 25.0 | 0.27 | +6.5 / **+5.4 ± 0.5** | 9.2 | 336 |
+| 5 on | 142 | 23.0 | 0.28 | +6.0 / **+5.9 ± 0.6** | 2.3 | 21 |
+
+(Upper: the best move by all 16 streams, which flatters itself. Lower: chosen on 8 streams,
+scored on the other 8. The truth is between.)
+
+- **The raw policy is far from what lookahead can do in every round from the second on:** a
+  better first move is worth at least +3 to +6 points a turn, and the policy's move is the best
+  only a quarter of the time. That is the size of gap search closes; Tessera games are won by
+  about 10–20 points.
+- **Unlike the card games, the gap is everywhere, not just at the end.** On Ventures and Camel
+  Stocks the audit found search only helps in the last few turns, where hidden cards stop
+  mattering. Tessera hides nothing, so a good move can be seen early too.
+- **But rollouts are the wrong tool early.** Luck from the bag dominates early rounds (an sd of
+  19 points over draws), so telling a 1-point difference needs about 1,400 rollouts *per legal
+  move* in round 1 (some 40 moves), against 21 in the last round. A value net averages that luck
+  away in one evaluation, which is why value-based search works on Tessera from the first move,
+  and why rollouts would only pay in the last round or two.
+- **So Stage 3's answer:** on a perfect-information game, policy < rollouts < value-based
+  search. Rollouts only work where luck is low (late), while value-based search works
+  throughout. This is the reverse of Ventures, where hidden hands poisoned the value and
+  late rollouts won.
+- The audit does not point at a weak value net (it measures the policy), so the plan's
+  "12 more loop iterations only if the audit points at the value" is not triggered. More loop
+  iterations stay future work (search was still gaining about +30 Elo per 12 iterations).
+
 ### Liar's Dice: how the equilibrium bluffs and calls (2026-10-29)
 
 Stage 4's last check: do CFR+'s mixed strategies look like sensible Liar's Dice? OpenSpiel's

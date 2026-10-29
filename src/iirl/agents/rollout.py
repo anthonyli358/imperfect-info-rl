@@ -100,16 +100,18 @@ def play_out(
     order: list[int],
     rng,  # noqa: ANN001
     chance_seed: int = 0,
+    deck: bool = True,
 ) -> list[float]:
     """Finish the game with ``seats`` playing, drawing the deck in the given order.
 
     Chance events that are not deck draws (the game's ``chance_from_deck`` hook says which; by
     default all are) are sampled from a stream seeded by ``chance_seed``, so that rollouts sharing
-    a seed share those outcomes as far as the positions allow.
+    a seed share those outcomes as far as the positions allow. With ``deck=False`` (a game with no
+    fixed deck order, e.g. Tessera's bag) every chance event comes from that stream.
     """
     k = 0
     stream = None
-    from_deck = getattr(game, "chance_from_deck", None)
+    from_deck = getattr(game, "chance_from_deck", None) if deck else (lambda s: False)
     while not game.is_terminal(state):
         if game.is_chance_node(state):
             if from_deck is None or from_deck(state):

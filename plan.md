@@ -79,9 +79,8 @@ and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's c
 
 **Phase 2 — cheap loose ends on finished rungs.** One session; each is small.
 1. [x] Liar's Dice bluff and call frequencies (2026-10-29): sane on every check; Stage 4 closed.
-2. Tessera: the search audit (`experiments/search_audit.py tessera`), so Stage 3's question
-   (policy vs rollouts vs value-based search) has all three answers; then 12 more loop iterations
-   only if the audit points at the value.
+2. [x] Tessera search audit (2026-10-29): policy < late rollouts < value-based search; it does
+   not point at the value, so no more loop iterations now.
 3. Ventures: re-rate net-guided PIMC on today's yardstick (the last stale number), and analyse
    the recorded human games (only one so far, so record a few more first or drop it).
 
@@ -518,8 +517,10 @@ recipe, which it never did on the card games.
   Play page now uses the iteration-48 nets.
 - [x] Per-move latency (2026-10-27, `experiments/search_latency.py`, one thread): 400 sims median
   0.14 s, worst 0.26 s, 3.6 s/game; 1,600 sims median 0.74 s, worst 1.0 s, 16 s/game
-- [ ] More loop iterations (search still gaining ~+30 Elo per 12 iterations)
-- [ ] Search audit (`experiments/search_audit.py tessera`): where is the policy improvable?
+- [ ] More loop iterations (search still gaining ~+30 Elo per 12 iterations): future work
+- [x] Search audit (2026-10-29, `search_audit.py tessera`): a better move gains at least +3 to
+  +6 points a turn from round 2 on; luck needs ~1,400 rollouts per move early against 21 late.
+  Answer: policy < rollouts (late only) < value-based search (throughout)
 - [x] AlphaZero-style search with a learned value (the plan's original Stage 3), judged against
   the recipe (done: the AlphaGo recipe and loop above; the comparison with audit-chosen rollouts
   moves to the search-audit item)

@@ -23,6 +23,7 @@ Run with::
     uv run python -m experiments.search_audit camel_stocks report
     uv run python -m experiments.search_audit camel_stocks match deck_max=12 [key=value ...]
     uv run python -m experiments.search_audit camel_stocks panel deck_max=12 [key=value ...]
+    uv run python -m experiments.search_audit tessera collect   # phases by round; 4 workers
 
 Results of ``match`` and ``panel`` are appended to ``runs/rollout_<game>.jsonl``.
 """
@@ -60,6 +61,10 @@ class Config:
     phases: tuple[tuple[str, int, int], ...] = ()  # (label, fewest, most cards in the deck)
     styles: tuple[str, ...] = ()  # heuristic styles for the panel
     workers: int = 10
+    # Games without a card deck (Tessera): phases by ``state.round`` instead of cards left, every
+    # decision is a turn, and the "orders" are shared chance streams instead of deck shuffles.
+    phase_attr: str = "deck"
+    every_decision_a_turn: bool = False
 
 
 GAMES = {
@@ -74,6 +79,24 @@ GAMES = {
             ("endgame (deck <= 6)", 0, 6),
         ),
         styles=("camel_stocks", "camel_stocks_careful"),
+    ),
+    "tessera": Config(
+        game="tessera",
+        blueprint="runs/tessera_ag/exit_prior_48.pt",
+        positions=1000,
+        worlds=1,  # nothing is hidden but the bag's order
+        orders=16,
+        last_turn=50,
+        phases=(
+            ("round 1", 0, 0),
+            ("round 2", 1, 1),
+            ("round 3", 2, 2),
+            ("round 4", 3, 3),
+            ("round 5 on", 4, 99),
+        ),
+        workers=4,
+        phase_attr="round",
+        every_decision_a_turn=True,
     ),
     "ventures": Config(
         game="ventures",
@@ -110,7 +133,7 @@ def audit(args: tuple) -> dict | None:
             outcomes = game.chance_outcomes(state)
             action = outcomes[rng.choice(len(outcomes), p=[p for _, p in outcomes])][0]
         else:
-            if turn_start(game, state):
+            if config.every_decision_a_turn or turn_start(game, state):
                 if turns >= target:
                     break
                 turns += 1
@@ -129,15 +152,20 @@ def audit(args: tuple) -> dict | None:
         game.resample_from_infostate(state, m, rng) for _ in range(config.worlds - 1)
     ]
     q = np.zeros((config.worlds, config.orders, len(legal)))
+    deck = config.phase_attr == "deck"
     for w, world in enumerate(worlds):
         for o in range(config.orders):
-            order = np.repeat(np.arange(len(world.deck)), world.deck)
-            rng.shuffle(order)
-            order = order.tolist()
+            order: list[int] = []
+            if deck:
+                cards = np.repeat(np.arange(len(world.deck)), world.deck)
+                rng.shuffle(cards)
+                order = cards.tolist()
             for k, a in enumerate(legal):
                 after = game.apply_action(world, a)
-                q[w, o, k] = play_out(game, after, (policy, policy), order, rng, w * 1000 + o)[m]
-    return {"seed": seed, "deck": sum(state.deck), "q": q, "policy": int(np.argmax(prior))}
+                seats = (policy, policy)
+                q[w, o, k] = play_out(game, after, seats, order, rng, w * 1000 + o, deck)[m]
+    phase = sum(state.deck) if deck else getattr(state, config.phase_attr)
+    return {"seed": seed, "deck": phase, "q": q, "policy": int(np.argmax(prior))}
 
 
 def collect(config: Config) -> None:
@@ -211,6 +239,8 @@ def report(config: Config) -> None:
         if not within:
             continue
         noise = np.sqrt(np.mean(within))
+        if config.worlds < 2:  # nothing hidden: only the luck column means anything
+            between = [0.0]
         print(
             f"{label:<22}{len(within):>6}  {np.sqrt(max(np.mean(between), 0)):>23.2f}  "
             f"{noise:>21.2f}  {4 * noise**2:>27.0f}"
