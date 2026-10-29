@@ -93,8 +93,9 @@ what is left into five phases, limit Hold'em then Stage 7, and is the one to fol
    PPO at 200 simulations with an every-view value net; the exact per-move score is unreliable for
    3 players because of kingmaking ties. Knobs, exact part done ("Spendthrift: what the knobs
    change"): equilibrium spending per lot flipped does not depend on how predictable the end is;
-   the purse sets prices. Next (plan.md Stage 6b): PPO on the extreme variants (paused mid-run;
-   the resume command is in plan.md), then a tie-robust
+   the purse sets prices. PPO on the extreme purses ("Spendthrift: the purse PPO finds hardest"):
+   the prediction failed; the 6-coin game is the easiest, the registered 8-coin one the hardest.
+   Next (plan.md finishing plan, Phase 1): a tie-robust
    3-player yardstick.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
@@ -482,6 +483,40 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: the purse PPO finds hardest is not the one predicted (2026-10-29)
+
+The knobs entry predicted, from the exact solution, that PPO's endgame would be worst where coins
+are precious late (the tight 6-coin purse) and best where they are not (10 coins). Test: the same
+PPO recipe and budget as the registered game (200 iterations of 2,048 games, 4 workers) on two new
+registered sizes, `spendthrift_tight` (6 coins) and `spendthrift_loose` (10 coins), both 2
+players, 5 lots, 2 end cards; scored exactly at iterations 100 and 200
+(`experiments/spendthrift.py ppo game=... score_every=100`, `runs/spendthrift/<game>_ppo_exact.json`).
+One training seed per purse.
+
+| Purse | States | NashConv at 200 (sampled / greedy) | Given up per game, 100 → 200 | Per decision with 1 lot left (no end card / one seen) | Opening (4 left) |
+|---|---|---|---|---|---|
+| 6 coins | 316k | **0.24 / 0.24** | 0.24 → **0.20** | **0.052 / 0.032** | 0.016 / 0.001 |
+| 8 coins (registered) | 700k | 0.36 / 0.35 | 0.43 → 0.32 | 0.135 / 0.089 | 0.001 / 0.010 |
+| 10 coins | 1.3M | 0.30 / 0.29 | 0.34 → 0.25 | 0.065 / 0.048 | 0.010 / 0.001 |
+
+- **The prediction failed.** The tight purse, where the exact solution values the last coin most
+  late in the game, is the one PPO plays *best*, endgame included (0.052 per decision with 1 lot
+  left, against 0.135 with 8 coins). How much a coin is worth late does not predict how hard the
+  endgame is to learn.
+- **The registered 8-coin game is the hardest of the three**, harder than both a smaller and a
+  larger purse. The obvious size explanation (fewer coins: fewer bids to choose from and fewer
+  states) covers 6 against 8 but not 10 against 8: the 10-coin game has nearly twice the states
+  and 11 bids per decision, yet PPO does better there.
+- A guess, not tested: with 10 coins nearly every lot sells (93%) and coins matter less late, so
+  approximate play costs less; with 6 coins there are few options and coarse coin counts. The
+  8-coin game sits between, where single coins decide the penalty *and* there are many ways to
+  get them wrong.
+- **Caveat: one seed per purse.** The 8 against 10 gap (0.32 against 0.25 per game) could be
+  partly seed noise; 6 against 8 (0.20 against 0.32) is large enough to stand. Two more seeds per
+  purse would settle it (about 10 minutes of training and 15 of scoring each).
+- In every purse, PPO gets better between iterations 100 and 200, and overbidding stays its
+  commonest mistake (1.3–1.7 overbids per game, about 0.1 each).
 
 ### Spendthrift: what the knobs change (2026-10-28)
 

@@ -69,8 +69,8 @@ and the branch is merged. What is left, in order (each step ends, as always, wit
 and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's call):
 
 **Phase 1 — close Spendthrift (Stage 6b).** About two sessions.
-1. Resume PPO on the purse variants (`spendthrift_tight`, `spendthrift_loose`; command in Stage
-   6b). Is PPO's endgame worse where the exact solution says coins are precious late?
+1. [x] PPO on the purse variants (2026-10-29): no. The tight purse is the easiest for PPO; the
+   registered 8-coin game the hardest (one seed each).
 2. A tie-robust three-player yardstick: score each move against the best and the worst tie-break,
    then re-score the three-player PPO and search results. Settles whether 3-player search helps.
 3. **Owner decision:** add a set bonus (a new scoring rule), or close the knobs as they are.
@@ -628,12 +628,9 @@ exact answers to compare every learner against.
 - [x] Knobs, exact (2026-10-28; `knobs` stage, 1–3 end cards × 6–10 coins): spending per lot
   flipped does not depend on how predictable the end is; the purse sets prices (~8% of it per
   point); only tight purses make the last coin precious late
-- [ ] PPO on the extreme variants (6 vs 10 coins): is its endgame worse where coins are
-  precious late, as predicted? **In progress, paused 2026-10-28** at iteration ~25 of
-  `spendthrift_tight` (registered with `spendthrift_loose`); resume, which continues from
-  `runs/spendthrift/spendthrift_tight_ppo_partial.pt`:
-  `for g in spendthrift_tight spendthrift_loose; do uv run python -m experiments.spendthrift
-  ppo game=$g score_every=100; done`
+- [x] PPO on the extreme variants (2026-10-29; `spendthrift_tight`, `spendthrift_loose`): the
+  prediction failed. 6 coins is easiest (NashConv 0.24, 0.20 per game), the registered 8 coins
+  hardest (0.36, 0.32), 10 coins between (0.30, 0.25). One seed each.
 - [ ] A set bonus (a new scoring rule; needs the owner's design call); a size beyond exact reach
 - [ ] 3 players: a tie-robust yardstick (best and worst tie-break per move, or perturbed payoffs
   for a unique equilibrium); more head-to-head games

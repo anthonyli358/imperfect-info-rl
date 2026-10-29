@@ -94,6 +94,21 @@ def test_solution_is_an_equilibrium(players: int) -> None:
     assert nash_conv(game, sol.policy)["nash_conv"] == pytest.approx(0.0, abs=1e-9)
 
 
+@pytest.mark.parametrize("players", [2, 3])
+def test_tie_breaks_select_equilibria(players: int) -> None:
+    """Every tie-break rule still gives an equilibrium; with two players they all agree."""
+    game = Spendthrift(players=players, lots=3, ends=1, coins=4)
+    root = game.new_initial_state()
+    sols = [
+        solve(game, tie_key=lambda v, i=i, s=s: s * v[i]) for i in range(players) for s in (1, -1)
+    ]
+    for sol in sols:
+        assert nash_conv(game, sol.policy)["nash_conv"] == pytest.approx(0.0, abs=1e-9)
+    if players == 2:
+        for sol in sols:
+            assert np.allclose(sol.value(root), solve(game).value(root))
+
+
 def test_uniform_play_is_exploitable() -> None:
     game = Spendthrift(players=2, lots=3, ends=1, coins=4)
     on_policy = policy_values(game, uniform)

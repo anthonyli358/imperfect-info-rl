@@ -29,6 +29,7 @@ number of players with max-n PUCT (a value per player; ``maxn_<game>.json``).
     uv run python -m experiments.spendthrift value
     uv run python -m experiments.spendthrift maxn game=spendthrift3
     uv run python -m experiments.spendthrift knobs ends=1,2,3 coins=6,8,10
+    uv run python -m experiments.spendthrift robust
 """
 
 from __future__ import annotations
@@ -955,6 +956,121 @@ def run_maxn() -> None:
         path.write_text(json.dumps(results, indent=1), "utf-8")
 
 
+class TieBounds:
+    """Per-move loss bounds that do not depend on how the solver breaks ties.
+
+    For each player ``p`` two extra solutions: every tie broken in ``p``'s favour (``up``) and
+    against ``p`` (``down``); both are equilibria. A move ``a`` by ``p``:
+
+    - **certain loss**: ``max_b down(b) - up(a)``, at least 0. Even if every tie after ``a`` goes
+      ``p``'s way and every tie after the best move goes against them, ``a`` is this much worse.
+    - **possible loss**: ``max_b up(b) - down(a)``, the most it could cost.
+
+    With two zero-sum players ties never change the mover's value, so both equal the plain loss.
+    """
+
+    def __init__(self, game: Spendthrift) -> None:
+        """Solve the game twice per player."""
+        n = game.num_players
+        self.game = game
+        self.up = [solve(game, tie_key=lambda v, i=i: v[i]) for i in range(n)]
+        self.down = [solve(game, tie_key=lambda v, i=i: -v[i]) for i in range(n)]
+
+    def move_losses(self, s: SpendthriftState) -> dict[int, tuple[float, float]]:
+        """``{action: (certain loss, possible loss)}`` for the mover at ``s``."""
+        p, game = s.to_move, self.game
+        kids = {a: game.apply_action(s, a) for a in game.legal_actions(s)}
+        up = {a: float(self.up[p].value(c)[p]) for a, c in kids.items()}
+        down = {a: float(self.down[p].value(c)[p]) for a, c in kids.items()}
+        best_down, best_up = max(down.values()), max(up.values())
+        return {a: (max(0.0, best_down - up[a]), best_up - down[a]) for a in kids}
+
+
+def run_robust() -> None:
+    """Re-score PPO and the 3-player searches with tie-robust loss bounds (see ``TieBounds``).
+
+    PPO (sampled) exactly over its self-play reach, for ``spendthrift`` (a check: the bounds must
+    equal the plain loss) and ``spendthrift3``. The 3-player searches from ``maxn`` replay the same
+    300 self-play seeds, every move scored with both bounds. ``key=value``: ``games``, ``sims``,
+    ``leaves``. Output: ``runs/spendthrift/robust.json``.
+    """
+    args = dict(item.split("=") for item in sys.argv[2:])
+    games = int(args.get("games", 300))
+    budgets = [int(x) for x in args.get("sims", "200,800").split(",")]
+    kinds = args.get("leaves", "value_net,exact").split(",")
+    path = OUT / "robust.json"
+    results = json.loads(path.read_text("utf-8")) if path.exists() else {}
+    torch.set_num_threads(4)
+    for name in ("spendthrift", "spendthrift3"):
+        if f"{name}/ppo_exact" in results and name == "spendthrift":
+            continue
+        game = make(name)
+        bounds = TieBounds(game)
+        sol = solve(game)
+        nodes = list(sol.choice)
+        net = PPOAgent.from_checkpoint(f"runs/spendthrift/{name}_ppo_200.pt").net
+        if f"{name}/ppo_exact" not in results:
+            probs = net_probs(game, net, nodes, greedy=False)
+            reach = reach_under(game, probs)
+            plain = certain = possible = 0.0
+            for s, w in reach.items():
+                p, legal = s.to_move, game.legal_actions(s)
+                q = {a: float(sol.value(game.apply_action(s, a))[p]) for a in legal}
+                b = bounds.move_losses(s)
+                plain += w * sum(probs[s][a] * (max(q.values()) - q[a]) for a in legal)
+                certain += w * sum(probs[s][a] * b[a][0] for a in legal)
+                possible += w * sum(probs[s][a] * b[a][1] for a in legal)
+            results[f"{name}/ppo_exact"] = {
+                "plain": round(plain, 4),
+                "certain": round(certain, 4),
+                "possible": round(possible, 4),
+            }
+            print(f"{name} PPO (sampled, exact): {results[f'{name}/ppo_exact']}", flush=True)
+            path.write_text(json.dumps(results, indent=1), "utf-8")
+        if name != "spendthrift3":
+            continue
+        torch.set_num_threads(1)
+        ck = torch.load(OUT / f"maxn_{name}_value.pt", map_location="cpu", weights_only=False)
+        vnet = PolicyValueNet(ck["input_dim"], game.num_distinct_actions(), (256, 256), "tanh")
+        vnet.load_state_dict(ck["state_dict"])
+        vnet.eval()
+        leaves = {"value_net": NetMultiEvaluator(net, vnet), "exact": ExactMulti(net, sol)}
+        agents = {"ppo": Greedy(net)}
+        for kind, sims in [(k, s) for k in kinds for s in budgets]:
+            agents[f"{kind}@{sims}"] = MultiPUCTAgent(leaves[kind], sims, f"{kind}@{sims}")
+        for label, agent in agents.items():
+            key = f"{name}/{label}"
+            if key in results:
+                continue
+            rows = []
+            for g in range(games):
+                rng = np.random.default_rng(g)
+                s, tot = game.new_initial_state(), np.zeros(3)
+                while not game.is_terminal(s):
+                    if game.is_chance_node(s):
+                        acts, ps = zip(*game.chance_outcomes(s), strict=True)
+                        s = game.apply_action(s, int(rng.choice(acts, p=ps)))
+                        continue
+                    p = s.to_move
+                    a = agent.step(game, s, rng)
+                    best = sol.value(game.apply_action(s, sol.action(s)))[p]
+                    c, u = bounds.move_losses(s)[a]
+                    tot += [float(best - sol.value(game.apply_action(s, a))[p]), c, u]
+                    s = game.apply_action(s, a)
+                rows.append(tot)
+            arr = np.asarray(rows)
+            mean, se = arr.mean(axis=0), arr.std(axis=0, ddof=1) / np.sqrt(games)
+            results[key] = {
+                "games": games,
+                **{
+                    k: [round(float(mean[i]), 4), round(float(se[i]), 4)]
+                    for i, k in enumerate(("plain", "certain", "possible"))
+                },
+            }
+            print(f"{key}: {results[key]}", flush=True)
+            path.write_text(json.dumps(results, indent=1), "utf-8")
+
+
 if __name__ == "__main__":
     stages = {
         "solve": run_solve,
@@ -964,5 +1080,6 @@ if __name__ == "__main__":
         "value": run_value,
         "maxn": run_maxn,
         "knobs": run_knobs,
+        "robust": run_robust,
     }
     stages[sys.argv[1]]()

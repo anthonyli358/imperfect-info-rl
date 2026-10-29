@@ -41,6 +41,9 @@ class Solution:
     game: Game
     values: dict[State, np.ndarray] = field(default_factory=dict)
     choice: dict[State, Action] = field(default_factory=dict)
+    # Among actions tied (within 1e-9) for the mover, the one maximising ``tie_key(child values)``;
+    # ``None`` keeps the lowest action id. ``lambda v: v[i]`` breaks every tie towards player i.
+    tie_key: Callable[[np.ndarray], float] | None = None
 
     def value(self, s: State) -> np.ndarray:
         """Every player's value of ``s`` under the solution."""
@@ -55,10 +58,15 @@ class Solution:
         else:
             p = game.current_player(s)
             best_a = None
-            for a in sorted(game.legal_actions(s)):
-                child = self.value(game.apply_action(s, a))
+            children = [
+                (a, self.value(game.apply_action(s, a))) for a in sorted(game.legal_actions(s))
+            ]
+            for a, child in children:
                 if v is None or child[p] > v[p] + 1e-12:
                     best_a, v = a, child
+            if self.tie_key is not None:
+                tied = [(a, c) for a, c in children if c[p] > v[p] - 1e-9]
+                best_a, v = max(tied, key=lambda ac: self.tie_key(ac[1]))
             self.choice[s] = best_a
         self.values[s] = v
         return v
@@ -81,10 +89,14 @@ def _check(game: Game) -> None:
     sys.setrecursionlimit(max(sys.getrecursionlimit(), 20_000))
 
 
-def solve(game: Game) -> Solution:
-    """Backward induction over every reachable state; ties go to the lowest action id."""
+def solve(game: Game, tie_key: Callable[[np.ndarray], float] | None = None) -> Solution:
+    """Backward induction over every reachable state.
+
+    Ties go to the lowest action id, or with ``tie_key`` to the tied action whose child values
+    maximise it (``max`` picks the first, so the lowest id, among equal keys).
+    """
     _check(game)
-    sol = Solution(game)
+    sol = Solution(game, tie_key=tie_key)
     sol.value(game.new_initial_state())
     return sol
 
