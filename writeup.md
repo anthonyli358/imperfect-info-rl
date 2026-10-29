@@ -486,6 +486,42 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Liar's Dice: how the equilibrium bluffs and calls (2026-10-29)
+
+Stage 4's last check: do CFR+'s mixed strategies look like sensible Liar's Dice? OpenSpiel's
+`liars_dice`: one die each, sixes wild (a six counts as any face but six), bids must rise.
+Alternating CFR+ for 1,000 iterations (44 s, exploitability 0.00013), then every deal and bid
+sequence walked with the probability equilibrium play reaches it (`experiments/spiel_games.py
+strategy`, `runs/liars_dice/strategy.json`). Exact frequencies, no sampling. A one-die bid is a
+**bluff** when the bidder's own die does not back it. A response is classed by how many of the bid's
+dice must come from the opponent's die, given the responder's own.
+
+| Situation | Equilibrium rate |
+|---|---|
+| Call when your own die already makes the bid true | **0.000** |
+| Call when the bid is impossible (needs 2 from a 1-die opponent) | **1.000** |
+| Call when the bid needs exactly 1 die from the opponent | 0.513 |
+| … on a face other than six (2 of 6 faces count: a match or a six) | 0.457 |
+| … on six (only a six counts) | 0.824 |
+| Opening bid is a bluff (all dice) | 0.396 |
+| … holding 1 / 2 / 3 / 4 / 5 / 6 | 0.97 / 0.97 / 0.33 / 0.09 / 0.03 / 0.00 |
+| Opening bids "two of a kind" | 0.000 |
+| A raise is a bluff | 0.251 |
+
+- **Both sanity checks hold exactly:** never call a true bid, always call an impossible one.
+- **Calls follow the odds.** A one-die bid on six is true only if the opponent holds a six (1 in 6),
+  and on another face if they hold it or a six (2 in 6); the equilibrium calls the first far more
+  (0.82 against 0.46). It mixes rather than always calling at 1-in-3 odds, because callers who
+  always called could be exploited by honest bids.
+- **Bluffing depends on the die, as it should.** With a 1 or a 2 an honest bid is low and leaves the
+  opponent a cheap raise, so the equilibrium bids a higher face it does not hold 97% of the time;
+  with a 5 it almost never needs to; a six backs every face, so it never bluffs.
+- **It never opens at "two of a kind"**, which only a pair or a six could support.
+
+This closes Stage 4. There is no hand-written Liar's Dice heuristic to play CFR+ against (the
+engine is OpenSpiel's); exact exploitability (0.00013) already says no opponent can do better than
+−0.0271 a game against it.
+
 ### Spendthrift: what we learned about training tempo (summary, 2026-10-29)
 
 The owner's question was how to train the *tempo* of an auction game: when to spend a purse that

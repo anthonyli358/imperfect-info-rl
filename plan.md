@@ -78,8 +78,7 @@ and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's c
 4. [x] Stage summary in the writeup ("Spendthrift: what we learned about training tempo").
 
 **Phase 2 — cheap loose ends on finished rungs.** One session; each is small.
-1. Liar's Dice: read off the CFR+ equilibrium's bluff and call frequencies by die face (exact,
-   minutes) and check they look sane; that closes Stage 4.
+1. [x] Liar's Dice bluff and call frequencies (2026-10-29): sane on every check; Stage 4 closed.
 2. Tessera: the search audit (`experiments/search_audit.py tessera`), so Stage 3's question
    (policy vs rollouts vs value-based search) has all three answers; then 12 more loop iterations
    only if the audit points at the value.
@@ -550,7 +549,9 @@ Goal: implement CFR from scratch on a small game I built — the paradigm shift 
   0.00013 in 31 s
 - [x] ~~2 dice each~~ dropped: out of reach for exact methods (~2^24 bid sequences per roll); would need
   MCCFR / Deep CFR and loses the exact yardstick
-- [ ] Eval: CFR vs heuristic; inspect learned bluff/call frequencies for sanity
+- [x] Eval: bluff and call frequencies of the CFR+ equilibrium (2026-10-29, `spiel_games
+  strategy`): never calls a true bid, always calls an impossible one, bluffs 97% holding a 1 or 2
+  and never with a six. No heuristic to play (OpenSpiel's engine); exact exploitability covers it
 
 **Done when:** exploitability drives toward zero and my values match OpenSpiel's reference.
 

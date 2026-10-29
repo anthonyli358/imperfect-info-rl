@@ -21,6 +21,7 @@ Run with (needs ``uv sync --extra openspiel``)::
     uv run python -m experiments.spiel_games nfsp game=leduc_poker iterations=400
     uv run python -m experiments.spiel_games rebel game=kuhn_poker epochs=20
     uv run python -m experiments.spiel_games magnet tag=m1 magnet_coef=1.0 lr=3e-5 iterations=400
+    uv run python -m experiments.spiel_games strategy   # Liar's Dice: bluffs and calls
 
 ``nfsp`` continues from the PPO phase with NFSP (``selfplay/nfsp.py``: a PPO best response
 against the anticipatory mix, plus a supervised average policy, which is what gets measured), the
@@ -408,6 +409,91 @@ def ppo(config: Config) -> None:
         results.write_text(json.dumps(exact, indent=1), "utf-8")
 
 
+def strategy(config: Config) -> None:
+    """Liar's Dice (1 die each, sixes wild): the CFR+ equilibrium's bluffs and calls, exactly.
+
+    Solves with alternating CFR+ (1,000 iterations, as ``crosscheck``), then walks every deal and
+    bid sequence weighted by how often equilibrium play reaches it, and tabulates the moves. A bid
+    "q-f" (at least q dice show f; sixes count as any face but a six) is a **bluff** when the
+    bidder's own die does not back it (for q = 1: their die is not f, nor a wild six). A response
+    is classed by how many of the q dice must come from the opponent's die given the responder's
+    own die: 0 (already true: calling is a sure loss), 1 (a guess), 2 (impossible: calling wins).
+    Output: ``runs/liars_dice/strategy.json``.
+    """
+    assert GAME == "liars_dice"
+    game = make(GAME)
+    cfr = GraphCFR(game, alternating=True)
+    t = time.perf_counter()
+    cfr.iterate(1000)
+    avg = cfr.average_policy()
+    table = table_of(game, avg, cfr.graph.states).policy_table()
+    print(
+        f"CFR+ 1,000 iterations ({time.perf_counter() - t:.0f}s); exploitability "
+        f"{exploitability(game, avg, cfr.graph)['exploitability']:.6f}",
+        flush=True,
+    )
+    sg = game.spiel
+    liar = sg.num_distinct_actions() - 1
+    sides = 6
+
+    def counts(die: int, face: int) -> int:  # dice 1..6; sixes are wild for faces 1..5
+        return int(die == face or (die == sides and face != sides))
+
+    stats: dict[str, list[float]] = {}
+
+    def add(key: str, value: float, w: float) -> None:
+        acc = stats.setdefault(key, [0.0, 0.0])
+        acc[0] += w * value
+        acc[1] += w
+
+    def walk(s, w: float, dice: list[int]) -> None:  # noqa: ANN001 - a pyspiel state
+        if s.is_terminal() or w < 1e-12:
+            return
+        if s.is_chance_node():
+            for a, p in s.chance_outcomes():
+                c = s.clone()
+                c.apply_action(a)
+                walk(c, w * p, [*dice, a + 1])
+            return
+        p = s.current_player()
+        probs = dict(table[s.information_state_string(p)])
+        mine = dice[p]
+        hist = [a for a in s.history()[2:]]
+        if not hist:  # the opening bid
+            for a, pr in probs.items():
+                q, face = a // sides + 1, a % sides + 1
+                add(f"open: die={mine} bluff", float(q == 1 and not counts(mine, face)), w * pr)
+                add("open: bluff", float(q == 1 and not counts(mine, face)), w * pr)
+                add("open: quantity 2", float(q == 2), w * pr)
+        else:
+            last = hist[-1]
+            q, face = last // sides + 1, last % sides + 1
+            need = max(0, q - counts(mine, face))
+            call = probs.get(liar, 0.0)
+            add(f"respond: need {need} from opponent, call", call, w)
+            if need == 1:
+                add(f"respond: need 1, face={'six' if face == sides else 'other'}, call", call, w)
+            for a, pr in probs.items():
+                if a == liar:
+                    continue
+                q2, f2 = a // sides + 1, a % sides + 1
+                add("raise: bluff", float(q2 == 1 and not counts(mine, f2)), w * pr)
+        for a, pr in probs.items():
+            if pr > 0:
+                c = s.clone()
+                c.apply_action(a)
+                walk(c, w * pr, dice)
+
+    walk(sg.new_initial_state(), 1.0, [])
+    rows = {
+        k: {"rate": round(v / n, 4), "reach": round(n, 4)} for k, (v, n) in sorted(stats.items())
+    }
+    for k, r in rows.items():
+        print(f"  {k:<45} {r['rate']:.4f}  (reach {r['reach']:.4f})", flush=True)
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT / "strategy.json").write_text(json.dumps(rows, indent=1), "utf-8")
+
+
 if __name__ == "__main__":
     for item in [a for a in sys.argv[2:] if a.startswith("game=")]:
         GAME = item.split("=", 1)[1]
@@ -419,5 +505,6 @@ if __name__ == "__main__":
         "magnet": magnet,
         "nfsp": nfsp,
         "rebel": rebel,
+        "strategy": strategy,
     }
     stages[sys.argv[1]](Config())
