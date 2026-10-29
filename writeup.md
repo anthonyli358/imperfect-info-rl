@@ -95,8 +95,9 @@ what is left into five phases, limit Hold'em then Stage 7, and is the one to fol
    change"): equilibrium spending per lot flipped does not depend on how predictable the end is;
    the purse sets prices. PPO on the extreme purses ("Spendthrift: the purse PPO finds hardest"):
    the prediction failed; the 6-coin game is the easiest, the registered 8-coin one the hardest.
-   Next (plan.md finishing plan, Phase 1): a tie-robust
-   3-player yardstick.
+   Tie-robust 3-player scores ("Spendthrift: three-player mistakes once ties are set aside"):
+   about three quarters of the old per-move loss was ties; search cuts the certain loss by at most
+   a fifth. Next (plan.md finishing plan, Phase 1): the set-bonus decision, then the stage summary.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -483,6 +484,48 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Spendthrift: three-player mistakes once ties are set aside (2026-10-29)
+
+The three-player search entry found that scoring a move against one equilibrium is unreliable,
+because of kingmaking ties. Fix: `eval/perfect_info.solve` now takes a tie-break rule, and
+`TieBounds` (`experiments/spendthrift.py robust`, `runs/spendthrift/robust.json`) solves the game
+twice per player: every tie broken in that player's favour, and every tie broken against them
+(both are equilibria; tested). For a move `a` by player `p`:
+
+- **certain loss** = best move's value with all ties against `p`, minus `a`'s value with all ties
+  for `p` (at least 0): what `a` costs however the later ties fall;
+- **possible loss** = the same with the tie-breaks swapped: the most it could cost.
+
+Check: with two zero-sum players ties never change the mover's value, and PPO's two-player
+certain loss, possible loss and plain loss all come out at 0.3158 per game, as they must.
+
+Three players, the same 300 self-play deals as the `maxn` entry for every agent (± one standard
+error over games; PPO also scored exactly over its whole self-play distribution):
+
+| Agent | Plain loss (one equilibrium) | **Certain loss** | Possible loss |
+|---|---|---|---|
+| PPO, sampled (exact) | 0.412 | **0.096** | 4.24 |
+| greedy PPO | 0.412 ± 0.031 | **0.094 ± 0.012** | 4.44 ± 0.15 |
+| max-n search, value net, 200 / 800 | 0.397 / 0.453 | **0.086 / 0.081** ± 0.012 | 4.40 / 4.46 |
+| max-n search, exact leaves, 200 / 800 | 0.329 / 0.335 | **0.077 / 0.080** ± 0.010 | 4.43 / 4.54 |
+
+- **About three quarters of the old "loss" was ties.** PPO's per-move loss against the solver's
+  equilibrium was 0.41 per game. Only 0.09–0.10 of it is a mistake under every tie-break; the
+  rest came from moves that are fine if later indifferent players break ties the other way.
+- **Search barely reduces the real mistakes.** Certain loss falls from 0.094 (PPO) to 0.077–0.086
+  with search: a fifth at most, 1–1.5 standard errors (not paired, so the real precision is a
+  little better). This agrees with head-to-head play (+0.09 ± 0.04 at best).
+- **The ranking by the plain score was misleading.** It said 800 simulations on the value net
+  were *worse* than 200 (0.453 against 0.397); by certain loss they are slightly better (0.081
+  against 0.086). It also made exact leaves look much better than PPO (0.33 against 0.41); by
+  certain loss the gap is 0.017.
+- **The possible loss is huge (about 4.4 a game)** and the same for every agent: if every later
+  tie went against the mover, nearly any move could cost a lot. In this game kingmakers decide a
+  lot, which is a property of three-player Spendthrift, not of any agent.
+- **So for three players PPO is already close to as good as search can make it**, about 0.09 a
+  game from moves that are wrong however ties fall. What the three-player game mostly tests is
+  how ties are broken, which no single value function settles.
 
 ### Spendthrift: the purse PPO finds hardest is not the one predicted (2026-10-29)
 

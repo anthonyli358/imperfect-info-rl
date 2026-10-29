@@ -71,8 +71,9 @@ and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's c
 **Phase 1 — close Spendthrift (Stage 6b).** About two sessions.
 1. [x] PPO on the purse variants (2026-10-29): no. The tight purse is the easiest for PPO; the
    registered 8-coin game the hardest (one seed each).
-2. A tie-robust three-player yardstick: score each move against the best and the worst tie-break,
-   then re-score the three-player PPO and search results. Settles whether 3-player search helps.
+2. [x] Tie-robust three-player yardstick (2026-10-29, `robust` stage): certain loss PPO 0.094,
+   search 0.077–0.086 ± 0.01; about three quarters of the old per-move loss was ties. Search
+   helps three players little.
 3. **Owner decision:** add a set bonus (a new scoring rule), or close the knobs as they are.
 4. Stage summary in the writeup: what tempo is, and which learners get it right where.
 
@@ -632,8 +633,8 @@ exact answers to compare every learner against.
   prediction failed. 6 coins is easiest (NashConv 0.24, 0.20 per game), the registered 8 coins
   hardest (0.36, 0.32), 10 coins between (0.30, 0.25). One seed each.
 - [ ] A set bonus (a new scoring rule; needs the owner's design call); a size beyond exact reach
-- [ ] 3 players: a tie-robust yardstick (best and worst tie-break per move, or perturbed payoffs
-  for a unique equilibrium); more head-to-head games
+- [x] 3 players: a tie-robust yardstick (2026-10-29): certain loss PPO 0.094, search
+  0.077–0.086; three quarters of the old per-move loss was ties
 
 ---
 
