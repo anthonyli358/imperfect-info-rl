@@ -486,6 +486,34 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Ventures: net-guided PIMC on today's yardstick (2026-10-29)
+
+The last stale number: net-guided PIMC (learned priors over PUCT, the heuristic's leaf value; the
+first learned agent to beat the heuristic, ~1855 Elo from 40 games in September) was never rated
+on the 1,000-deal ladders. Its checkpoint cannot run on today's Ventures encoder (153 features
+against 567 now), so it was retrained with the same recipe and settings on today's features
+(`train_ventures_guided`, 12 iterations, about 15 minutes; `runs/guided_v2/`). It was then rated as
+a `guided:` ladder entry at 256 simulations, one sampled world per move, on 200 paired deals per
+ladder (it is slow; `experiments/elo_ladder.py`, now capped at 4 workers).
+
+| Agent | Plain-heuristic ladder | Careful-heuristic ladder |
+|---|---|---|
+| PPO v2 | 1822 ± 8 | 1650 ± 8 |
+| **net-guided PIMC, retrained** | **1866 ± 22** (0.749, +25.9) | **1713 ± 18** (0.536, +3.3) |
+| `diverse_sym` (final) | 2034 ± 12 | 1929 ± 9 |
+| `diverse_sym` + opponent-robust rollouts (best) | 2070 ± 13 | 1960 ± 10 |
+
+- **The September number holds up:** 1866 ± 22 on today's ladder against ~1855 then. Retraining on
+  richer features did not change it, which says the search, with its heuristic leaves, sets its
+  strength more than the priors do.
+- **It is no longer competitive:** about 170 Elo below the best policy alone and 200 below the
+  best agent on the plain ladder; 215–245 below on the careful one, where it barely beats the
+  careful heuristic (0.536). Against the careful heuristic its edge over PPO v2 (+63 Elo) is about
+  all that is left.
+- So the ladder's history stands as written: learning the priors on top of an honest leaf beat
+  the heuristic first, but the recipe (PPO with good features, a league, symmetry augmentation,
+  then late rollouts) went much further.
+
 ### Tessera: the search audit, and why value-based search is the right tool there (2026-10-29)
 
 Stage 3 asked which of policy, rollouts and value-based search wins on a perfect-information

@@ -6,8 +6,9 @@ evals). Results go to ``runs/elo_ladder.json``; checkpoints already rated there 
 this is cheap to rerun as the lineage grows, and safe to stop at any time.
 
 A lineage entry ``rollout:<checkpoint>`` is that checkpoint with opponent-robust endgame
-rollouts (``agents/rollout.py``), and ``search:<prior.pt>|<value.pt>|<simulations>`` net-guided
-PUCT search (Tessera).
+rollouts (``agents/rollout.py``), ``search:<prior.pt>|<value.pt>|<simulations>`` net-guided
+PUCT search (Tessera), and ``guided:<net.pt>|<simulations>`` net-guided PIMC (learned priors,
+the heuristic's honest leaf value, one sampled world per move; ``train_ventures_guided``).
 
 **Two Ventures scales.** The plain heuristic leaks (it hands over playable cards), so the best
 agents score 0.85-0.92 against it and their ratings bunch up near its ceiling. ``careful`` rates
@@ -76,8 +77,11 @@ class Config:
         *((f"diverse {i}", f"runs/diverse_{i}.pt") for i in range(100, 500, 100)),
         *((f"diverse_sym {i}", f"runs/diverse_sym_{i}.pt") for i in range(100, 500, 100)),
         ("diverse_sym + rollouts", "rollout:runs/diverse_sym.pt"),
+        ("net-guided PIMC 256", "guided:runs/guided_v2/guided_ventures.pt|256"),
     )
     deals: int = 1000
+    # Fewer deals for slow entries (label prefix -> deals).
+    slow_deals: tuple[tuple[str, int], ...] = (("net-guided PIMC", 200),)
     out: str = "runs/elo_ladder.json"
     game: str = "ventures"
     heuristic: Callable[[], Agent] = heuristic_agent
@@ -142,11 +146,29 @@ def tessera_strong_config() -> Config:
 
 ROLLOUT = "rollout:"
 SEARCH = "search:"
+GUIDED = "guided:"
+
+
+def guided_agent(path: str, simulations: int) -> Agent:
+    """Net-guided PIMC: learned priors over PUCT, the game's heuristic value at the leaves."""
+    import torch
+
+    from iirl.agents.alphazero.agent import AlphaZeroAgent
+    from iirl.agents.alphazero.mcts import PUCTConfig
+    from iirl.nn.policy_value import NetEvaluator, PolicyValueNet
+
+    torch.set_num_threads(1)
+    ck = torch.load(path, map_location="cpu", weights_only=False)
+    net = PolicyValueNet(ck["input_dim"], ck["num_actions"])
+    net.load_state_dict(ck["state_dict"])
+    config = PUCTConfig(simulations=simulations, determinizations=1, leaf_value="heuristic")
+    return AlphaZeroAgent(NetEvaluator(net), config, name=f"guided{simulations}")
 
 
 def entry_files(path: str) -> list[str]:
     """The checkpoint files a lineage entry needs (to skip entries not trained yet)."""
-    return path.removeprefix(ROLLOUT).removeprefix(SEARCH).split("|")[:2]
+    rest = path.removeprefix(ROLLOUT).removeprefix(SEARCH).removeprefix(GUIDED)
+    return rest.split("|")[:1] if path.startswith(GUIDED) else rest.split("|")[:2]
 
 
 def agent_spec(path: str, game: str = "ventures") -> tuple:
@@ -154,6 +176,9 @@ def agent_spec(path: str, game: str = "ventures") -> tuple:
     if path.startswith(SEARCH):
         prior, value, sims = path[len(SEARCH) :].split("|")
         return search_agent, {"policy": prior, "value": value, "simulations": int(sims)}
+    if path.startswith(GUIDED):
+        net, sims = path[len(GUIDED) :].split("|")
+        return guided_agent, {"path": net, "simulations": int(sims)}
     if path.startswith(ROLLOUT):
         blueprint = path[len(ROLLOUT) :]
         return rollout_agent, {
@@ -197,7 +222,8 @@ def main(config: Config) -> None:
         if label in ladder or not all(Path(f).exists() for f in entry_files(path)):
             continue
         spec = agent_spec(path, config.game)
-        r = duplicate_match(game, spec, (config.heuristic, {}), config.deals)
+        deals = next((n for p, n in config.slow_deals if label.startswith(p)), config.deals)
+        r = duplicate_match(game, spec, (config.heuristic, {}), deals, workers=4)  # keeps it cool
         ladder[label] = {
             "checkpoint": path,
             "elo": round(anchored_elo(r.score, config.anchor_elo), 1),

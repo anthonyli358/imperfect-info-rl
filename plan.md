@@ -81,8 +81,9 @@ and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's c
 1. [x] Liar's Dice bluff and call frequencies (2026-10-29): sane on every check; Stage 4 closed.
 2. [x] Tessera search audit (2026-10-29): policy < late rollouts < value-based search; it does
    not point at the value, so no more loop iterations now.
-3. Ventures: re-rate net-guided PIMC on today's yardstick (the last stale number), and analyse
-   the recorded human games (only one so far, so record a few more first or drop it).
+3. [x] Ventures: net-guided PIMC retrained on today's features and re-rated (2026-10-29): 1866 ± 22
+   (plain), 1713 ± 18 (careful), below every recent agent. Human games: only one is recorded,
+   so the analysis waits on the owner playing more (`experiments/play.py` records them).
 
 **Phase 3 — poker's finale, heads-up limit Hold'em (Stage 5).** A few sessions.
 1. Deep CFR on Leduc, where exact exploitability checks it against CFR+ (0.0002) and ReBeL (0.07).
@@ -358,7 +359,8 @@ in two-player zero-sum), and for long-horizon games where search is hard, **Deep
    1973); exploitability 0.547 (max of 2). The recipe has plateaued at ~1970 Elo / ~0.545. The
    stall persists (1 in 300 self-play games, as before): the leader still rarely draws the last
    card, a position too rare to learn in 400 iterations. Harmless.
-2. [ ] **Refresh the stale number.** Rate net-guided PIMC on today's yardstick: duplicate deals
+2. [x] **Refresh the stale number** (2026-10-29: retrained on today's features, 1866 ± 22 plain,
+   1713 ± 18 careful). Rate net-guided PIMC on today's yardstick: duplicate deals
    vs the heuristic and vs the best Nash policy. Settles whether any search-based agent still
    competes.
 3. [ ] **Cheap Nash-seeking variants**, each vs a same-budget plain-Nash control, and judged on
