@@ -22,6 +22,7 @@ Run with (needs ``uv sync --extra openspiel``)::
     uv run python -m experiments.spiel_games rebel game=kuhn_poker epochs=20
     uv run python -m experiments.spiel_games magnet tag=m1 magnet_coef=1.0 lr=3e-5 iterations=400
     uv run python -m experiments.spiel_games strategy   # Liar's Dice: bluffs and calls
+    uv run python -m experiments.spiel_games deep_cfr game=leduc_poker
 
 ``nfsp`` continues from the PPO phase with NFSP (``selfplay/nfsp.py``: a PPO best response
 against the anticipatory mix, plus a supervised average policy, which is what gets measured), the
@@ -494,6 +495,58 @@ def strategy(config: Config) -> None:
     (OUT / "strategy.json").write_text(json.dumps(rows, indent=1), "utf-8")
 
 
+def deep_cfr(config: Config) -> None:
+    """Deep CFR (``agents/cfr/deep_cfr.py``), its average strategy scored by exact exploitability.
+
+    At each checkpoint iteration a fresh strategy network is fitted to the strategy memory and its
+    policy measured exactly (``eval.exact_br``). Resumable: the solver's state (memories,
+    advantage networks) is saved at every checkpoint to ``runs/<game>/deep_cfr.pt`` and results
+    appended to ``deep_cfr.jsonl``. ``key=value``: ``checkpoints`` (comma-separated iterations),
+    ``traversals``, ``advantage_steps``, ``tag``.
+    """
+    from iirl.agents.cfr.deep_cfr import DeepCFR, DeepCFRConfig
+
+    args = dict(item.split("=") for item in sys.argv[2:])
+    checkpoints = [int(x) for x in args.get("checkpoints", "10,25,50,100,200").split(",")]
+    tag = args.get("tag", "deep_cfr")
+    torch.set_num_threads(4)
+    game = make(GAME)
+    graph = build_graph(game)
+    dcfg = DeepCFRConfig(
+        traversals=int(args.get("traversals", 300)),
+        advantage_steps=int(args.get("advantage_steps", 300)),
+    )
+    solver = DeepCFR(game, dcfg)
+    state_path, log = OUT / f"{tag}.pt", OUT / f"{tag}.jsonl"
+    OUT.mkdir(parents=True, exist_ok=True)
+    if state_path.exists():
+        solver.load_state_dict(torch.load(state_path, weights_only=False))
+        print(f"resuming at iteration {solver.t}", flush=True)
+    for target in checkpoints:
+        if solver.t >= target:
+            continue
+        t0 = time.perf_counter()
+        solver.iterate(target - solver.t)
+        seconds = time.perf_counter() - t0
+        solver.strategy_net = None
+        t1 = time.perf_counter()
+        e = exploitability(game, solver.average_policy(), graph)
+        row = {
+            "iterations": solver.t,
+            "exploitability": round(e["exploitability"], 5),
+            "traversals_per_iteration": dcfg.traversals,
+            "advantage_steps": dcfg.advantage_steps,
+            "advantage_rows": [len(m) for m in solver.adv_mem],
+            "strategy_rows": len(solver.strat_mem),
+            "seconds_iterating": round(seconds, 1),
+            "seconds_strategy_fit": round(time.perf_counter() - t1, 1),
+        }
+        print(json.dumps(row), flush=True)
+        with log.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row) + "\n")
+        torch.save(solver.state_dict(), state_path)
+
+
 if __name__ == "__main__":
     for item in [a for a in sys.argv[2:] if a.startswith("game=")]:
         GAME = item.split("=", 1)[1]
@@ -506,5 +559,6 @@ if __name__ == "__main__":
         "nfsp": nfsp,
         "rebel": rebel,
         "strategy": strategy,
+        "deep_cfr": deep_cfr,
     }
     stages[sys.argv[1]](Config())

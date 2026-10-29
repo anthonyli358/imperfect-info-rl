@@ -486,6 +486,38 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Deep CFR on Leduc: regret networks are the bottleneck (2026-10-29)
+
+Stage 5's first step: Deep CFR (Brown et al. 2019), our own game-agnostic implementation
+(`agents/cfr/deep_cfr.py`, tested on Kuhn): external-sampling traversals, an advantage network per
+player retrained from scratch each iteration on a reservoir weighted by iteration (linear CFR), a
+final strategy network on the strategy memory. OpenSpiel's PyTorch version needs `dm-tree`, a new
+dependency, so it was not used. Leduc poker, 300 traversals per player per iteration, (128, 128)
+networks, every checkpoint's strategy network scored by exact exploitability
+(`experiments/spiel_games.py deep_cfr game=leduc_poker`, `runs/leduc_poker/deep_cfr*.jsonl`;
+4 threads; one seed).
+
+| Iterations | 10 | 25 | 50 | 100 | 200 | Time for 200 |
+|---|---|---|---|---|---|---|
+| 300 advantage steps per iteration | 0.69 | 0.36 | 0.33 | 0.28 | **0.21** | 4 min |
+| 1,500 advantage steps per iteration | — | 0.29 | 0.21 | 0.15 | **0.135** | 17 min |
+
+For comparison on Leduc: uniform play 2.37, PPO 1.3–2.2, NFSP 0.84, ReBeL 0.07, CFR+ 0.0002.
+
+- **Deep CFR works on Leduc, and beats PPO and NFSP by far:** 0.135 after 200 iterations at the
+  longer training, against 0.84 for NFSP at its best. It has not caught ReBeL (0.07), which
+  solves subgames exactly at play time.
+- **The bottleneck is the regret networks, not the final strategy network.** Diagnostic at 200
+  iterations (300 steps): averaging the strategy memory exactly per information set, with no
+  network, gives 0.196 against the network's 0.212, so the final fit costs only 0.016. Training
+  the advantage networks five times longer cuts exploitability by a third at every checkpoint
+  (0.21 → 0.135 at 200), for four times the time.
+- **It is still falling** at 200 iterations (0.15 → 0.135 over the last 100), more slowly. More
+  iterations and traversals would keep it going; that is cheap on Leduc but scales with the game.
+- Why it matters for limit Hold'em: Deep CFR needs no tables, so it is the one method here that
+  can run on a game with ~10^14 information sets at all. How well its regret networks
+  generalise there is the open question.
+
 ### Ventures: net-guided PIMC on today's yardstick (2026-10-29)
 
 The last stale number: net-guided PIMC (learned priors over PUCT, the heuristic's leaf value; the

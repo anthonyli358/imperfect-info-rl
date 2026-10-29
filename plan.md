@@ -86,10 +86,16 @@ and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's c
    so the analysis waits on the owner playing more (`experiments/play.py` records them).
 
 **Phase 3 — poker's finale, heads-up limit Hold'em (Stage 5).** A few sessions.
-1. Deep CFR on Leduc, where exact exploitability checks it against CFR+ (0.0002) and ReBeL (0.07).
-2. External-sampling MCCFR on heads-up limit Hold'em (OpenSpiel's engine). Too big for exact
-   exploitability, so it is judged by large-sample head-to-head play against baselines, with
-   variance reduction and a local best response.
+1. [x] Deep CFR on Leduc (2026-10-29, `agents/cfr/deep_cfr.py`): 0.135 after 200 iterations
+   (1,500 advantage steps each; 0.21 at 300), between NFSP (0.84) and ReBeL (0.07). The regret
+   networks are the bottleneck, not the strategy network.
+2. [ ] **Full heads-up limit Hold'em** (owner's decision, 2026-10-29: the full game, not a
+   reduced one). OpenSpiel's Windows build has no `universal_poker`, so our own engine: 52
+   cards, 4 betting rounds, a 7-card hand evaluator (tested against known hand rankings), behind
+   the `Game` interface with the conformance suite. Agent: Deep CFR (no tables needed). Nothing
+   exact is possible, so judge by large-sample head-to-head play (duplicate deals: swap the
+   hole cards) against baselines (always call, a hand-strength heuristic, PPO) and a local best
+   response (LBR). Several sessions; "functional, not frontier".
 3. OpenSpiel agents wired into the `iirl/eval/` tournament runner.
 
 **Phase 4 — the entity rung (Stage 7, owner's choice, 2026-10-28).** The largest item left:
@@ -569,7 +575,7 @@ Goal: adopt the framework where it earns its place — CFR at scale, with verifi
 - [x] **Leduc poker** — CFR+ 0.00023 in 0.9 s; PPO 1.3–2.2 exploitable (uniform 2.37) (2026-10-27); MCCFR not yet
 - [x] **NFSP and ReBeL on Leduc** — ReBeL 0.07 (plateau from epoch 20), NFSP 0.84 at best (2026-10-27)
 - [x] ReBeL on Liar's Dice, 20 epochs: 0.047 (PPO 0.31–0.52); sampled evaluation (2026-10-28)
-- [ ] **Deep CFR** (neural) on Leduc / limit
+- [x] **Deep CFR** (neural) on Leduc (2026-10-29): 0.135 exploitability; limit next
 - [ ] **Heads-up limit Hold'em** — MCCFR/Deep CFR agent; sanity-check against known solved results (Cepheus as reference point)
 - [ ] Evaluation discipline: exploitability + large-sample head-to-head; variance-reduction (AIVAT-style) note/impl
 - [ ] Wire OpenSpiel agents into `iirl/eval/` tournament runner (cross-wing benchmarking)
