@@ -22,7 +22,8 @@ strategy network is trained on the strategy memory (weighted by ``t``); it appro
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import multiprocessing as mp
+from dataclasses import dataclass, replace
 
 import numpy as np
 import torch
@@ -43,6 +44,7 @@ class DeepCFRConfig:
     batch_size: int = 1024
     lr: float = 1e-3
     memory: int = 1_000_000  # rows per reservoir
+    workers: int = 1  # traversal processes (the game must pickle); 1 traverses in-process
     seed: int = 0
 
 
@@ -88,6 +90,33 @@ class Reservoir:
         return tuple(torch.as_tensor(a[idx]) for a in (self.x, self.y, self.mask, self.t))
 
 
+class _Recorder:
+    """Collects rows in order (a worker's traversals, merged into the reservoirs afterwards)."""
+
+    def __init__(self) -> None:
+        self.rows: list[tuple[np.ndarray, np.ndarray, np.ndarray, int]] = []
+
+    def add(self, x: np.ndarray, y: np.ndarray, mask: np.ndarray, t: int) -> None:
+        self.rows.append((x, y, mask, t))
+
+
+def _worker_traversals(args: tuple) -> tuple[list, list]:
+    """Run ``n`` traversals for player ``p`` at iteration ``t`` with the given advantage nets."""
+    game, config, nets, p, t, n, seed = args
+    torch.set_num_threads(1)
+    solver = DeepCFR(game, replace(config, memory=1, workers=1, seed=seed))
+    for net, sd in zip(solver.adv_nets, nets, strict=True):
+        net.load_state_dict(sd)
+        net.eval()
+    adv, strat = _Recorder(), _Recorder()
+    solver.adv_mem = [adv, adv]  # only player p's rows are added
+    solver.strat_mem = strat
+    solver.t = t
+    for _ in range(n):
+        solver._traverse(game.new_initial_state(), p)
+    return adv.rows, strat.rows
+
+
 def regret_matching(advantages: np.ndarray, legal: list[int]) -> np.ndarray:
     """Proportional to the positive advantages over ``legal``; the best action if none is."""
     probs = np.zeros(len(advantages))
@@ -120,6 +149,7 @@ class DeepCFR:
         self.strategy_net: nn.Sequential | None = None
         self.t = 0
         self._cache: dict[str, np.ndarray] = {}
+        self._pool = None
 
     # --- Traversal ------------------------------------------------------------------------------
     def _strategy(self, s: State, player: int) -> tuple[np.ndarray, np.ndarray, list[int]]:
@@ -185,9 +215,39 @@ class DeepCFR:
             self.t += 1
             for p in (0, 1):
                 self._cache = {}
-                for _ in range(self.config.traversals):
-                    self._traverse(self.game.new_initial_state(), p)
+                if self.config.workers > 1:
+                    self._parallel_traversals(p)
+                else:
+                    for _ in range(self.config.traversals):
+                        self._traverse(self.game.new_initial_state(), p)
                 self._train_advantage(p)
+
+    def _parallel_traversals(self, p: int) -> None:
+        """Split this iteration's traversals over worker processes; merge their rows in order."""
+        cfg = self.config
+        if self._pool is None:
+            self._pool = mp.get_context("spawn").Pool(cfg.workers)
+        nets = [n.state_dict() for n in self.adv_nets]
+        share = [
+            cfg.traversals // cfg.workers + (w < cfg.traversals % cfg.workers)
+            for w in range(cfg.workers)
+        ]
+        seeds = self.rng.integers(2**31, size=cfg.workers)
+        jobs = [
+            (self.game, cfg, nets, p, self.t, n, int(s)) for n, s in zip(share, seeds, strict=True)
+        ]
+        for adv_rows, strat_rows in self._pool.map(_worker_traversals, jobs):
+            for row in adv_rows:
+                self.adv_mem[p].add(*row)
+            for row in strat_rows:
+                self.strat_mem.add(*row)
+
+    def close(self) -> None:
+        """Stop the worker processes, if any."""
+        if self._pool is not None:
+            self._pool.close()
+            self._pool.join()
+            self._pool = None
 
     def train_strategy(self) -> nn.Sequential:
         """Fit the average-strategy network to the strategy memory (weighted by iteration)."""
