@@ -4,6 +4,7 @@
 # ``spiel`` registers OpenSpiel games only when the [openspiel] extra is installed.
 from iirl.games import (  # noqa: F401
     camel_stocks,
+    holdem,
     mini_ventures,
     spendthrift,
     spiel,
@@ -11,4 +12,4 @@ from iirl.games import (  # noqa: F401
     ventures,
 )
 
-__all__ = ["camel_stocks", "mini_ventures", "spendthrift", "spiel", "tessera", "ventures"]
+__all__ = ["camel_stocks", "holdem", "mini_ventures", "spendthrift", "spiel", "tessera", "ventures"]
