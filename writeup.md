@@ -486,6 +486,44 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Heads-up limit Hold'em: Deep CFR draws level with an equity heuristic (2026-10-30)
+
+The full game, by the owner's choice: heads-up limit Texas Hold'em on our own engine
+(`games/holdem/`, OpenSpiel's Windows build has none). It uses the computer-poker-competition rules:
+blinds 1/2, bets 2/2/4/4, four bets a round. The seven-card evaluator is checked against brute force
+over every five-card subset, and the engine passes the conformance suite. The game has about 10^14
+information sets, so there is no exact yardstick. Deep CFR (`agents/cfr/deep_cfr.py`, now with
+traversals split over 4 worker processes): 1,000 traversals per player per iteration, (256, 256)
+networks, 1,000 advantage steps per iteration, 1M-row reservoirs (full by iteration 10–40). 100
+iterations took 40 minutes (`experiments/holdem.py train`; features: cards one-hot and by rank,
+the made-hand category, the betting by round).
+
+Each checkpoint's strategy network plays four fixed opponents on 2,000 duplicate deals (each deal
+twice with the hole cards swapped; `experiments/holdem.py match`, `runs/holdem/matches.jsonl`).
+Big blinds won per hand, ± one standard error over deals:
+
+| Opponent | Iteration 10 | 25 | 50 | 100 | Equity heuristic's own result |
+|---|---|---|---|---|---|
+| random | +0.84 ± 0.06 | +0.85 ± 0.06 | +0.95 ± 0.06 | +0.86 ± 0.06 | +0.89 ± 0.14 |
+| calling station | +0.40 ± 0.04 | +0.29 ± 0.03 | +0.36 ± 0.04 | +0.42 ± 0.04 | +0.96 ± 0.06 |
+| maniac | +0.86 ± 0.15 | +1.28 ± 0.12 | +1.23 ± 0.11 | +0.76 ± 0.10 | +3.24 ± 0.20 |
+| **equity heuristic** | −0.37 ± 0.06 | −0.32 ± 0.05 | −0.25 ± 0.05 | **−0.08 ± 0.05** | — |
+
+(The heuristic's column is from 300 duplicate deals.)
+
+- **Deep CFR closes on the equity heuristic steadily**: from −0.37 to −0.08 big blinds a hand over
+  100 iterations, the last within two standard errors of even. The heuristic is a fair yardstick:
+  it beats the other three opponents by 0.9–3.2 big blinds a hand.
+- **It beats every weak opponent, by less than the heuristic does.** This is what a near-equilibrium
+  strategy should do: it does not exploit, it just does not lose. Against a calling station or a
+  maniac the right play is far from equilibrium (value-bet everything; call down light), and the
+  heuristic, which has no idea of balance, happens to play close to that. The results against
+  them wander between checkpoints (+0.76 to +1.28 against the maniac) as the strategy changes.
+- **Context:** the Leduc run says Deep CFR at this budget leaves a fair amount of exploitability;
+  here it is not yet a strong player, but it is still improving after 100 iterations.
+- Next: 100 more iterations (the run resumes from its saved state); then a local best response
+  (LBR) as a lower bound on its exploitability.
+
 ### Deep CFR on Leduc: regret networks are the bottleneck (2026-10-29)
 
 Stage 5's first step: Deep CFR (Brown et al. 2019), our own game-agnostic implementation

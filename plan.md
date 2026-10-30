@@ -96,6 +96,10 @@ and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's c
    exact is possible, so judge by large-sample head-to-head play (duplicate deals: swap the
    hole cards) against baselines (always call, a hand-strength heuristic, PPO) and a local best
    response (LBR). Several sessions; "functional, not frontier".
+   - [x] Engine + evaluator (2026-10-30, `games/holdem/`), tested; baseline panel
+   - [x] Deep CFR, 100 iterations (40 min): −0.08 ± 0.05 bb a hand against the equity heuristic
+     (from −0.37 at iteration 10); beats random, calling station and maniac
+   - [ ] 100 more iterations; then LBR
 3. OpenSpiel agents wired into the `iirl/eval/` tournament runner.
 
 **Phase 4 — the entity rung (Stage 7, owner's choice, 2026-10-28).** The largest item left:
