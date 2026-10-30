@@ -34,6 +34,7 @@ step, while expanding to more games and trying more approaches. Games so far:
 | **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | Policy + value net + PUCT search, both nets improved by 48 iterations of an AlphaZero loop (`experiments/alphago_tessera.py`, `runs/tessera_ag/exit_*_48.pt`) | 400 sims: 2057 ± 21 Elo (heuristic = 1500; 0.961 vs the heuristic), 0.545 vs the same search on the iteration-24 nets | same page (400 sims), with a real board |
 | Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
 | Liar's Dice | OpenSpiel's engine (1 die each), through `games/spiel.py` | full-game CFR+ (alternating) | exploitability 0.00013 after 1,000 iterations; first bidder's value −0.0271 | — |
+| Heads-up limit Hold'em | Our own engine (standard competition rules); ~10^14 information sets | Deep CFR, 200 iterations (`runs/holdem/deep_cfr_200.pt`) | level with an equity heuristic (+0.01 ± 0.04 bb a hand); local best response wins 0.30 ± 0.06 (exploitability ≥ 300 mbb a hand) | — |
 | Kuhn, Leduc poker | OpenSpiel's engines, same adapter | full-game CFR+ (alternating) | 0.00009 / 0.00023 after 1,000 iterations; first player's value −0.0556 (= −1/18) / −0.0857 | — |
 | Spendthrift (2 and 3 players) | Original auction game about tempo (fixed purse, random end, the poorest loses their best lot); perfect information with chance | exact: backward induction. Learned: PPO priors + PUCT on a value net trained on self-play (2 players) | learned agent gives up 0.140 ± 0.014 a game against perfect play (PPO 0.33); 3 players: PPO 0.094 a game of tie-robust mistakes, search barely better | — |
 
@@ -485,6 +486,41 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Heads-up limit Hold'em: 200 iterations and a local best response (2026-10-30)
+
+Deep CFR continued from its saved state to 200 iterations (same settings, 40 more minutes). Two
+more measurements: the panel matches for iterations 150 and 200, and a **local best response**
+(LBR; Lisý & Bowling 2017, `experiments/holdem.py lbr`) against iterations 10, 50, 100 and 200.
+LBR knows the network's strategy. It tracks the opponent's range over all 1,326 hole pairs by Bayes
+on the network's own action probabilities, and at each decision folds, calls or raises by expected
+value against that range: equity from Monte Carlo runouts, the fold chance from the network,
+assuming the hand is then checked down. Its win rate is a **lower bound on the network's
+exploitability**. 2,000 duplicate deals each; big blinds a hand, ± one standard error.
+
+| Iteration | 10 | 50 | 100 | 150 | 200 |
+|---|---|---|---|---|---|
+| vs equity heuristic | −0.37 ± 0.06 | −0.25 ± 0.05 | −0.08 ± 0.05 | −0.07 ± 0.04 | **+0.01 ± 0.04** |
+| vs random | +0.84 | +0.95 | +0.86 | +0.74 | +0.64 |
+| vs calling station | +0.40 | +0.36 | +0.42 | +0.46 | +0.42 |
+| vs maniac | +0.86 | +1.23 | +0.76 | +0.74 | +0.66 |
+| **LBR wins (exploitability ≥)** | 1.05 ± 0.09 | 0.52 ± 0.07 | 0.34 ± 0.07 | — | **0.30 ± 0.06** |
+
+- **Deep CFR draws level with the equity heuristic at 200 iterations** (+0.01 ± 0.04). From
+  iteration 100 on, the gain slows (−0.08 → +0.01 over 100 more iterations).
+- **Its exploitability falls as it trains:** LBR wins 1.05 big blinds a hand against iteration 10
+  and 0.30 against iteration 200, about 300 milli-big-blinds a hand. For scale, in the LBR paper
+  the competition bots of the time lost hundreds to over a thousand mbb a hand to LBR, while a
+  near-equilibrium bot is close to 0. So this is a real but weak limit Hold'em strategy:
+  "functional, not frontier", as planned.
+- **It wins less from weak opponents as it improves** (against random +0.95 → +0.64; against the
+  maniac +1.23 → +0.66). That is what moving towards equilibrium looks like: a balanced strategy
+  stops tilting towards whatever a weak opponent leaves open. The equity heuristic exploits
+  them far more (+0.9 to +3.2) while being, by construction, easy to exploit itself.
+- The LBR lower bound fell only 0.04 between iterations 100 and 200, and the Leduc runs say the
+  regret networks are what limit Deep CFR here. The next levers are more traversals and longer
+  advantage training per iteration (the Leduc result: five times the training cut exploitability
+  by a third), and bigger networks; each multiplies the hours.
 
 ### Heads-up limit Hold'em: Deep CFR draws level with an equity heuristic (2026-10-30)
 

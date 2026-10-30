@@ -14,11 +14,14 @@ Stages::
 
     uv run --extra openspiel python -m experiments.holdem train [checkpoints=10,25,50,100]
     uv run --extra openspiel python -m experiments.holdem match [deals=2000]
+    uv run --extra openspiel python -m experiments.holdem lbr [deals=500 checkpoints=10,100]
 
 ``train`` is resumable (the solver's state is saved at every checkpoint to
 ``runs/holdem/deep_cfr_state.pt``; each checkpoint's strategy network to
 ``runs/holdem/deep_cfr_<iteration>.pt``). ``match`` plays every saved checkpoint against the panel
-and appends to ``runs/holdem/matches.jsonl`` (skipping pairs already played).
+and appends to ``runs/holdem/matches.jsonl`` (skipping pairs already played). ``lbr`` plays a
+local best response (Lisý & Bowling, 2017) against checkpoints: its win rate is a lower bound on
+the checkpoint's exploitability (``runs/holdem/lbr.jsonl``).
 """
 
 from __future__ import annotations
@@ -26,6 +29,7 @@ from __future__ import annotations
 import json
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -39,6 +43,7 @@ from iirl.core.game import Game, State
 from iirl.core.registry import make
 from iirl.eval.duplicate import duplicate_match
 from iirl.games.holdem import CALL, FOLD, RAISE, LimitHoldem, hand_value
+from iirl.games.holdem.game import BET_SIZE
 
 OUT = Path("runs/holdem")
 CONFIG = DeepCFRConfig(
@@ -132,6 +137,106 @@ class EquityHeuristic(Agent):
             return CALL
         pot_odds = owe / (sum(state.contrib) + owe)
         return CALL if eq >= pot_odds else FOLD
+
+
+PAIRS = np.array([(i, j) for i in range(52) for j in range(i + 1, 52)])  # 1,326 hole pairs
+
+
+class LocalBestResponse(Agent):
+    """Local best response (Lisý & Bowling, 2017) to a strategy network.
+
+    Keeps a range: a weight per possible opponent hole pair, multiplied after each opponent
+    action by the network's probability of that action holding that pair (and zeroed for pairs
+    that clash with cards it can see). At its own decisions it estimates its equity against the
+    range (Monte Carlo runouts) and the chance the opponent folds to a raise, and takes the action
+    with the best value assuming the hand is then checked down:
+
+    - fold: 0;
+    - check or call: ``eq * pot - (1 - eq) * owe``;
+    - bet or raise: ``fold% * pot + (1 - fold%) * (eq * (pot + bet) - (1 - eq) * (owe + bet))``.
+
+    It knows the opponent's strategy, so its win rate is a lower bound on how much a best response
+    could win: on the opponent's exploitability.
+    """
+
+    def __init__(self, path: str, samples: int = 200) -> None:
+        """Load the opponent's strategy network."""
+        self.policy = NetPolicy(path)
+        self.samples = samples
+        self.name = f"lbr({self.policy.name})"
+
+    def reset(self, game: Game, player: int) -> None:
+        """A fresh, uniform range."""
+        self.me, self.weights, self.last = player, np.ones(len(PAIRS)), None
+
+    def _probs(self, game: LimitHoldem, state, live: np.ndarray) -> np.ndarray:  # noqa: ANN001
+        """The opponent's action probabilities at ``state`` for each live pair (rows of PAIRS)."""
+        opp = 1 - self.me
+        cards = list(state.cards)
+        feats = []
+        for a, b in PAIRS[live]:
+            cards[2 * opp], cards[2 * opp + 1] = int(a), int(b)
+            feats.append(game.information_state_tensor(replace(state, cards=tuple(cards)), opp))
+        with torch.no_grad():
+            logits = self.policy.net(torch.as_tensor(np.stack(feats))).numpy()
+        legal = game.legal_actions(state)
+        out = np.zeros((len(feats), game.num_distinct_actions()))
+        z = logits[:, legal] - logits[:, legal].max(axis=1, keepdims=True)
+        out[:, legal] = np.exp(z) / np.exp(z).sum(axis=1, keepdims=True)
+        return out
+
+    def _prune(self, game: LimitHoldem, state) -> np.ndarray:  # noqa: ANN001
+        """Zero the pairs that clash with visible cards; return the live mask."""
+        seen = set(game.hole(state, self.me)) | set(game.board(state))
+        clash = np.isin(PAIRS, list(seen)).any(axis=1)
+        self.weights[clash] = 0.0
+        return self.weights > 0
+
+    def observe(self, game: Game, state: State, action: int | None) -> None:
+        """Bayes-update the range on each opponent action."""
+        assert isinstance(game, LimitHoldem)
+        last = self.last
+        self.last = state
+        if action is None or last is None or game.is_chance_node(last) or game.is_terminal(last):
+            return
+        if last.to_move == self.me or len(last.cards) < 4:
+            return
+        live = self._prune(game, last)
+        if live.any():
+            self.weights[live] *= self._probs(game, last, live)[:, action]
+
+    def step(self, game: Game, state: State, rng: np.random.Generator) -> int:
+        """The action with the best value against the range."""
+        assert isinstance(game, LimitHoldem)
+        self.last = state
+        live = self._prune(game, state)
+        if self.weights.sum() <= 0:  # the network's line was impossible for every pair: reset
+            self.weights[:] = 1.0
+            live = self._prune(game, state)
+        rng_pairs = self.weights[live] / self.weights[live].sum()
+        own, board = game.hole(state, self.me), game.board(state)
+        idx = rng.choice(np.flatnonzero(live), size=self.samples, p=rng_pairs)
+        wins = 0.0
+        for a, b in PAIRS[idx]:
+            used = set(own) | set(board) | {int(a), int(b)}
+            rest = np.array([c for c in range(52) if c not in used])
+            full = board + tuple(
+                int(c) for c in rng.choice(rest, size=5 - len(board), replace=False)
+            )
+            mine, theirs = hand_value(own + full), hand_value((int(a), int(b)) + full)
+            wins += 1.0 if mine > theirs else 0.5 if mine == theirs else 0.0
+        eq = wins / self.samples
+        legal = game.legal_actions(state)
+        pot, owe = sum(state.contrib), game.owe(state)
+        values = {CALL: eq * pot - (1 - eq) * owe}
+        if FOLD in legal:
+            values[FOLD] = 0.0
+        if RAISE in legal:
+            after = game.apply_action(state, RAISE)
+            fold = float(rng_pairs @ self._probs(game, after, live)[:, FOLD])
+            bet = BET_SIZE[state.round]
+            values[RAISE] = fold * pot + (1 - fold) * (eq * (pot + bet) - (1 - eq) * (owe + bet))
+        return max(values, key=values.get)
 
 
 def baseline(name: str) -> Agent:
@@ -243,5 +348,42 @@ def match() -> None:
                 f.write(json.dumps(row) + "\n")
 
 
+def lbr() -> None:
+    """Local best response against chosen checkpoints, on duplicate deals."""
+    args = dict(item.split("=") for item in sys.argv[2:])
+    deals = int(args.get("deals", 500))
+    checkpoints = [int(x) for x in args.get("checkpoints", "10,100").split(",")]
+    game = make("limit_holdem")
+    log = OUT / "lbr.jsonl"
+    done = set()
+    if log.exists():
+        done = {
+            (r["agent"], r["deals"]) for r in map(json.loads, log.read_text("utf-8").splitlines())
+        }
+    for it in checkpoints:
+        path = OUT / f"deep_cfr_{it}.pt"
+        if (path.stem, deals) in done or not path.exists():
+            continue
+        t0 = time.perf_counter()
+        r = duplicate_match(
+            game,
+            (LocalBestResponse, {"path": str(path)}),
+            (NetPolicy, {"path": str(path)}),
+            deals,
+            seed=11,
+            workers=4,
+        )
+        row = {
+            "agent": path.stem,
+            "deals": deals,
+            "lbr_bb_per_hand": round(r.margin, 4),
+            "lbr_bb_per_hand_se": round(r.margin_se, 4),
+            "minutes": round((time.perf_counter() - t0) / 60, 1),
+        }
+        print(json.dumps(row), flush=True)
+        with log.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row) + "\n")
+
+
 if __name__ == "__main__":
-    {"train": train, "match": match}[sys.argv[1]]()
+    {"train": train, "match": match, "lbr": lbr}[sys.argv[1]]()
