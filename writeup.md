@@ -100,6 +100,9 @@ what is left into five phases, limit Hold'em then Stage 7, and is the one to fol
    about three quarters of the old per-move loss was ties; search cuts the certain loss by at most
    a fifth. **Closed 2026-10-29** (the owner closed the knobs without a set bonus); summary in
    "Spendthrift: what we learned about training tempo".
+4b. **Stage 7, Undertow** (design approved 2026-10-30; rules in plan.md Stage 7). Next: the
+   engine (`games/undertow/`, board data committed), then heuristic and PIMC baselines, flat
+   PPO, the entity policy.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 

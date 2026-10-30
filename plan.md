@@ -108,7 +108,8 @@ and `plan.md` updated and a commit; Phases 3 and 4 are both in, by the owner's c
 
 **Phase 4 — the entity rung (Stage 7, owner's choice, 2026-10-28).** The largest item left:
 several sessions.
-1. **Owner decision:** the original design on The Confrontation's mechanical skeleton. That means
+1. [x] **Owner decision** (2026-10-30): Undertow approved as drafted (rules in Stage 7).
+   Was: the original design on The Confrontation's mechanical skeleton. That means
    its name, theme, the two asymmetric rosters of nine, the region graph and the combat cards, all
    our own (Reiner Knizia credited as inspiration only). I draft it, the owner approves it.
 2. Engine behind the `Game`/`State` interface (hidden identities, legal-move masks), with unit
@@ -666,6 +667,34 @@ exact answers to compare every learner against.
 
 Goal: first entity-token policy. Pieces are distinct, hidden-identity
 individuals; actions are "this piece → that region".
+
+**Design approved by the owner (2026-10-30): Undertow**, smugglers against a harbour watch on
+a river delta at night (original; Knizia credited as inspiration only). `games/undertow/board.py`
+(committed) holds the board, rosters and cards; the engine is next. Rules:
+
+- **Board:** 13 regions, the Cove (depth 0) to the Free Port (depth 6), three channels that split
+  and rejoin. Capacity per side: shoals 1, channels 2, Cove and Port 4. Smugglers move only
+  downstream or sideways; the Watch any way.
+- **Pieces:** 9 per side, shuffled face down onto fixed starting regions (a chance event).
+  - Smugglers: Decoy 0 (if it loses as defender, the attacker turns back), Runner 2 (two regions
+    a turn), Pilot 2 (ignores capacity), four Cargo boats (strength 1/1/2/2, cargo 3/2/2/1),
+    Bruiser 4, Fixer 3 (a fight it wins returns its card).
+  - Watch: Harbourmaster 5 (port channels only), Sergeant 4, Cutter 3 (two regions a turn),
+    Patrols 3/3/2/2, Inspector 1 (each Watch turn privately sees one hidden adjacent Smuggler,
+    a chance pick), Signal 1 (when removed, the Watch takes back all played cards).
+- **Turns:** one move a turn; pass only with no legal move. Pieces are tokens: the opponent sees
+  that token *k* moved, not who it is.
+- **Fights:** entering an enemy-held region starts one; the defender picks which piece defends;
+  both pieces are revealed (for good); each side secretly plays one card from its own six (0, 1,
+  2, 3, Feint, Lantern). Lantern cancels the other card. Feint retreats without loss (the attacker
+  to where it came from; the defender to the first region it may legally reach), unless cancelled.
+  Otherwise strength + card, higher wins, the loser is removed, ties remove both. An attacker that
+  wins fights the next defender until the region is clear. Played cards are public and come back
+  when a hand is empty.
+- **Winning:** Smugglers deliver Cargo worth 6 to the Free Port (+1). The Watch wins once Cargo
+  worth 3 is sunk (6 is then out of reach; the cargo totals 8) or after 16 rounds.
+- **Actions** (flat ids, piece then destination, for the entity policy's pointer head): token ×
+  region moves (117), cards (6), defender picks (9), pass.
 
 - [ ] Engine: 9v9 asymmetric characters, region graph, hidden identities,
       combat cards, legal-move masks — behind the `Game`/`State` interface
