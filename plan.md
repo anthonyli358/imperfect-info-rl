@@ -712,7 +712,20 @@ inspiration only. The full rules are in the `games/undertow/game.py` docstring. 
   (v1: 0%); a fair benchmark, since evaluation swaps sides
 - [x] PIMC baseline (2026-11-02): beats the heuristic on both sides; Smuggler win rate 55.5%
   as PIMC vs the heuristic Watch, 7.0% as the heuristic vs a PIMC Watch (16 × 80)
-- [ ] Flat PPO (running), then the entity policy
+- [x] Flat PPO (2026-11-02, 300 iterations): ~1650 Elo against the heuristic (1500), plateau from
+  iteration 175
+- [ ] Entity policy (`nn/entity.py`, running at the same budget)
+- [ ] Architecture review against warcraftsim (warlock.ai/blog/warcraftsim-1, 2026-11-02). Same
+  core idea (piece tokens, all-to-all attention, a privileged value). Gaps, in order:
+  1. A real pointer: the 14 regions as tokens (occupancy, capacity left, possible enemy
+     identities) and moves scored as piece · region. Ours scores regions with a linear layer
+     blind to their contents.
+  2. Behaviour memory: per-token history features (regions advanced, rounds since moved or
+     revealed, fights survived); recurrence (their minGRU) only if needed. Identity memory is
+     already exact (possible-identity sets).
+  3. If the entity policy lags flat PPO: imitation warm start from PIMC, league plus magnet
+     anchor, UPGO.
+  4. Size (they use 5 layers, 3.2M weights; ours 2 × 64, ~70k) only after 1 to 3.
 - [ ] (was) Engine: 9v9 asymmetric characters, region graph, hidden identities,
       combat cards, legal-move masks — behind the `Game`/`State` interface
 - [ ] Encoder: one token per character + a global token; own pieces carry
