@@ -710,7 +710,9 @@ inspiration only. The full rules are in the `games/undertow/game.py` docstring. 
 - [x] **Owner decision: rebalance** (2026-11-02): one Contraband boat, both sides advance, every
   mechanism of the original's rules summary (above). Heuristic against heuristic: Smugglers 19%
   (v1: 0%); a fair benchmark, since evaluation swaps sides
-- [ ] Baselines on v2: PIMC; then flat PPO, the entity policy
+- [x] PIMC baseline (2026-11-02): beats the heuristic on both sides; Smuggler win rate 55.5%
+  as PIMC vs the heuristic Watch, 7.0% as the heuristic vs a PIMC Watch (16 × 80)
+- [ ] Flat PPO (running), then the entity policy
 - [ ] (was) Engine: 9v9 asymmetric characters, region graph, hidden identities,
       combat cards, legal-move masks — behind the `Game`/`State` interface
 - [ ] Encoder: one token per character + a global token; own pieces carry

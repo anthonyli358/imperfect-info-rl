@@ -102,7 +102,8 @@ what is left into five phases, limit Hold'em then Stage 7, and is the one to fol
    "Spendthrift: what we learned about training tempo".
 4b. **Stage 7, Undertow** (v2 rebalanced 2026-11-02 on the original's mechanisms; rules in
    plan.md Stage 7). Engine, tests, heuristic and balance tool done; Smugglers win about 19%
-   between heuristics. Next: PIMC, flat PPO, the entity policy.
+   between heuristics. PIMC beats the heuristic on both sides (74% at 16 × 80). Next: flat PPO
+   (running), the entity policy.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -489,6 +490,29 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Undertow: PIMC beats the heuristic on both sides (2026-11-02)
+
+PIMC (determinized UCT, the game-agnostic `agents/mcts/pimc.py`), with worlds drawn from each
+side's possible-identity sets, rollouts cut at 20 moves and scored by a new leaf value
+(`Undertow.heuristic_value`: the Contraband's progress downstream against the Watch's three
+leading pieces' progress upstream, plus remaining strength). It plays the heuristic seated as each
+side (`experiments/undertow.py pimc`, `runs/undertow/pimc.jsonl`; 200 games per seating, 4
+workers; ± one standard error). Smuggler win rates:
+
+| Smugglers | Watch | 8 worlds × 40 simulations | 16 × 80 |
+|---|---|---|---|
+| heuristic | heuristic | 19.3% (400 games) | |
+| **PIMC** | heuristic | 47.5 ± 3.5% | **55.5 ± 3.5%** |
+| heuristic | **PIMC** | 11.5 ± 2.3% | **7.0 ± 1.8%** |
+
+- **PIMC is the stronger player on both sides,** and more search helps on both: averaged over the
+  two seatings it scores 68% against the heuristic at 8 × 40 and 74% at 16 × 80. That is about
+  8 and 25 seconds a game, single-threaded.
+- **The Smugglers can win when played well.** PIMC Smugglers win more than half their games
+  against the heuristic Watch, which the heuristic Smugglers win under a fifth of the time. So the
+  heuristics, not the rules, made v2 look Watch-heavy. A fair estimate of the true balance needs
+  equal agents on both sides; PPO self-play will give one.
 
 ### Undertow v2: rebalanced on the original's mechanisms (2026-11-02)
 
