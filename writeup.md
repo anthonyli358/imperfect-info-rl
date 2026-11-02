@@ -102,8 +102,9 @@ what is left into five phases, limit Hold'em then Stage 7, and is the one to fol
    "Spendthrift: what we learned about training tempo".
 4b. **Stage 7, Undertow** (v2 rebalanced 2026-11-02 on the original's mechanisms; rules in
    plan.md Stage 7). Engine, tests, heuristic and balance tool done; Smugglers win about 19%
-   between heuristics. PIMC beats the heuristic on both sides (74% at 16 × 80). Next: flat PPO
-   (running), the entity policy.
+   between heuristics. PIMC beats the heuristic on both sides (74% at 16 × 80). Flat PPO: ~1650
+   Elo (heuristic 1500). The entity policy is paused at iteration ~180 and lags flat PPO so far
+   (~1480); resume command in plan.md, then the region-token pointer variant.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
