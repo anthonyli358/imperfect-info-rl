@@ -23,8 +23,6 @@ import json
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-import torch
-
 import iirl.games  # noqa: F401  (registers "ventures")
 from experiments import exploit_ventures
 from iirl.agents.heuristic import VenturesHeuristic
@@ -81,16 +79,10 @@ def variant(name: str, ppo: PPOConfig) -> PPOConfig:
 
 
 def save(net, path: Path) -> None:  # noqa: ANN001 - PolicyValueNet
-    """Save ``net`` as a PPO-style checkpoint."""
-    torch.save(
-        {
-            "state_dict": net.state_dict(),
-            "input_dim": net.input_dim,
-            "num_actions": net.num_actions,
-            "hidden": [layer.out_features for layer in net.trunk if hasattr(layer, "out_features")],
-        },
-        path,
-    )
+    """Save ``net`` as a PPO-style checkpoint (an entity network records its layout)."""
+    from iirl.nn.entity import save_checkpoint
+
+    save_checkpoint(net, path)
 
 
 def run_tag(name: str) -> str:

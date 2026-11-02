@@ -63,6 +63,11 @@ class PPOConfig:
     reward_scale: float = 50.0
     win_bonus: float = 0.0  # points added to the final return for winning (Elo counts wins)
     hidden: tuple[int, ...] = (512, 512)
+    # ``"entity"``: a transformer over piece tokens (``nn/entity.py``), laid out by ``entity``
+    # (``tokens``, ``token_dim``, ``own_tokens``, ``regions`` and optionally ``d_model``,
+    # ``heads``, ``layers``). ``hidden`` then sizes only the privileged critic.
+    arch: str = "mlp"
+    entity: tuple[tuple[str, int], ...] = ()
     num_workers: int = 0  # rollout processes; 0 collects in-process
     privileged_critic: bool = False  # value baseline also sees the opponent's view (train-only)
     past_opponent_frac: float = 0.2
@@ -392,6 +397,12 @@ def _collect(
 
 
 def _new_net(game: Game, input_dim: int, config: PPOConfig) -> PolicyValueNet:
+    if config.arch == "entity":
+        from iirl.nn.entity import EntityPolicyValueNet
+
+        return EntityPolicyValueNet(  # type: ignore[return-value]  (the same interface)
+            input_dim, game.num_distinct_actions(), **dict(config.entity)
+        )
     return PolicyValueNet(
         input_dim, game.num_distinct_actions(), config.hidden, value_activation="linear"
     )

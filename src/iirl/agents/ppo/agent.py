@@ -44,10 +44,10 @@ class PPOAgent(Agent):
 
         The checkpoint holds ``state_dict``, ``input_dim``, ``num_actions`` and ``hidden``.
         """
+        from iirl.nn.entity import build_net
+
         ck = torch.load(path, map_location="cpu")
-        net = PolicyValueNet(
-            ck["input_dim"], ck["num_actions"], tuple(ck["hidden"]), value_activation="linear"
-        )
+        net = build_net(ck)
         net.load_state_dict(ck["state_dict"])
         return cls(net, name, greedy)
 
