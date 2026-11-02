@@ -9,7 +9,17 @@ from iirl.games import (  # noqa: F401
     spendthrift,
     spiel,
     tessera,
+    undertow,
     ventures,
 )
 
-__all__ = ["camel_stocks", "holdem", "mini_ventures", "spendthrift", "spiel", "tessera", "ventures"]
+__all__ = [
+    "camel_stocks",
+    "holdem",
+    "mini_ventures",
+    "spendthrift",
+    "spiel",
+    "tessera",
+    "undertow",
+    "ventures",
+]

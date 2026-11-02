@@ -92,7 +92,7 @@ HARBOURMASTER, CUTTER, INSPECTOR, SIGNAL = 0, 2, 7, 8
 TWO_STEP = ((RUNNER,), (CUTTER,))  # per side, identities that may move two regions
 CARGO_TO_WIN = 6
 TOTAL_CARGO = sum(p.cargo for p in ROSTERS[SMUGGLERS])
-ROUNDS = 16  # the tide clock: the Watch wins when it runs out
+ROUNDS = 24  # the tide clock: the Watch wins when it runs out (16 was too short: see game.py)
 
 # Combat cards: each side holds one of each.
 CARD_NAMES = ("0", "1", "2", "3", "Feint", "Lantern")

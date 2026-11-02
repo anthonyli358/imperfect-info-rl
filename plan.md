@@ -692,7 +692,8 @@ a river delta at night (original; Knizia credited as inspiration only). `games/u
   wins fights the next defender until the region is clear. Played cards are public and come back
   when a hand is empty.
 - **Winning:** Smugglers deliver Cargo worth 6 to the Free Port (+1). The Watch wins once Cargo
-  worth 3 is sunk (6 is then out of reach; the cargo totals 8) or after 16 rounds.
+  worth 3 is sunk (6 is then out of reach; the cargo totals 8) or after 24 rounds (16 in the
+  approved draft: too short to deliver three boats; tuned 2026-11-02).
 - **Actions** (flat ids, piece then destination, for the entity policy's pointer head): token ×
   region moves (117), cards (6), defender picks (9), pass.
 
