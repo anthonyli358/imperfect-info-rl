@@ -63,6 +63,7 @@ from iirl.games.undertow.board import (
     COVE,
     CUTTER,
     DECOY,
+    DEPTH,
     DIVER,
     FIXER,
     FORWARD,
@@ -540,6 +541,35 @@ class Undertow(Game):
         if state.winner < 0:
             return [0.0, 0.0]
         return [1.0, -1.0] if state.winner == SMUGGLERS else [-1.0, 1.0]
+
+    def heuristic_value(self, state: State, player: Player) -> float:
+        """A leaf estimate in ``[-1, 1]`` for search: each side's progress and material.
+
+        From the Smugglers' side: how far downstream the Contraband is, minus how far upstream the
+        Watch's three most advanced pieces are (a raid needs three), plus the strength each side
+        has left on the board.
+        """
+        assert isinstance(state, UndertowState)
+        if state.phase == Phase.OVER:
+            return self.returns(state)[player]
+        if state.setup < 2 * TOKENS:
+            return 0.0
+        contraband = state.ident[SMUGGLERS].index(CONTRABAND)
+        run = DEPTH[state.pos[SMUGGLERS][contraband]] / DEPTH[PORT]
+        raid = sorted((DEPTH[PORT] - DEPTH[r]) / DEPTH[PORT] for r in state.pos[WATCH] if r >= 0)[
+            -RAID:
+        ]
+        material = [
+            sum(
+                ROSTERS[s][i].strength
+                for i, r in zip(state.ident[s], state.pos[s], strict=True)
+                if r >= 0
+            )
+            for s in (SMUGGLERS, WATCH)
+        ]
+        x = 2.0 * run - 1.5 * sum(raid) / RAID + 0.05 * (material[0] - material[1])
+        v = float(np.tanh(x))
+        return v if player == SMUGGLERS else -v
 
     # --- Observations ---------------------------------------------------------------------------
     def possible(self, state: UndertowState, viewer: Player, side: int, token: int) -> int:
