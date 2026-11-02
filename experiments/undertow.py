@@ -18,6 +18,11 @@ Resumable; checkpoints every 50 iterations as ``runs/undertow/ppo_<iteration>.pt
 the heuristic (1500), seat-balanced, in ``runs/elo_log.json`` under ``undertow/ppo``.
 
     uv run python -m experiments.undertow ppo [iterations=300]
+    uv run python -m experiments.undertow entity [iterations=300]
+
+``entity`` is the same run with the entity network (``nn/entity.py``: a transformer over one token
+per piece, each own piece scoring its destinations) in place of the MLP, at the same budget:
+the Stage 7 ablation. Tag ``undertow/entity``.
 """
 
 from __future__ import annotations
@@ -141,8 +146,11 @@ def pimc() -> None:
                     fh.write(json.dumps(row) + "\n")
 
 
-def ppo() -> None:
-    """Flat PPO self-play, rated against the heuristic."""
+ENTITY = (("tokens", 18), ("token_dim", 25), ("own_tokens", 9), ("regions", 14))
+
+
+def ppo(arch: str = "mlp") -> None:
+    """PPO self-play (flat MLP, or the entity network), rated against the heuristic."""
     from dataclasses import replace
 
     import torch
@@ -154,8 +162,8 @@ def ppo() -> None:
     Path("runs/undertow").mkdir(parents=True, exist_ok=True)
     _train(
         None,
-        replace(PPO, iterations=iterations),
-        "undertow/ppo",
+        replace(PPO, iterations=iterations, arch=arch, entity=ENTITY if arch == "entity" else ()),
+        "undertow/ppo" if arch == "mlp" else "undertow/entity",
         save_every=50,
         game_name="undertow",
         heuristic=make_heuristic("undertow"),
@@ -164,8 +172,8 @@ def ppo() -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] in ("pimc", "ppo"):
-        {"pimc": pimc, "ppo": ppo}[sys.argv[1]]()
+    if len(sys.argv) > 1 and sys.argv[1] in ("pimc", "ppo", "entity"):
+        {"pimc": pimc, "ppo": ppo, "entity": lambda: ppo("entity")}[sys.argv[1]]()
         sys.exit()
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 400
     game = make("undertow")
