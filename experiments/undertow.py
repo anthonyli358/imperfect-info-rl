@@ -11,6 +11,13 @@ Cove, a side could not move, or a draw at the round limit.
 ``pimc`` plays PIMC (determinized UCT, ``agents/mcts/pimc.py``, with the game's leaf value)
 against the heuristic, seated as each side in turn, at two budgets, on 4 worker processes;
 results are appended to ``runs/undertow/pimc.jsonl``.
+
+``ppo`` trains flat-MLP PPO self-play (one network for both sides; the features say which side it
+is) with the repo's recipe: potential shaping from the game's leaf value, a privileged critic.
+Resumable; checkpoints every 50 iterations as ``runs/undertow/ppo_<iteration>.pt``; Elo against
+the heuristic (1500), seat-balanced, in ``runs/elo_log.json`` under ``undertow/ppo``.
+
+    uv run python -m experiments.undertow ppo [iterations=300]
 """
 
 from __future__ import annotations
@@ -31,6 +38,24 @@ from iirl.core.registry import make, make_heuristic
 from iirl.games.undertow import Undertow, UndertowState
 from iirl.games.undertow.board import CONTRABAND, COVE, RAID, SMUGGLERS, WATCH
 from iirl.games.undertow.game import REMOVED
+from iirl.selfplay import PPOConfig
+
+PPO = PPOConfig(
+    games_per_iter=1024,
+    num_envs=256,
+    num_workers=4,  # keeps the machine cool
+    epochs=4,
+    minibatch_size=1024,
+    lr=3e-4,
+    hidden=(256, 256),
+    privileged_critic=True,
+    win_bonus=0.0,  # the payoff is already win / lose
+    reward_scale=1.0,
+    eval_interval=25,
+    eval_games=400,
+    feature_sample_games=100,
+    seed=0,
+)
 
 
 def ending(game: Undertow, s: UndertowState) -> str:
@@ -116,9 +141,31 @@ def pimc() -> None:
                     fh.write(json.dumps(row) + "\n")
 
 
+def ppo() -> None:
+    """Flat PPO self-play, rated against the heuristic."""
+    from dataclasses import replace
+
+    import torch
+
+    from experiments.train_ventures_league import _train
+
+    iterations = int(dict(a.split("=") for a in sys.argv[2:]).get("iterations", 300))
+    torch.set_num_threads(4)
+    Path("runs/undertow").mkdir(parents=True, exist_ok=True)
+    _train(
+        None,
+        replace(PPO, iterations=iterations),
+        "undertow/ppo",
+        save_every=50,
+        game_name="undertow",
+        heuristic=make_heuristic("undertow"),
+        anchor_elo=1500.0,
+    )
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "pimc":
-        pimc()
+    if len(sys.argv) > 1 and sys.argv[1] in ("pimc", "ppo"):
+        {"pimc": pimc, "ppo": ppo}[sys.argv[1]]()
         sys.exit()
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 400
     game = make("undertow")
