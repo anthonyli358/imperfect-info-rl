@@ -9,8 +9,12 @@ piece attend to every other.
 Heads:
 
 - **moves (the pointer head):** each of the player's own ``own_tokens`` pieces scores the
-  ``regions`` destinations from its own output: "this piece, to that region". The logits are laid
-  out piece-major, so they must be the first ``own_tokens * regions`` action ids;
+  ``regions`` destinations: "this piece, to that region". The logits are laid out piece-major, so
+  they must be the first ``own_tokens * regions`` action ids. By default a linear layer on the
+  piece's output scores the regions. With ``region_tokens`` the regions are tokens too, each a
+  learned embedding plus a summary of the pieces in it (own and enemy separately, read from the
+  one-hot region at ``pos_offset`` in each piece's features), and a move's logit is the scaled
+  dot product of the piece's and the region's outputs: a real pointer that sees the target;
 - **every other action** (cards, setup choices) from the global token's output;
 - **value** from the global token's output.
 
@@ -39,6 +43,8 @@ class EntityPolicyValueNet(nn.Module):
         d_model: int = 64,
         heads: int = 4,
         layers: int = 2,
+        region_tokens: int = 0,
+        pos_offset: int = 1,
         value_activation: str = "linear",
     ) -> None:
         """Lay out ``input_dim`` features as ``tokens`` × ``token_dim`` plus global features."""
@@ -58,7 +64,10 @@ class EntityPolicyValueNet(nn.Module):
             "d_model": d_model,
             "heads": heads,
             "layers": layers,
+            "region_tokens": region_tokens,
+            "pos_offset": pos_offset,
         }
+        self.region_tokens, self.pos_offset = bool(region_tokens), pos_offset
         self.register_buffer("feat_mean", torch.zeros(input_dim))
         self.register_buffer("feat_std", torch.ones(input_dim))
         self.token_in = nn.Linear(token_dim, d_model)
@@ -68,7 +77,14 @@ class EntityPolicyValueNet(nn.Module):
             d_model, heads, dim_feedforward=2 * d_model, dropout=0.0, batch_first=True
         )
         self.encoder = nn.TransformerEncoder(layer, layers)
-        self.move_head = nn.Linear(d_model, regions)
+        if self.region_tokens:
+            self.region_embed = nn.Parameter(torch.randn(regions, d_model) * 0.02)
+            self.region_own = nn.Linear(d_model, d_model, bias=False)
+            self.region_enemy = nn.Linear(d_model, d_model, bias=False)
+            self.query = nn.Linear(d_model, d_model)
+            self.key = nn.Linear(d_model, d_model)
+        else:
+            self.move_head = nn.Linear(d_model, regions)
         self.other_head = nn.Linear(d_model, num_actions - self.moves)
         self.value_head = nn.Linear(d_model, 1)
 
@@ -79,13 +95,26 @@ class EntityPolicyValueNet(nn.Module):
 
     def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Return ``(policy_logits, value)`` for a batch of raw feature rows."""
-        x = (x - self.feat_mean) / self.feat_std
         b = x.shape[0]
         split = self.tokens * self.token_dim
+        raw = x[:, :split].reshape(b, self.tokens, self.token_dim)
+        x = (x - self.feat_mean) / self.feat_std
         pieces = self.token_in(x[:, :split].reshape(b, self.tokens, self.token_dim))
         glob = self.global_in(x[:, split:]).unsqueeze(1)
-        h = self.encoder(torch.cat([pieces, glob], dim=1) + self.slot)
-        moves = self.move_head(h[:, : self.own_tokens]).reshape(b, self.moves)
+        seq = [pieces + self.slot[: self.tokens]]
+        if self.region_tokens:  # each region: its embedding plus the pieces standing in it
+            where = raw[:, :, self.pos_offset : self.pos_offset + self.regions]  # (b, tokens, R)
+            own = where[:, : self.own_tokens].transpose(1, 2) @ pieces[:, : self.own_tokens]
+            enemy = where[:, self.own_tokens :].transpose(1, 2) @ pieces[:, self.own_tokens :]
+            seq.append(self.region_embed + self.region_own(own) + self.region_enemy(enemy))
+        seq.append(glob + self.slot[self.tokens :])
+        h = self.encoder(torch.cat(seq, dim=1))
+        if self.region_tokens:
+            q = self.query(h[:, : self.own_tokens])
+            k = self.key(h[:, self.tokens : self.tokens + self.regions])
+            moves = (q @ k.transpose(1, 2) / q.shape[-1] ** 0.5).reshape(b, self.moves)
+        else:
+            moves = self.move_head(h[:, : self.own_tokens]).reshape(b, self.moves)
         g = h[:, -1]
         logits = torch.cat([moves, self.other_head(g)], dim=1)
         value = self.value_head(g).squeeze(-1)

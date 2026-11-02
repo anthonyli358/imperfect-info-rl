@@ -19,10 +19,13 @@ the heuristic (1500), seat-balanced, in ``runs/elo_log.json`` under ``undertow/p
 
     uv run python -m experiments.undertow ppo [iterations=300]
     uv run python -m experiments.undertow entity [iterations=300]
+    uv run python -m experiments.undertow pointer [iterations=300]
 
 ``entity`` is the same run with the entity network (``nn/entity.py``: a transformer over one token
 per piece, each own piece scoring its destinations) in place of the MLP, at the same budget:
-the Stage 7 ablation. Tag ``undertow/entity``.
+the Stage 7 ablation. Tag ``undertow/entity``. ``pointer`` adds the 14 regions as tokens and scores
+moves as piece · region (a real pointer; the first gap in the warcraftsim review). Tag
+``undertow/pointer``.
 """
 
 from __future__ import annotations
@@ -149,6 +152,10 @@ def pimc() -> None:
 ENTITY = (("tokens", 18), ("token_dim", 25), ("own_tokens", 9), ("regions", 14))
 
 
+POINTER = (*ENTITY, ("region_tokens", 1))
+TAGS = {"mlp": "undertow/ppo", "entity": "undertow/entity", "pointer": "undertow/pointer"}
+
+
 def ppo(arch: str = "mlp") -> None:
     """PPO self-play (flat MLP, or the entity network), rated against the heuristic."""
     from dataclasses import replace
@@ -162,8 +169,13 @@ def ppo(arch: str = "mlp") -> None:
     Path("runs/undertow").mkdir(parents=True, exist_ok=True)
     _train(
         None,
-        replace(PPO, iterations=iterations, arch=arch, entity=ENTITY if arch == "entity" else ()),
-        "undertow/ppo" if arch == "mlp" else "undertow/entity",
+        replace(
+            PPO,
+            iterations=iterations,
+            arch="mlp" if arch == "mlp" else "entity",
+            entity={"mlp": (), "entity": ENTITY, "pointer": POINTER}[arch],
+        ),
+        TAGS[arch],
         save_every=50,
         game_name="undertow",
         heuristic=make_heuristic("undertow"),
@@ -172,8 +184,11 @@ def ppo(arch: str = "mlp") -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] in ("pimc", "ppo", "entity"):
-        {"pimc": pimc, "ppo": ppo, "entity": lambda: ppo("entity")}[sys.argv[1]]()
+    if len(sys.argv) > 1 and sys.argv[1] in ("pimc", "ppo", "entity", "pointer"):
+        if sys.argv[1] == "pimc":
+            pimc()
+        else:
+            ppo("mlp" if sys.argv[1] == "ppo" else sys.argv[1])
         sys.exit()
     n = int(sys.argv[1]) if len(sys.argv) > 1 else 400
     game = make("undertow")

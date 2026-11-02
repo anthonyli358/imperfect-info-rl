@@ -3,6 +3,7 @@
 from dataclasses import replace
 
 import numpy as np
+import pytest
 import torch
 
 import iirl.games  # noqa: F401
@@ -15,10 +16,13 @@ from iirl.selfplay.ppo import train_ppo
 SPEC = {"tokens": 18, "token_dim": 25, "own_tokens": 9, "regions": 14}
 
 
-def test_layout_and_piece_equivariance() -> None:
+@pytest.mark.parametrize("region_tokens", [0, 1])
+def test_layout_and_piece_equivariance(region_tokens: int) -> None:
     torch.manual_seed(0)
-    net = EntityPolicyValueNet(551, 144, **SPEC).eval()
+    net = EntityPolicyValueNet(551, 144, **SPEC, region_tokens=region_tokens).eval()
     x = torch.randn(3, 551)
+    rows = x[:, : 18 * 25].reshape(3, 18, 25)
+    rows[:, :, 1:16] = torch.nn.functional.one_hot(torch.randint(15, (3, 18)), 15).float()
     logits, value = net(x)
     assert logits.shape == (3, 144) and value.shape == (3,)
     # Swapping two of the player's pieces swaps their move logits (the slot embeddings start at 0).
@@ -31,8 +35,9 @@ def test_layout_and_piece_equivariance() -> None:
     assert torch.allclose(logits[:, 126:], swapped[:, 126:], atol=1e-5)
 
 
-def test_checkpoint_round_trip(tmp_path) -> None:  # noqa: ANN001
-    net = EntityPolicyValueNet(551, 144, **SPEC)
+@pytest.mark.parametrize("region_tokens", [0, 1])
+def test_checkpoint_round_trip(tmp_path, region_tokens: int) -> None:  # noqa: ANN001
+    net = EntityPolicyValueNet(551, 144, **SPEC, region_tokens=region_tokens)
     save_checkpoint(net, tmp_path / "e.pt")
     loaded = PPOAgent.from_checkpoint(str(tmp_path / "e.pt")).net
     x = torch.randn(2, 551)
