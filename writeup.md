@@ -490,6 +490,34 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Undertow: the engine works, and the approved design is one-sided (2026-11-02)
+
+The Stage 7 engine is built (`games/undertow/`): tokens with hidden identities, the fight steps,
+the Inspector's private look as a chance event, tested rule by rule and by the conformance suite.
+Two corrections to the approved draft, both forced: the Watch wins once 6 is out of reach (that is
+what "sink 3" meant, and it also covers having nothing left to deliver), and the tide is 24 rounds,
+not 16 (three Cargo boats are needed, each 5–6 moves from the Free Port: 15–18 Smuggler moves
+before any fight; random play delivered nothing in 2,000 games).
+
+A rule-based heuristic for both sides (`games/undertow/heuristic.py`) gives the first balance
+check (`experiments/undertow.py`, 400 games per seating; Smuggler wins out of 400):
+
+| Variant | Heuristic vs heuristic | Heuristic Smugglers vs random Watch |
+|---|---|---|
+| approved design (tide 24) | 0 | 1 |
+| delivery target 5 / 4 instead of 6 | 0 / 0 | 3 / 4 |
+| Watch starts spread over the delta (Free Port empty), target 6 / 5 / 4 | 0 / 0 / 0 | 1 / 12 / 12 |
+| … and Cargo boats 2 stronger, target 6 / 4 | 0 / 4 | 2 / 21 |
+
+- **The heuristic is not the problem:** on an empty river (no Watch) it delivers cargo worth 5 in
+  about 11 rounds, every game.
+- **The design is.** All cargo must pass the Mouth and the Free Port, and the Watch is stronger
+  (average strength 2.7 against 1.9, half the Smugglers being weak Cargo boats), moves freely, and
+  starts in the funnel. Even against a *random* Watch the Smugglers win at most 5% under any of the
+  single-knob changes above.
+- So the balance needs a structural change, not a number. That is the owner's call (options in
+  plan.md Stage 7). The approved board stays as committed until then.
+
 ### Heads-up limit Hold'em: 200 iterations and a local best response (2026-10-30)
 
 Deep CFR continued from its saved state to 200 iterations (same settings, 40 more minutes). Two

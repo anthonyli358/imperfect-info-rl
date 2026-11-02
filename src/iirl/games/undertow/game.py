@@ -444,6 +444,20 @@ class Undertow(Game):
             return [0.0, 0.0]
         return [1.0, -1.0] if state.winner == SMUGGLERS else [-1.0, 1.0]
 
+    def heuristic_value(self, state: State, player: Player) -> float:
+        """A leaf estimate in ``[-1, 1]``: cargo delivered, sunk and afloat (by depth), the tide."""
+        assert isinstance(state, UndertowState)
+        if state.winner >= 0:
+            return self.returns(state)[player]
+        afloat = sum(
+            ROSTERS[SMUGGLERS][i].cargo * DEPTH[p] / DEPTH[PORT]
+            for i, p in zip(state.ident[SMUGGLERS], state.pos[SMUGGLERS], strict=True)
+            if p >= 0
+        )
+        x = 2.0 * state.delivered + 1.0 * afloat - 2.0 * state.sunk - 0.4 * state.round - 2.0
+        v = float(np.tanh(x / 6.0))
+        return v if player == SMUGGLERS else -v
+
     # --- Observations ---------------------------------------------------------------------------
     def knows(self, state: UndertowState, viewer: Player, side: int, token: int) -> bool:
         """Whether ``viewer`` knows the identity of ``side``'s ``token``."""

@@ -697,7 +697,15 @@ a river delta at night (original; Knizia credited as inspiration only). `games/u
 - **Actions** (flat ids, piece then destination, for the entity policy's pointer head): token ×
   region moves (117), cards (6), defender picks (9), pass.
 
-- [ ] Engine: 9v9 asymmetric characters, region graph, hidden identities,
+- [x] Engine (2026-11-02, `games/undertow/`), tested; heuristic for both sides; balance tool
+  (`experiments/undertow.py`)
+- [ ] **Owner decision: rebalance.** The approved design is one-sided: the heuristic Watch wins
+  400/400 against the heuristic Smugglers, and Smugglers win ≤5% even against a random Watch under
+  single-knob changes (findings log, "Undertow: the engine works, and the approved design is
+  one-sided"). Structural options: several delivery points (the three lower-delta regions open to
+  the sea), so the Watch cannot hold one funnel; the Smugglers moving two pieces a turn; fewer or
+  weaker Watch pieces; combinations, measured with the balance tool
+- [ ] (was) Engine: 9v9 asymmetric characters, region graph, hidden identities,
       combat cards, legal-move masks — behind the `Game`/`State` interface
 - [ ] Encoder: one token per character + a global token; own pieces carry
       identity, enemy pieces carry "unknown" or revealed identity;
