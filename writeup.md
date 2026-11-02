@@ -100,9 +100,9 @@ what is left into five phases, limit Hold'em then Stage 7, and is the one to fol
    about three quarters of the old per-move loss was ties; search cuts the certain loss by at most
    a fifth. **Closed 2026-10-29** (the owner closed the knobs without a set bonus); summary in
    "Spendthrift: what we learned about training tempo".
-4b. **Stage 7, Undertow** (design approved 2026-10-30; rules in plan.md Stage 7). Next: the
-   engine (`games/undertow/`, board data committed), then heuristic and PIMC baselines, flat
-   PPO, the entity policy.
+4b. **Stage 7, Undertow** (v2 rebalanced 2026-11-02 on the original's mechanisms; rules in
+   plan.md Stage 7). Engine, tests, heuristic and balance tool done; Smugglers win about 19%
+   between heuristics. Next: PIMC, flat PPO, the entity policy.
 5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
    recorded to `runs/human_games/`).
 
@@ -489,6 +489,45 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Undertow v2: rebalanced on the original's mechanisms (2026-11-02)
+
+The first design was one-sided (previous entry). Asked how *The Confrontation* balances its two
+sides, and given its rules summary, the owner chose to adopt all of its balance mechanisms, with
+our own content. Those mechanisms:
+
+- the runner side needs one specific hidden piece to *enter* the goal, guarded or not;
+- both sides must advance, and being unable to move loses;
+- the attacker draws a random defender among several;
+- the hunter has the higher numbers, the runner the tricks;
+- revealed pieces are hidden again and may be shuffled within a region;
+- setup is chosen;
+- the hunter moves first.
+
+The rules are in plan.md Stage 7. Engine `games/undertow/` (rewritten, 9 tests plus conformance).
+A side's knowledge of each enemy token is now a set of possible identities, which is exactly
+what memory plus in-region shuffling allows.
+
+Balance, 400 games per seating (`experiments/undertow.py`; Smuggler wins):
+
+| Version | Heuristic vs heuristic | Heuristic Smugglers vs random Watch | Random vs random |
+|---|---|---|---|
+| v1 (approved draft, tide 24) | 0 | 1 | 0 |
+| v2 as above, Contraband without an escape | 41 | 191 | 42 |
+| v2 + the Contraband slips away sideways when attacked (the summary's runner has an escape) | **77** | 218 | 63 |
+| … without the Inspector's private look | 92 | 232 | — |
+| … with the Contraband steered into company | 28 | 224 | — |
+
+- **Why the Contraband dies:** 240 of 243 losses (heuristic play) came as a *defender*, two thirds
+  of them in the Mid channel, which has no sideways escape, around round 9. The Inspector made the
+  most kills (51): it identifies the Contraband. Without its look the Smugglers gain 4 points
+  (about two standard errors), so it stays, as approved.
+- **Steering the Contraband into company backfired** (77 → 28): a group draws attacks, and a
+  random draw from two still finds it half the time.
+- **Where it stands:** the Watch is favoured between heuristics (Smugglers about 19%). The rules
+  recommend playing both sides, and our duplicate matches already seat every agent on both, so
+  agent comparisons stay fair. Stronger agents will tell the true balance better than this
+  heuristic.
 
 ### Undertow: the engine works, and the approved design is one-sided (2026-11-02)
 

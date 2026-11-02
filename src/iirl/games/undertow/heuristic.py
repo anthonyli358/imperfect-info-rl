@@ -1,22 +1,23 @@
 """A rule-based Undertow baseline for either side.
 
-Game-specific by design: an Elo anchor and the first balance check. It knows only what its side
-knows: an opponent piece it has not seen counts at the average strength (and cargo) of the
-opponent's identities it has not seen.
+Game-specific by design: an Elo anchor and the balance check. It uses only what its side knows:
+an enemy token is valued by the identities it could still be (its possible set), each equally
+likely.
 
-- **Moves.** Smugglers push Cargo boats downstream, away from Watch pieces, and send their
-  fighters at Watch pieces they expect to beat. The Watch closes on the nearest Smugglers, attacks
-  where its strength (plus an average card) should win, the more so where cargo is likely, and
-  keeps at least one piece guarding the Mouth or the Free Port.
-- **Defender picks.** Smugglers defend with the Decoy if it is there (it turns the attacker back),
-  else their strongest piece; the Watch with its strongest.
-- **Cards.** The smallest card that wins even against the opponent's best remaining card; failing
-  that, Lantern if strength alone wins; Feint if the fight is lost anyway; else the highest card.
+- **Setup.** Fighters in front, the Contraband among the pieces at home (a random one of a few
+  sensible layouts, so it is not predictable).
+- **Smuggler moves.** The Contraband enters the Free Port whenever it can (an instant win),
+  otherwise edges forward where no Watch piece can reach it next turn. Fighters attack where they
+  expect to win and otherwise advance, clearing the way.
+- **Watch moves.** Three in the Cove wins, so raiders head upstream; hunters attack where the
+  Contraband is likely and the odds are good. Guarding the Port is pointless: the Contraband wins
+  by entering it.
+- **Cards.** The smallest number that beats the opponent's best remaining number; failing that a
+  trick that helps (retreat when losing, Fog or Lantern when strength alone wins, Scuttle to
+  trade a weak piece for a strong one); else the highest number.
 """
 
 from __future__ import annotations
-
-from collections import deque
 
 import numpy as np
 
@@ -25,62 +26,52 @@ from iirl.core.game import Game, State
 from iirl.core.registry import register_heuristic
 from iirl.core.types import Action
 from iirl.games.undertow.board import (
-    ADJACENT,
-    CARD_VALUES,
-    DECOY,
+    CARDS,
+    CONTRABAND,
+    COVE,
     DEPTH,
-    FEINT,
-    LANTERN,
-    NUM_CARDS,
+    FORWARD,
+    HAND_SIZE,
     NUM_REGIONS,
     PORT,
+    RAID,
     ROSTERS,
+    SIDEWAYS,
     SMUGGLERS,
+    WATCH,
 )
 from iirl.games.undertow.game import (
     CARD_BASE,
     MOVE_BASE,
-    PASS,
-    PICK_BASE,
+    SETUP_BASE,
     TOKENS,
     Phase,
     Undertow,
     UndertowState,
 )
 
-GUARD = frozenset({11, PORT})
+# Placement preferences per slot (home ×4, then the five front regions), strongest in front.
+_LAYOUTS = (
+    (  # Smugglers: identities by slot
+        (7, 8, 4, 5, 0, 1, 2, 3, 6),
+        (7, 4, 5, 6, 0, 1, 8, 2, 3),
+        (7, 8, 5, 3, 0, 1, 4, 2, 6),
+    ),
+    (  # Watch
+        (5, 6, 8, 2, 0, 1, 3, 4, 7),
+        (5, 6, 8, 3, 0, 1, 2, 4, 7),
+        (6, 8, 5, 2, 1, 0, 3, 7, 4),
+    ),
+)
 
 
-def _distances() -> list[list[int]]:
-    out = []
-    for src in range(NUM_REGIONS):
-        dist = [99] * NUM_REGIONS
-        dist[src] = 0
-        queue = deque([src])
-        while queue:
-            r = queue.popleft()
-            for n in ADJACENT[r]:
-                if dist[n] == 99:
-                    dist[n] = dist[r] + 1
-                    queue.append(n)
-        out.append(dist)
-    return out
-
-
-DIST = _distances()
-
-
-def estimate(game: Undertow, state: UndertowState, viewer: int, side: int, token: int) -> tuple:
-    """``(strength, cargo)`` of a piece as ``viewer`` sees it (the unseen average if hidden)."""
-    if game.knows(state, viewer, side, token):
-        piece = ROSTERS[side][state.ident[side][token]]
-        return piece.strength, piece.cargo
-    known = {state.ident[side][t] for t in range(TOKENS) if game.knows(state, viewer, side, t)}
-    unseen = [ROSTERS[side][i] for i in range(TOKENS) if i not in known]
-    return (
-        float(np.mean([p.strength for p in unseen])),
-        float(np.mean([p.cargo for p in unseen])),
-    )
+def expected(game: Undertow, state: UndertowState, viewer: int, side: int, token: int) -> tuple:
+    """``(strength, chance it is the Contraband)`` of a token as ``viewer`` sees it."""
+    m = game.possible(state, viewer, side, token)
+    ids = [i for i in range(TOKENS) if m >> i & 1] or list(range(TOKENS))
+    strength = float(np.mean([ROSTERS[side][i].strength for i in ids]))
+    contraband = (CONTRABAND in ids) / len(ids) if side == SMUGGLERS else 0.0
+    return strength, contraband
 
 
 @register_heuristic("undertow")
@@ -90,19 +81,26 @@ class UndertowHeuristic(Agent):
     def __init__(self, name: str = "heuristic") -> None:
         """Name the agent."""
         self.name = name
+        self.layout: tuple[int, ...] | None = None
+
+    def reset(self, game: Game, player: int) -> None:
+        """Forget the layout chosen for the last game."""
+        self.layout = None
 
     def step(self, game: Game, state: State, rng: np.random.Generator) -> Action:
-        """Pick a move, a defender or a card by the rules above."""
+        """Place, move or play a card by the rules above."""
         assert isinstance(game, Undertow) and isinstance(state, UndertowState)
         legal = game.legal_actions(state)
-        if legal == [PASS]:
-            return PASS
-        if state.phase == Phase.MOVE:
-            scores = [self._move_score(game, state, a) for a in legal]
-            return int(legal[int(np.argmax(scores))])
         me = game.current_player(state)
-        if state.phase == Phase.PICK:
-            return self._pick(game, state, me, legal)
+        if state.phase == Phase.SETUP:
+            slot = state.setup % TOKENS
+            if slot == 0 or self.layout is None:
+                self.layout = _LAYOUTS[me][int(rng.integers(len(_LAYOUTS[me])))]
+            want = SETUP_BASE + self.layout[slot]
+            return want if want in legal else legal[0]
+        if state.phase == Phase.MOVE:
+            scores = [self._move_score(game, state, a) + 1e-3 * rng.random() for a in legal]
+            return int(legal[int(np.argmax(scores))])
         return self._card(game, state, me, legal)
 
     def _move_score(self, game: Undertow, state: UndertowState, action: Action) -> float:
@@ -110,82 +108,67 @@ class UndertowHeuristic(Agent):
         enemy = 1 - side
         token, region = divmod(action - MOVE_BASE, NUM_REGIONS)
         here = state.pos[side][token]
-        piece = ROSTERS[side][state.ident[side][token]]
+        identity = state.ident[side][token]
+        strength = ROSTERS[side][identity].strength
         enemies = game.tokens_at(state, enemy, region)
-        threats = sum(len(game.tokens_at(state, enemy, n)) for n in ADJACENT[region] if n != here)
+        progress = abs(DEPTH[region] - DEPTH[here])
+        # Who could hit ``region`` next turn: enemy pieces with it among their forward moves.
+        reach = sum(
+            1
+            for t, r in enumerate(state.pos[enemy])
+            if r >= 0 and (region in FORWARD[enemy][r] or region in SIDEWAYS[r])
+        )
+        odds = 0.0
+        hunt = 0.0
         if enemies:
-            est = [estimate(game, state, side, enemy, t) for t in enemies]
-            odds = piece.strength + 1.5 - max(s for s, _ in est)
+            est = [expected(game, state, side, enemy, t) for t in enemies]
+            odds = strength + 3.0 - (float(np.mean([s for s, _ in est])) + 3.0)
+            hunt = float(np.mean([c for _, c in est]))
         if side == SMUGGLERS:
-            escorts = [
-                t
-                for t in game.tokens_at(state, side, region)
-                if ROSTERS[side][state.ident[side][t]].strength >= 2
-                and not ROSTERS[side][state.ident[side][t]].cargo
-            ]
-            if piece.cargo:
-                score = 4.0 * piece.cargo * (DEPTH[region] - DEPTH[here])
-                if region == PORT and not enemies:
-                    score += 100.0
-                if enemies:
-                    score -= 15.0 * piece.cargo + 5.0 * len(enemies)
-                # Exposed cargo is the commonest way to lose: only advance next to the Watch
-                # with an escort that can defend for it.
-                return score - (1.0 if escorts else 6.0) * piece.cargo * threats
-            if piece.strength == 0:  # the Decoy drifts forward, never attacks
-                return 0.5 * (DEPTH[region] - DEPTH[here]) - (20.0 if enemies else 0.0)
+            if identity == CONTRABAND:
+                if region == PORT:
+                    return 1000.0
+                return 5.0 * progress - (40.0 if enemies else 0.0) - 8.0 * reach
             if enemies:
-                return 6.0 * odds
-            # Fighters lead: forward, towards the Watch, and onto cargo that needs cover.
-            cargo_here = any(
-                ROSTERS[side][state.ident[side][t]].cargo
-                for t in game.tokens_at(state, side, region)
-            )
-            return (
-                2.0 * (DEPTH[region] - DEPTH[here])
-                + (1.0 if threats else 0.0)
-                + (3.0 if cargo_here and not escorts else 0.0)
-            )
+                return 4.0 * odds
+            return 2.0 * progress - 0.5 * reach * (strength < 3)
         # The Watch.
+        if region == COVE and len(game.tokens_at(state, WATCH, COVE)) + 1 >= RAID and not enemies:
+            return 1000.0
         if enemies:
-            cargo = sum(c for _, c in (estimate(game, state, side, enemy, t) for t in enemies))
-            return 6.0 * odds + 8.0 * cargo
-        targets = [r for r in state.pos[enemy] if r >= 0]
-        before = min((DIST[here][r] for r in targets), default=0)
-        after = min((DIST[region][r] for r in targets), default=0)
-        score = 3.0 * (before - after)
-        guards = sum(1 for r in state.pos[side] if r in GUARD)
-        if here in GUARD and region not in GUARD and guards <= 1:
-            score -= 10.0
-        return score
-
-    def _pick(self, game: Undertow, state: UndertowState, me: int, legal: list[int]) -> int:
-        tokens = [a - PICK_BASE for a in legal]
-        idents = [state.ident[me][t] for t in tokens]
-        if me == SMUGGLERS and DECOY in idents:
-            return PICK_BASE + tokens[idents.index(DECOY)]
-        strengths = [ROSTERS[me][i].strength - 0.1 * ROSTERS[me][i].cargo for i in idents]
-        return PICK_BASE + tokens[int(np.argmax(strengths))]
+            return 4.0 * odds + 20.0 * hunt
+        return 1.5 * progress + (2.0 if region == COVE else 0.0)
 
     def _card(self, game: Undertow, state: UndertowState, me: int, legal: list[int]) -> int:
         fight = state.fight
         assert fight is not None
-        attacker = me == fight.side
-        mine = fight.token if attacker else fight.defender
-        theirs = fight.defender if attacker else fight.token
+        mine = fight.token if me == fight.side else fight.defender
+        theirs = fight.defender if me == fight.side else fight.token
         s = ROSTERS[me][state.ident[me][mine]].strength
         o = ROSTERS[1 - me][state.ident[1 - me][theirs]].strength  # both revealed in a fight
         hand = [a - CARD_BASE for a in legal]
-        opp_hand = [c for c in range(NUM_CARDS) if state.hands[1 - me] >> c & 1]
-        opp_best = max(CARD_VALUES[c] for c in opp_hand)
-        for c in sorted((c for c in hand if c < FEINT), key=lambda c: CARD_VALUES[c]):
-            if s + CARD_VALUES[c] > o + opp_best:
+        opp_hand = [c for c in range(HAND_SIZE) if not state.used[1 - me] >> c & 1]
+        opp_best = max((CARDS[1 - me][c].value for c in opp_hand), default=0)
+        numbers = sorted(
+            (c for c in hand if not CARDS[me][c].trick), key=lambda c: CARDS[me][c].value
+        )
+        tricks = {CARDS[me][c].trick: c for c in hand if CARDS[me][c].trick}
+        for c in numbers:
+            if s + CARDS[me][c].value > o + opp_best:
                 return CARD_BASE + c
-        if LANTERN in hand and s > o:
-            return CARD_BASE + LANTERN
-        best = max((c for c in hand if c < FEINT), key=lambda c: CARD_VALUES[c], default=None)
-        if FEINT in hand and (best is None or s + CARD_VALUES[best] <= o):
-            return CARD_BASE + FEINT
-        if best is not None:
-            return CARD_BASE + best
+        precious = me == SMUGGLERS and state.ident[me][mine] == CONTRABAND
+        best = CARDS[me][numbers[-1]].value if numbers else 0
+        losing = s + best <= o
+        if losing and "feint" in tricks:
+            return CARD_BASE + tricks["feint"]
+        if losing and "withdraw" in tricks:
+            return CARD_BASE + tricks["withdraw"]
+        if s > o and "fog" in tricks:
+            return CARD_BASE + tricks["fog"]
+        if s > o and "lantern" in tricks:
+            return CARD_BASE + tricks["lantern"]
+        if losing and not precious and o >= s + 2 and "scuttle" in tricks:
+            return CARD_BASE + tricks["scuttle"]
+        if numbers:
+            return CARD_BASE + numbers[-1]
         return CARD_BASE + hand[0]

@@ -668,43 +668,49 @@ exact answers to compare every learner against.
 Goal: first entity-token policy. Pieces are distinct, hidden-identity
 individuals; actions are "this piece → that region".
 
-**Design approved by the owner (2026-10-30): Undertow**, smugglers against a harbour watch on
-a river delta at night (original; Knizia credited as inspiration only). `games/undertow/board.py`
-(committed) holds the board, rosters and cards; the engine is next. Rules:
+**Undertow v2** (2026-11-02). The design was approved on 2026-10-30. On 2026-11-02 the owner
+rebalanced it after the first version proved one-sided: a single Contraband boat, both sides
+advance, and every balance mechanism of the original's rules summary, followed where unsure. The
+names, theme, board, characters, abilities and card names stay our own; Knizia is credited as
+inspiration only. The full rules are in the `games/undertow/game.py` docstring. In brief:
 
-- **Board:** 13 regions, the Cove (depth 0) to the Free Port (depth 6), three channels that split
-  and rejoin. Capacity per side: shoals 1, channels 2, Cove and Port 4. Smugglers move only
-  downstream or sideways; the Watch any way.
-- **Pieces:** 9 per side, shuffled face down onto fixed starting regions (a chance event).
-  - Smugglers: Decoy 0 (if it loses as defender, the attacker turns back), Runner 2 (two regions
-    a turn), Pilot 2 (ignores capacity), four Cargo boats (strength 1/1/2/2, cargo 3/2/2/1),
-    Bruiser 4, Fixer 3 (a fight it wins returns its card).
-  - Watch: Harbourmaster 5 (port channels only), Sergeant 4, Cutter 3 (two regions a turn),
-    Patrols 3/3/2/2, Inspector 1 (each Watch turn privately sees one hidden adjacent Smuggler,
-    a chance pick), Signal 1 (when removed, the Watch takes back all played cards).
-- **Turns:** one move a turn; pass only with no legal move. Pieces are tokens: the opponent sees
-  that token *k* moved, not who it is.
-- **Fights:** entering an enemy-held region starts one; the defender picks which piece defends;
-  both pieces are revealed (for good); each side secretly plays one card from its own six (0, 1,
-  2, 3, Feint, Lantern). Lantern cancels the other card. Feint retreats without loss (the attacker
-  to where it came from; the defender to the first region it may legally reach), unless cancelled.
-  Otherwise strength + card, higher wins, the loser is removed, ties remove both. An attacker that
-  wins fights the next defender until the region is clear. Played cards are public and come back
-  when a hand is empty.
-- **Winning:** Smugglers deliver Cargo worth 6 to the Free Port (+1). The Watch wins once Cargo
-  worth 3 is sunk (6 is then out of reach; the cargo totals 8) or after 24 rounds (16 in the
-  approved draft: too short to deliver three boats; tuned 2026-11-02).
-- **Actions** (flat ids, piece then destination, for the entity policy's pointer head): token ×
-  region moves (117), cards (6), defender picks (9), pass.
+- **Board:** a mirror-symmetric delta of 14 regions (1-2-3-2-3-2-1), from the Cove to the Free Port.
+  Capacity: home 4, shoals 1, channels 2. Sideways links join channels only.
+- **Setup:** each side *places* its nine pieces hidden: four at home, one in each of five front
+  regions.
+- **Moving:** the Watch moves first. Each turn a side must move a piece *forward* (Smugglers
+  downstream, the Watch upstream); a side that cannot move loses. Nothing may move into or through
+  a region full of its own pieces.
+- **Fights:** with two or more defenders, the attacker draws one at random. Both are revealed and
+  each plays a card in secret. Trick cards resolve before numbers, the Watch's first. The lower
+  total loses; a tie defeats both. Fights continue until one side holds the region.
+- **Memory:** pieces are hidden again after a fight and may be shuffled within a region. Each side
+  tracks a set of possible identities per enemy token; tokens sharing a region merge their sets.
+- **Cards** (9 each, recycled when the hand runs out):
+  - Watch: 1–6, Lantern (ignore the Smugglers' trick), Reinforce (replay your best used number),
+    Withdraw (retreat sideways).
+  - Smugglers: 1–5, Fog (ignore the Watch's number), Reinforce, Feint (retreat upstream), Scuttle
+    (both sink).
+- **Pieces:**
+  - Smugglers: Captain 5 (Watch tricks ignored), Bruiser 4, Wrecker 3 (takes its killer along),
+    Fixer 3 (keeps its card on a win), Runner 2 (two regions to an empty region), Pilot 2 (ignores
+    capacity), Skiff 2, Contraband 1 (slips away sideways if attacked), Decoy 0 (a loss as
+    defender turns the attacker back).
+  - Watch: Gunboat 7 (its card is ignored), Harbourmaster 5 (Smuggler tricks ignored), Sergeant 4,
+    Cutter 3 (jumps two to attack), Diver 3 (attacks sideways), Patrols 3 and 2, Inspector 2
+    (privately identifies one adjacent Smuggler a turn), Signal 1 (when lost, the Watch recovers
+    its used cards).
+- **Winning:** the Smugglers win the moment the Contraband enters the Free Port, guarded or not.
+  The Watch wins by sinking the Contraband or with three pieces in the Cove. A side with no move
+  loses. 60 rounds is a draw (a safety limit).
+- **Evaluation:** as the rules recommend, play both sides; our duplicate matches already swap seats.
 
 - [x] Engine (2026-11-02, `games/undertow/`), tested; heuristic for both sides; balance tool
   (`experiments/undertow.py`)
-- [ ] **Owner decision: rebalance.** The approved design is one-sided: the heuristic Watch wins
-  400/400 against the heuristic Smugglers, and Smugglers win ≤5% even against a random Watch under
-  single-knob changes (findings log, "Undertow: the engine works, and the approved design is
-  one-sided"). Structural options: several delivery points (the three lower-delta regions open to
-  the sea), so the Watch cannot hold one funnel; the Smugglers moving two pieces a turn; fewer or
-  weaker Watch pieces; combinations, measured with the balance tool
+- [x] **Owner decision: rebalance** (2026-11-02): one Contraband boat, both sides advance, every
+  mechanism of the original's rules summary (above). Heuristic against heuristic: Smugglers 19%
+  (v1: 0%); a fair benchmark, since evaluation swaps sides
+- [ ] Baselines on v2: PIMC; then flat PPO, the entity policy
 - [ ] (was) Engine: 9v9 asymmetric characters, region graph, hidden identities,
       combat cards, legal-move masks — behind the `Game`/`State` interface
 - [ ] Encoder: one token per character + a global token; own pieces carry

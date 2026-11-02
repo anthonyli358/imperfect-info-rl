@@ -4,8 +4,7 @@ from iirl.games.undertow import heuristic  # noqa: F401  (registers the heuristi
 from iirl.games.undertow.game import (
     CARD_BASE,
     MOVE_BASE,
-    PASS,
-    PICK_BASE,
+    SETUP_BASE,
     Fight,
     Phase,
     Undertow,
@@ -15,8 +14,7 @@ from iirl.games.undertow.game import (
 __all__ = [
     "CARD_BASE",
     "MOVE_BASE",
-    "PASS",
-    "PICK_BASE",
+    "SETUP_BASE",
     "Fight",
     "Phase",
     "Undertow",
