@@ -21,6 +21,14 @@ the heuristic (1500), seat-balanced, in ``runs/elo_log.json`` under ``undertow/p
     uv run python -m experiments.undertow entity [iterations=300]
     uv run python -m experiments.undertow pointer [iterations=300]
     uv run python -m experiments.undertow h2h [games=200 nets=label:path,...]
+    uv run python -m experiments.undertow imitate [games=1000]
+    uv run python -m experiments.undertow finetune [iterations=200]
+
+``imitate`` records PIMC (8 x 40) playing itself (both sides; every decision's information
+state, legal moves and PIMC's choice, plus the outcome), then trains the pointer network on it:
+cross-entropy on PIMC's moves, squared error on the outcome. Saves ``runs/undertow/pimc_data.npz``
+and ``runs/undertow/pointer_bc.pt``. ``finetune`` continues from it with PPO at learning rate
+1e-4 (tag ``undertow/pointer_ft``).
 
 ``h2h`` seats every ordered pair of agents (the networks' final checkpoints, or
 ``nets=label:path,...``, plus the heuristic and PIMC 8 × 40) as Smugglers against Watch, ``games``
@@ -250,10 +258,126 @@ def ppo(arch: str = "mlp") -> None:
     )
 
 
+def _record(args: tuple) -> tuple:
+    """Worker: PIMC self-play games; every decision's features, legal mask, move and outcome."""
+    n, seed = args
+    import torch
+
+    torch.set_num_threads(1)
+    game = make("undertow")
+    pimc_agent = agent("pimc:8x40")
+    rng = np.random.default_rng(seed)
+    feats, masks, moves, players, outcomes = [], [], [], [], []
+    for _ in range(n):
+        s = game.new_initial_state()
+        start = len(feats)
+        while not game.is_terminal(s):
+            if game.is_chance_node(s):
+                o = game.chance_outcomes(s)
+                s = game.apply_action(s, o[rng.integers(len(o))][0])
+                continue
+            p = game.current_player(s)
+            a = pimc_agent.step(game, s, rng)
+            m = np.zeros(game.num_distinct_actions(), np.float32)
+            m[game.legal_actions(s)] = 1.0
+            feats.append(game.information_state_tensor(s, p))
+            masks.append(m)
+            moves.append(a)
+            players.append(p)
+            s = game.apply_action(s, a)
+        r = game.returns(s)
+        outcomes += [r[p] for p in players[start:]]
+    return (
+        np.asarray(feats, np.float32),
+        np.asarray(masks, np.float32),
+        np.asarray(moves, np.int64),
+        np.asarray(outcomes, np.float32),
+    )
+
+
+def imitate() -> None:
+    """PIMC self-play data, then the pointer network trained to imitate it."""
+    import torch
+
+    from iirl.nn.entity import EntityPolicyValueNet, save_checkpoint
+
+    games = int(dict(a.split("=") for a in sys.argv[2:]).get("games", 1000))
+    data_path, net_path = Path("runs/undertow/pimc_data.npz"), Path("runs/undertow/pointer_bc.pt")
+    if not data_path.exists():
+        t0 = time.perf_counter()
+        with mp.get_context("spawn").Pool(4) as pool:
+            parts = pool.map(_record, [(games // 16, 500 + k) for k in range(16)])
+        x, m, a, z = (np.concatenate([p[i] for p in parts]) for i in range(4))
+        np.savez_compressed(data_path, x=x, m=m, a=a, z=z)
+        print(
+            f"{len(x):,} decisions from {games} PIMC games, "
+            f"{(time.perf_counter() - t0) / 60:.0f} min",
+            flush=True,
+        )
+    d = np.load(data_path)
+    x, m, a, z = (torch.as_tensor(d[k]) for k in ("x", "m", "a", "z"))
+    torch.manual_seed(0)
+    torch.set_num_threads(4)
+    net = EntityPolicyValueNet(x.shape[1], m.shape[1], **dict(POINTER))
+    net.set_feature_stats(x.mean(0).numpy(), x.std(0).numpy())
+    n = len(x)
+    test = torch.arange(n) >= int(n * 0.9)  # the last tenth held out (later games)
+    opt = torch.optim.Adam(net.parameters(), lr=3e-4)
+    best, best_state, log = float("inf"), None, []
+    for epoch in range(15):
+        net.train()
+        perm = torch.randperm(int((~test).sum()))
+        for b in range(0, len(perm), 512):
+            i = perm[b : b + 512]
+            logits, v = net(x[i])
+            logits = logits.masked_fill(m[i] == 0, -1e9)
+            loss = torch.nn.functional.cross_entropy(logits, a[i]) + 0.5 * ((v - z[i]) ** 2).mean()
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+        net.eval()
+        with torch.no_grad():
+            logits, v = net(x[test])
+            logits = logits.masked_fill(m[test] == 0, -1e9)
+            ce = float(torch.nn.functional.cross_entropy(logits, a[test]))
+            acc = float((logits.argmax(1) == a[test]).float().mean())
+        log.append(
+            {"epoch": epoch + 1, "held_out_ce": round(ce, 4), "held_out_match": round(acc, 4)}
+        )
+        print(json.dumps(log[-1]), flush=True)
+        if ce < best:
+            best, best_state = ce, {k: v.clone() for k, v in net.state_dict().items()}
+    net.load_state_dict(best_state)
+    save_checkpoint(net, net_path)
+    Path("runs/undertow/imitate.json").write_text(json.dumps(log, indent=1), "utf-8")
+
+
+def finetune() -> None:
+    """PPO from the imitation network, at a lower learning rate."""
+    from dataclasses import replace
+
+    import torch
+
+    from experiments.train_ventures_league import _train
+
+    iterations = int(dict(a.split("=") for a in sys.argv[2:]).get("iterations", 200))
+    torch.set_num_threads(4)
+    _train(
+        "runs/undertow/pointer_bc.pt",
+        replace(PPO, iterations=iterations, arch="entity", entity=POINTER, lr=1e-4),
+        "undertow/pointer_ft",
+        save_every=50,
+        game_name="undertow",
+        heuristic=make_heuristic("undertow"),
+        anchor_elo=1500.0,
+    )
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] in ("pimc", "ppo", "entity", "pointer", "h2h"):
-        if sys.argv[1] in ("pimc", "h2h"):
-            {"pimc": pimc, "h2h": h2h}[sys.argv[1]]()
+    stages = {"pimc": pimc, "h2h": h2h, "imitate": imitate, "finetune": finetune}
+    if len(sys.argv) > 1 and sys.argv[1] in (*stages, "ppo", "entity", "pointer"):
+        if sys.argv[1] in stages:
+            stages[sys.argv[1]]()
         else:
             ppo("mlp" if sys.argv[1] == "ppo" else sys.argv[1])
         sys.exit()
