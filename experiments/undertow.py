@@ -20,6 +20,11 @@ the heuristic (1500), seat-balanced, in ``runs/elo_log.json`` under ``undertow/p
     uv run python -m experiments.undertow ppo [iterations=300]
     uv run python -m experiments.undertow entity [iterations=300]
     uv run python -m experiments.undertow pointer [iterations=300]
+    uv run python -m experiments.undertow h2h [deals=500]
+
+``h2h`` plays the final checkpoints of each network against each other, and each against PIMC
+(8 × 40), on duplicate deals: every deal twice with the seats swapped, so each agent plays both
+sides (``eval.duplicate``; 4 workers). Results go to ``runs/undertow/h2h.jsonl``.
 
 ``entity`` is the same run with the entity network (``nn/entity.py``: a transformer over one token
 per piece, each own piece scoring its destinations) in place of the MLP, at the same budget:
@@ -156,6 +161,47 @@ POINTER = (*ENTITY, ("region_tokens", 1))
 TAGS = {"mlp": "undertow/ppo", "entity": "undertow/entity", "pointer": "undertow/pointer"}
 
 
+def policy(path: str):  # noqa: ANN201
+    """A trained network as a greedy agent (a picklable factory for duplicate matches)."""
+    from iirl.agents.ppo import PPOAgent
+
+    return PPOAgent.from_checkpoint(path, name=Path(path).stem, greedy=True)
+
+
+def h2h() -> None:
+    """Every pair of final networks, and each against PIMC, on duplicate deals."""
+    from iirl.eval.duplicate import duplicate_match
+
+    deals = int(dict(a.split("=") for a in sys.argv[2:]).get("deals", 500))
+    nets = {k: f"runs/undertow/{k}.pt" for k in ("ppo", "entity", "pointer")}
+    nets = {k: v for k, v in nets.items() if Path(v).exists()}
+    specs = {k: (policy, {"path": v}) for k, v in nets.items()}
+    specs["pimc"] = (agent, {"spec": "pimc:8x40"})
+    names = list(specs)
+    out = Path("runs/undertow/h2h.jsonl")
+    done = set()
+    if out.exists():
+        done = {(r["a"], r["b"]) for r in map(json.loads, out.read_text("utf-8").splitlines())}
+    game = make("undertow")
+    for i, a in enumerate(names):
+        for b in names[i + 1 :]:
+            if (a, b) in done:
+                continue
+            t0 = time.perf_counter()
+            r = duplicate_match(game, specs[a], specs[b], deals, seed=17, workers=4)
+            row = {
+                "a": a,
+                "b": b,
+                "deals": deals,
+                "score_a": round(r.score, 4),
+                "score_a_se": round(r.score_se, 4),
+                "minutes": round((time.perf_counter() - t0) / 60, 1),
+            }
+            print(json.dumps(row), flush=True)
+            with out.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row) + "\n")
+
+
 def ppo(arch: str = "mlp") -> None:
     """PPO self-play (flat MLP, or the entity network), rated against the heuristic."""
     from dataclasses import replace
@@ -184,9 +230,9 @@ def ppo(arch: str = "mlp") -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] in ("pimc", "ppo", "entity", "pointer"):
-        if sys.argv[1] == "pimc":
-            pimc()
+    if len(sys.argv) > 1 and sys.argv[1] in ("pimc", "ppo", "entity", "pointer", "h2h"):
+        if sys.argv[1] in ("pimc", "h2h"):
+            {"pimc": pimc, "h2h": h2h}[sys.argv[1]]()
         else:
             ppo("mlp" if sys.argv[1] == "ppo" else sys.argv[1])
         sys.exit()
