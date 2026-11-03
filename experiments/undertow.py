@@ -22,9 +22,10 @@ the heuristic (1500), seat-balanced, in ``runs/elo_log.json`` under ``undertow/p
     uv run python -m experiments.undertow pointer [iterations=300]
     uv run python -m experiments.undertow h2h [deals=500]
 
-``h2h`` plays the final checkpoints of each network against each other, and each against PIMC
-(8 × 40), on duplicate deals: every deal twice with the seats swapped, so each agent plays both
-sides (``eval.duplicate``; 4 workers). Results go to ``runs/undertow/h2h.jsonl``.
+``h2h`` plays the final checkpoints of each network (or ``nets=label:path,...``) against each
+other, and each against PIMC (8 × 40), on duplicate deals: every deal twice with the seats
+swapped, so each agent plays both sides (``eval.duplicate``; 4 workers). Results go to
+``runs/undertow/h2h.jsonl``.
 
 ``entity`` is the same run with the entity network (``nn/entity.py``: a transformer over one token
 per piece, each own piece scoring its destinations) in place of the MLP, at the same budget:
@@ -172,8 +173,11 @@ def h2h() -> None:
     """Every pair of final networks, and each against PIMC, on duplicate deals."""
     from iirl.eval.duplicate import duplicate_match
 
-    deals = int(dict(a.split("=") for a in sys.argv[2:]).get("deals", 500))
+    args = dict(a.split("=") for a in sys.argv[2:])
+    deals = int(args.get("deals", 500))
     nets = {k: f"runs/undertow/{k}.pt" for k in ("ppo", "entity", "pointer")}
+    if "nets" in args:  # label:path,label:path (e.g. a run's best checkpoint)
+        nets = dict(item.split(":", 1) for item in args["nets"].split(","))
     nets = {k: v for k, v in nets.items() if Path(v).exists()}
     specs = {k: (policy, {"path": v}) for k, v in nets.items()}
     specs["pimc"] = (agent, {"spec": "pimc:8x40"})
