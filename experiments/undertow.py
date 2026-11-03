@@ -20,11 +20,11 @@ the heuristic (1500), seat-balanced, in ``runs/elo_log.json`` under ``undertow/p
     uv run python -m experiments.undertow ppo [iterations=300]
     uv run python -m experiments.undertow entity [iterations=300]
     uv run python -m experiments.undertow pointer [iterations=300]
-    uv run python -m experiments.undertow h2h [deals=500]
+    uv run python -m experiments.undertow h2h [games=200 nets=label:path,...]
 
-``h2h`` plays the final checkpoints of each network (or ``nets=label:path,...``) against each
-other, and each against PIMC (8 × 40), on duplicate deals: every deal twice with the seats
-swapped, so each agent plays both sides (``eval.duplicate``; 4 workers). Results go to
+``h2h`` seats every ordered pair of agents (the networks' final checkpoints, or
+``nets=label:path,...``, plus the heuristic and PIMC 8 × 40) as Smugglers against Watch, ``games``
+games each on 4 workers, and reports per-side win rates and each pair's score. Results go to
 ``runs/undertow/h2h.jsonl``.
 
 ``entity`` is the same run with the entity network (``nn/entity.py``: a transformer over one token
@@ -106,7 +106,11 @@ def play(game: Undertow, smugglers, watch, n: int, seed: int) -> dict:  # noqa: 
 
 
 def agent(spec: str):  # noqa: ANN201
-    """``heuristic``, ``random``, or ``pimc:<worlds>x<sims>``."""
+    """``heuristic``, ``random``, ``net:<checkpoint>`` (sampled), or ``pimc:<worlds>x<sims>``."""
+    if spec.startswith("net:"):
+        from iirl.agents.ppo import PPOAgent
+
+        return PPOAgent.from_checkpoint(spec[4:], name=Path(spec[4:]).stem, greedy=False)
     if spec == "heuristic":
         return make_heuristic("undertow")
     if spec == "random":
@@ -162,48 +166,61 @@ POINTER = (*ENTITY, ("region_tokens", 1))
 TAGS = {"mlp": "undertow/ppo", "entity": "undertow/entity", "pointer": "undertow/pointer"}
 
 
-def policy(path: str):  # noqa: ANN201
-    """A trained network as a greedy agent (a picklable factory for duplicate matches)."""
-    from iirl.agents.ppo import PPOAgent
-
-    return PPOAgent.from_checkpoint(path, name=Path(path).stem, greedy=True)
-
-
 def h2h() -> None:
-    """Every pair of final networks, and each against PIMC, on duplicate deals."""
-    from iirl.eval.duplicate import duplicate_match
+    """Every ordered pair of agents, seated A as Smugglers and B as Watch, per-side win rates.
 
+    A seat-swapped average hides everything here: with fixed play, whoever holds the stronger side
+    wins, so every pair of games splits 1-1. So each seating is measured on its own, ``games``
+    games each (networks play their sampled policy); A's score against B is the mean of its
+    Smuggler win rate against B's Watch and its Watch win rate against B's Smugglers.
+    """
     args = dict(a.split("=") for a in sys.argv[2:])
-    deals = int(args.get("deals", 500))
+    games = int(args.get("games", 200))
     nets = {k: f"runs/undertow/{k}.pt" for k in ("ppo", "entity", "pointer")}
     if "nets" in args:  # label:path,label:path (e.g. a run's best checkpoint)
         nets = dict(item.split(":", 1) for item in args["nets"].split(","))
-    nets = {k: v for k, v in nets.items() if Path(v).exists()}
-    specs = {k: (policy, {"path": v}) for k, v in nets.items()}
-    specs["pimc"] = (agent, {"spec": "pimc:8x40"})
-    names = list(specs)
+    specs = {k: f"net:{v}" for k, v in nets.items() if Path(v).exists()}
+    specs["heuristic"] = "heuristic"
+    specs["pimc"] = "pimc:8x40"
     out = Path("runs/undertow/h2h.jsonl")
     done = set()
     if out.exists():
-        done = {(r["a"], r["b"]) for r in map(json.loads, out.read_text("utf-8").splitlines())}
-    game = make("undertow")
-    for i, a in enumerate(names):
-        for b in names[i + 1 :]:
-            if (a, b) in done:
-                continue
-            t0 = time.perf_counter()
-            r = duplicate_match(game, specs[a], specs[b], deals, seed=17, workers=4)
-            row = {
-                "a": a,
-                "b": b,
-                "deals": deals,
-                "score_a": round(r.score, 4),
-                "score_a_se": round(r.score_se, 4),
-                "minutes": round((time.perf_counter() - t0) / 60, 1),
-            }
-            print(json.dumps(row), flush=True)
-            with out.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(row) + "\n")
+        rows = map(json.loads, out.read_text("utf-8").splitlines())
+        done = {(r["smugglers"], r["watch"]) for r in rows}
+    rates: dict[tuple[str, str], float] = {}
+    with mp.get_context("spawn").Pool(4) as pool:
+        for a in specs:
+            for b in specs:
+                if a == b or (a, b) in done or {a, b} == {"heuristic", "pimc"}:
+                    continue
+                t0 = time.perf_counter()
+                jobs = [(specs[a], specs[b], games // 4, 300 + k) for k in range(4)]
+                total: collections.Counter = collections.Counter()
+                for part in pool.map(_games, jobs):
+                    total.update(part)
+                n = sum(total.values())
+                p = sum(v for k, v in total.items() if k.startswith("S:")) / n
+                row = {
+                    "smugglers": a,
+                    "watch": b,
+                    "games": n,
+                    "smuggler_win_rate": round(p, 4),
+                    "se": round((p * (1 - p) / n) ** 0.5, 4),
+                    "minutes": round((time.perf_counter() - t0) / 60, 1),
+                }
+                print(json.dumps(row), flush=True)
+                with out.open("a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(row) + "\n")
+    for r in map(json.loads, out.read_text("utf-8").splitlines()):
+        rates[(r["smugglers"], r["watch"])] = r["smuggler_win_rate"]
+    print("\nscore of row against column (mean of its two seatings):")
+    names = list(specs)
+    for a in names:
+        cells = []
+        for b in names:
+            if (a, b) in rates and (b, a) in rates:
+                cells.append(f"{b} {(rates[(a, b)] + 1 - rates[(b, a)]) / 2:.3f}")
+        print(f"  {a:<10} " + "  ".join(cells))
 
 
 def ppo(arch: str = "mlp") -> None:
