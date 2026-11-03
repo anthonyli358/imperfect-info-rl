@@ -714,12 +714,12 @@ inspiration only. The full rules are in the `games/undertow/game.py` docstring. 
   as PIMC vs the heuristic Watch, 7.0% as the heuristic vs a PIMC Watch (16 × 80)
 - [x] Flat PPO (2026-11-02, 300 iterations): ~1650 Elo against the heuristic (1500), plateau from
   iteration 175
-- [ ] Entity policy (`nn/entity.py`), same budget as flat PPO. **Paused 2026-11-02 at iteration
-  ~180 of 300** (resumes from `runs/undertow/entity_partial.pt`:
-  `uv run --extra openspiel python -m experiments.undertow entity`). So far it lags flat PPO:
-  1265 / 1428 / 1433 / 1435 / 1502 / 1455 / 1481 Elo at iterations 25-175, against flat PPO's
-  1212 / 1444 / 1563 / 1535 / 1653 / 1591 / 1691; about 3.5× slower per iteration. Then
-  `pointer` (region tokens + dot-product pointer, committed, not yet run).
+- [x] Entity policy (`nn/entity.py`), same budget as flat PPO (2026-11-03): **lags the MLP**.
+  Elo against the heuristic at iterations 25-300: 1265 / 1428 / 1433 / 1435 / 1502 / 1455 / 1477 /
+  1519 / 1538 / 1545 / 1528 / 1484 (flat PPO: plateau ~1650 from iteration 175). About 3.5× the
+  compute per iteration.
+- [ ] `pointer` (region tokens + dot-product pointer), running; then a head-to-head of all three
+  (more precise than ±35 Elo ratings against the heuristic)
 - [ ] Architecture review against warcraftsim (warlock.ai/blog/warcraftsim-1, 2026-11-02). Same
   core idea (piece tokens, all-to-all attention, a privileged value). Gaps, in order:
   1. A real pointer: the 14 regions as tokens (occupancy, capacity left, possible enemy
