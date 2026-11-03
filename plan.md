@@ -718,8 +718,12 @@ inspiration only. The full rules are in the `games/undertow/game.py` docstring. 
   Elo against the heuristic at iterations 25-300: 1265 / 1428 / 1433 / 1435 / 1502 / 1455 / 1477 /
   1519 / 1538 / 1545 / 1528 / 1484 (flat PPO: plateau ~1650 from iteration 175). About 3.5× the
   compute per iteration.
-- [ ] `pointer` (region tokens + dot-product pointer), running; then a head-to-head of all three
-  (more precise than ±35 Elo ratings against the heuristic)
+- [x] `pointer` (region tokens + dot-product pointer, 2026-11-03): fastest learner (1629 Elo at
+  iteration 125), then collapsed (1228 at 225; stopped)
+- [x] Head to head per seating (2026-11-03, 200 games each): MLP 0.46 vs transformer, 0.60 vs
+  pointer-100; **PIMC beats every network 0.77–0.85**. Non-transitive. Goal not met
+- [ ] Training levers: imitation of PIMC's play (warm start), then PPO at a lower learning rate
+  (1e-4) for the pointer network; compare head to head with PIMC
 - [ ] Architecture review against warcraftsim (warlock.ai/blog/warcraftsim-1, 2026-11-02). Same
   core idea (piece tokens, all-to-all attention, a privileged value). Gaps, in order:
   1. A real pointer: the 14 regions as tokens (occupancy, capacity left, possible enemy

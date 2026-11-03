@@ -492,6 +492,57 @@ strongest agent built, above both the heuristic and plain PIMC.
 
 ## Findings log
 
+### Undertow: three networks, and search beats them all (2026-11-03)
+
+Three policies trained by the same PPO recipe and budget (300 iterations of 1,024 self-play games,
+4 workers, potential shaping, a privileged critic; `experiments/undertow.py`):
+
+- **flat MLP** (256 × 256);
+- **entity transformer** (`nn/entity.py`): one token per piece plus a global token, 2 layers ×
+  64, a linear move head per own piece; about 3.5× the compute per iteration;
+- **pointer**: the same with the 14 regions as tokens, and moves scored as piece · region (the
+  first gap in the warcraftsim review); about 5× the compute.
+
+Elo against the heuristic during training (400 games per point, about ±50):
+
+| Iteration | 25 | 50 | 75 | 100 | 125 | 150 | 175 | 200 | 225 | 250 | 275 | 300 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| MLP | 1212 | 1444 | 1563 | 1535 | 1653 | 1591 | 1691 | 1651 | 1653 | 1645 | 1668 | 1621 |
+| transformer | 1265 | 1428 | 1433 | 1435 | 1502 | 1455 | 1477 | 1519 | 1538 | 1545 | 1528 | 1484 |
+| pointer | 1363 | 1408 | 1553 | **1623** | **1629** | 1510 | 1363 | 1449 | 1228 | (stopped) | | |
+
+- **Region tokens speed learning up a lot:** the pointer variant led both others to iteration
+  125. Then **it collapsed** (1629 → 1228) and the run was stopped at 225. That points to PPO's
+  settings (learning rate 3e-4, no warm-up) being too aggressive for the larger transformer. The
+  plain transformer stayed stable but plateaued about 150 Elo below the MLP.
+
+**Head to head** (`experiments/undertow.py h2h`, `runs/undertow/h2h.jsonl`): every ordered pair
+seated as Smugglers against Watch, 200 games each, networks sampling their policy. A seat-swapped
+duplicate score was useless here: with fixed play the stronger *side* wins, so every pair of
+games split 1–1 (an exact 0.500). Each cell is the row's score against the column, averaged over
+its two seatings (± about 0.025):
+
+| | MLP (300) | transformer (300) | pointer (100) | heuristic | PIMC 8 × 40 |
+|---|---|---|---|---|---|
+| **MLP** | — | 0.46 | 0.60 | 0.66 | 0.22 |
+| **transformer** | 0.54 | — | 0.52 | 0.45 | 0.15 |
+| **pointer** | 0.40 | 0.48 | — | 0.54 | 0.23 |
+| **heuristic** | 0.34 | 0.55 | 0.46 | — | (0.26, earlier) |
+| **PIMC** | **0.78** | **0.85** | **0.77** | (0.74, earlier) | — |
+
+- **PIMC search beats every network decisively** (0.77–0.85). As the Smugglers it wins 71–77%
+  against each network's Watch, while the networks as Smugglers win only 7–17% against its Watch.
+  This is the Ventures lesson again: with hidden information, sampled worlds plus lookahead beat
+  a reactive policy. The networks have not learned what search finds.
+- **The networks are non-transitive.** The transformer edges the MLP head to head (0.54, about
+  1.6 standard errors) though the MLP beats the heuristic far more clearly (0.66 against 0.45).
+  A rating against one anchor would have ranked them the other way.
+- **Stage 7's goal is not met yet:** the entity agent should beat both flat PPO and the search
+  baseline; it is level with the first and far below the second.
+- Next, from the warcraftsim recipe and these numbers: start the entity policy from PIMC's own
+  play (imitation), then fine-tune with PPO at a lower learning rate. That attacks the gap to
+  search and the pointer's instability together.
+
 ### Undertow: PIMC beats the heuristic on both sides (2026-11-02)
 
 PIMC (determinized UCT, the game-agnostic `agents/mcts/pimc.py`), with worlds drawn from each
