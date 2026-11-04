@@ -10,135 +10,116 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 > just the scores. A new session (human or agent) should start with "Start here" below.
 
 Project: imperfect-info-rl in c:\Users\Ant\Documents\My Projects\GitHub\imperfect-info-rl
-(branch feat/rl-agent-ladder). Read the "Start here" section at the top of writeup.md, then
-work through plan.md's "Finishing plan" (near the top of plan.md), phase by phase, starting
-at the first step not yet done; after each step update writeup.md and plan.md and commit. Stop at
-each step marked "owner decision" and ask.
+(branch feat/rl-agent-ladder). Read the "Start here" section at the top of writeup.md (its
+"Where to resume" list says exactly where things stand), then work through plan.md's "Finishing
+plan" from the first step not yet done, in a self-paced loop; after each step update writeup.md
+and plan.md and commit. Stop at each step marked "owner decision" and ask.
 
 ---
 
 ## Start here (handoff for a new session)
 
 Read this section first; it is enough to pick the work up. Everything below it is the detailed
-record.
+record (the findings log is newest first). Last updated 2026-11-04.
 
-**The project.** `imperfect-info-rl` (branch `feat/rl-agent-ladder`): self-play agents for a ladder
-of two-player games, built on one game-agnostic `Game`/`State` interface (OpenSpiel-style) in
-`src/iirl/`. The owner's goal is the strongest, least exploitable agent per game, built step by
-step, while expanding to more games and trying more approaches. Games so far:
+**The project.** `imperfect-info-rl` (branch `feat/rl-agent-ladder`, about 200 commits ahead of
+`main`): self-play agents for a ladder of games, built on one game-agnostic `Game`/`State`
+interface (OpenSpiel-style) in `src/iirl/`. The owner's goal is the strongest, least exploitable
+agent per game, built step by step, while expanding to more games and trying more approaches.
+The work now follows **plan.md's "Finishing plan"** (near the top of plan.md): five phases, the
+first three done.
+
+**Games and their best agents:**
 
 | Game | What it is | Best agent | Strength | Play it |
 |---|---|---|---|---|
 | **Ventures** | Original card game on Lost Cities' mechanics; hidden hands, heavy luck | `diverse_sym` policy + opponent-robust rollouts from 6 cards left (`agents/rollout.py`) | Elo 2070 (plain anchor) / 1960 (careful anchor); 0.524 vs the policy alone; no exploiter beats it (0.493) | `experiments/play.py` |
 | **Camel Stocks** | Original card game on Jaipur's mechanics | `camel_nash` policy + the same rollouts from 12 cards left | 0.620 vs the policy alone (+3.8 points); 0.978 / 0.988 vs the two heuristic styles | same page |
-| **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | Policy + value net + PUCT search, both nets improved by 48 iterations of an AlphaZero loop (`experiments/alphago_tessera.py`, `runs/tessera_ag/exit_*_48.pt`) | 400 sims: 2057 ± 21 Elo (heuristic = 1500; 0.961 vs the heuristic), 0.545 vs the same search on the iteration-24 nets | same page (400 sims), with a real board |
-| Mini-Ventures | Ventures shrunk until it is solvable exactly | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
-| Liar's Dice | OpenSpiel's engine (1 die each), through `games/spiel.py` | full-game CFR+ (alternating) | exploitability 0.00013 after 1,000 iterations; first bidder's value −0.0271 | — |
-| Heads-up limit Hold'em | Our own engine (standard competition rules); ~10^14 information sets | Deep CFR, 200 iterations (`runs/holdem/deep_cfr_200.pt`) | level with an equity heuristic (+0.01 ± 0.04 bb a hand); local best response wins 0.30 ± 0.06 (exploitability ≥ 300 mbb a hand) | — |
-| Kuhn, Leduc poker | OpenSpiel's engines, same adapter | full-game CFR+ (alternating) | 0.00009 / 0.00023 after 1,000 iterations; first player's value −0.0556 (= −1/18) / −0.0857 | — |
-| Spendthrift (2 and 3 players) | Original auction game about tempo (fixed purse, random end, the poorest loses their best lot); perfect information with chance | exact: backward induction. Learned: PPO priors + PUCT on a value net trained on self-play (2 players) | learned agent gives up 0.140 ± 0.014 a game against perfect play (PPO 0.33); 3 players: PPO 0.094 a game of tie-robust mistakes, search barely better | — |
+| **Tessera** | Original tile game on Azul's mechanics; perfect information apart from the bag | Policy + value net + PUCT search, both nets from 48 iterations of an AlphaZero loop (`runs/tessera_ag/exit_*_48.pt`) | 400 sims: 2057 ± 21 Elo (heuristic = 1500) | same page, with a real board |
+| **Spendthrift** (2 and 3 players) | Original auction game about tempo; perfect information with chance; solved exactly | 2 players: PPO priors + PUCT on a value net trained on self-play | gives up 0.140 ± 0.014 a game against perfect play (PPO 0.33). 3 players: PPO 0.094 a game of tie-robust mistakes | — |
+| **Undertow** (Stage 7) | Original two-sided hidden-identity game on *The Confrontation*'s mechanics (smugglers vs a harbour watch, 9 pieces each) | PIMC search (8 worlds × 40 sims) | beats every learned network 0.77–0.85 per-seating; flat PPO ~1650 Elo vs the heuristic (1500) | — |
+| **Heads-up limit Hold'em** | Our own engine (competition rules); ~10^14 information sets | Deep CFR, 200 iterations (`runs/holdem/deep_cfr_200.pt`) | level with an equity heuristic (+0.01 ± 0.04 bb a hand); a local best response wins 0.30 ± 0.06 (exploitability ≥ 300 mbb a hand) | — |
+| Mini-Ventures | Ventures shrunk until solvable | full-game CFR+; ReBeL reaches it | exact exploitability 0.002 | — |
+| Liar's Dice | OpenSpiel's engine (1 die each) | CFR+ | exploitability 0.00013; ReBeL 0.047, PPO 0.31–0.52 | — |
+| Kuhn, Leduc poker | OpenSpiel's engines | CFR+ | 0.00009 / 0.00023; on Leduc ReBeL 0.07, Deep CFR 0.135, NFSP 0.84, PPO 1.3 | — |
 
 **What we know works, by kind of game** (details in "What we learned" and the findings log):
 
-- *Every game:* PPO self-play with good features, potential shaping from a heuristic, a privileged
-  critic, a win bonus, then a league phase with the heuristic and past selves as opponents. Train
-  against **non-leaky** opponents (a heuristic that gifts cards teaches dependence on gifts).
-- *Hidden information and heavy luck (Ventures, Camel Stocks):* search on a learned value fails
-  (the value is ~10 points off on moves ~1 point apart). What works is a **paired-rollout audit**
-  (`experiments/search_audit.py`) to find where the policy is improvable, then **opponent-robust
-  rollouts** only there. ReBeL is exact on small games but loses on Ventures.
-- *Perfect information (Tessera):* the **AlphaGo recipe** works: a value net trained on the
-  policy's self-play, PUCT search with policy priors and value leaves. Strength climbs steadily with
-  simulations. "Nash-seeking" is unnecessary there (minimax needs no mixing).
+- *Every game:* PPO self-play with good features, potential shaping from a heuristic, a
+  privileged critic, then a league (heuristic and past selves). Train against **non-leaky**
+  opponents.
+- *Hidden information and heavy luck (Ventures, Camel Stocks, Undertow):* search on a learned
+  value fails. What works is **sampled worlds plus lookahead**: opponent-robust rollouts where a
+  paired-rollout audit says the policy is improvable (Ventures, Camel Stocks), PIMC on Undertow.
+  Learned policies trail search clearly on Undertow (0.15–0.23 against PIMC).
+- *Perfect information (Tessera, Spendthrift):* the **AlphaGo recipe**: a value net trained on
+  self-play outcomes (never PPO's own critic, which is wrong off its own path), PUCT with policy
+  priors and value leaves. With exact solutions (Spendthrift), score every move against perfect
+  play; with three players, score tie-robustly (kingmaking ties).
+- *Small poker-style games:* CFR+ exactly; ReBeL comes close; PPO and NFSP stay far off. *Large
+  ones (Hold'em):* Deep CFR is the only method here that runs at all; judge by duplicate deals
+  and a local best response.
 
-**Open threads, in the order I would take them** (the finishing plan in `plan.md` orders
-what is left into five phases, limit Hold'em then Stage 7, and is the one to follow):
+**Where to resume (Finishing plan, plan.md):**
 
-1. ~~Tessera board renderer~~ Done 2026-10-24 (`viz/play.html`, from the **Ladder design system**:
-   https://claude.ai/artifact/TjrPnNNCcB8fDiSHoFn4c5). ~~Apply the system to the Ventures and
-   Camel Stocks boards~~ Done 2026-10-26 (findings log, "The play page follows the Ladder design
-   system"). Left: the system's own `bundle.css` still prints white labels with a text shadow and
-   could take the page's label rule.
-2. ~~Search with the AlphaZero loop's nets~~ Done: +2 to +3 points a game over the original nets.
-   ~~More loop iterations; a 1,000-deal Elo ladder~~ Done 2026-10-26 (findings log, "Tessera: 24
-   more loop iterations"): search on the iteration-48 nets is 2057 ± 21 Elo and beats search on the
-   iteration-24 nets 0.545 ± 0.016; the play page now uses the iteration-48 nets. ~~Per-move
-   latency~~ Done 2026-10-27 (`experiments/search_latency.py`, one thread): 400 sims median 0.14 s
-   (worst 0.26 s), 1,600 sims median 0.74 s (worst 1.0 s). Still open: more iterations (search
-   was still gaining ~+30 Elo per 12 iterations); the `tessera_strong` ladder's last entry (low
-   value: that anchor inflates search).
-3. **Next games:** Liar's Dice started 2026-10-27 on OpenSpiel's engine (findings log, "Liar's
-   Dice through OpenSpiel" and "PPO cannot find Liar's Dice's equilibrium"): solvers
-   cross-checked; PPO self-play stays 0.3–0.5 exploitable against CFR+'s 0.00013. Kuhn and Leduc
-   poker added the same day ("Poker through the same adapter"): same picture. 2 dice each is out of
-   reach for exact methods (~2^24 bid sequences per roll). NFSP and ReBeL tried the same day
-   ("NFSP and ReBeL on the OpenSpiel games"): ReBeL reaches 0.07 on Leduc (PPO 1.3, CFR+ 0.0002)
-   and 0.047 on Liar's Dice (PPO 0.31–0.52); NFSP only 0.84 on Leduc and no better than PPO on
-   Liar's Dice. Next options: Deep CFR / MCCFR toward limit Hold'em (Stage 5), or Stage 7 (The
-   Confrontation's skeleton).
-4. **Tempo: Spendthrift** (started 2026-10-28; findings log, "Spendthrift: an auction game
-   solved exactly"). The owner's question: how do we train the *tempo* part of an auction game
-   (when to spend a purse that has to last an unknown number of rounds)? Engine, exact solver for
-   2 and 3 players, and the equilibrium's tempo profile are done; so is the controlled question
-   ("Spendthrift: what an end card changes"): an end card makes coins ~18% cheaper but barely
-   moves prices. PPO self-play done ("Spendthrift: PPO learns the opening, not the endgame"):
-   NashConv 0.36 (2 players) / 0.29 (3) after 200 iterations, and with two players its losses sit
-   in the last lots, where single coins decide the reserve penalty. Search on the PPO net
-   ("Spendthrift: search fixes the endgame and spoils the opening") confirmed the prediction for
-   the endgame (last-lot errors to 0) but made the opening worse at 800 simulations; overall loss
-   per game 0.33 → 0.20. ~~(a) Search only for the last K lots~~ Done ("Spendthrift: search only
-   at the end"): searching from 2 lots left gives 0.17 per game. ~~(b) A value net trained on
-   self-play outcomes~~ Done ("Spendthrift: the leaf value was the problem"): search on it gives
-   0.14 per game, and exact leaves 0.085 with the opening intact. ~~(c) 3-player search~~ Done
-   ("Spendthrift: three-player search, and ties that break the yardstick"): +0.09 ± 0.04 against
-   PPO at 200 simulations with an every-view value net; the exact per-move score is unreliable for
-   3 players because of kingmaking ties. Knobs, exact part done ("Spendthrift: what the knobs
-   change"): equilibrium spending per lot flipped does not depend on how predictable the end is;
-   the purse sets prices. PPO on the extreme purses ("Spendthrift: the purse PPO finds hardest"):
-   the prediction failed; the 6-coin game is the easiest, the registered 8-coin one the hardest.
-   Tie-robust 3-player scores ("Spendthrift: three-player mistakes once ties are set aside"):
-   about three quarters of the old per-move loss was ties; search cuts the certain loss by at most
-   a fifth. **Closed 2026-10-29** (the owner closed the knobs without a set bonus); summary in
-   "Spendthrift: what we learned about training tempo".
-4b. **Stage 7, Undertow** (v2 rebalanced 2026-11-02 on the original's mechanisms; rules in
-   plan.md Stage 7). Engine, tests, heuristic and balance tool done; Smugglers win about 19%
-   between heuristics. PIMC beats the heuristic on both sides (74% at 16 × 80). Flat PPO: ~1650
-   Elo (heuristic 1500). The entity policy is paused at iteration ~180 and lags flat PPO so far
-   (~1480); resume command in plan.md, then the region-token pointer variant.
-5. Smaller: a full-budget exploiter against the rollout agents; human play analysis (games are
-   recorded to `runs/human_games/`).
+1. ~~Phase 1, Spendthrift~~ closed 2026-10-29 (summary entry "Spendthrift: what we learned about
+   training tempo").
+2. ~~Phase 2, loose ends~~ done 2026-10-29 (Liar's Dice bluffing; Tessera search audit;
+   net-guided PIMC re-rated). Left: human-games analysis, waiting on the owner recording games.
+3. ~~Phase 3, heads-up limit Hold'em~~ done 2026-10-30 (Deep CFR, LBR).
+4. **Phase 4, Stage 7 Undertow, in progress.** Done: the v2 rules (owner-approved; rules in plan.md
+   Stage 7), engine and tests, heuristic, balance tool, PIMC baseline, flat PPO, entity
+   transformer, region-token pointer (learns fastest, then collapses), per-seating head-to-head,
+   imitation of PIMC. **Running now:** PPO fine-tune from the imitation network at learning rate
+   1e-4 (`experiments/undertow.py finetune`, tag `undertow/pointer_ft`, log
+   `runs/undertow_finetune.log`; resumable: rerun the same command). Then: `h2h` with
+   `ft:runs/undertow/pointer_ft.pt` added, write it up, and decide the next lever (the review's
+   list in plan.md Stage 7: behaviour-memory features, a league, size; or more search-based
+   training, since search is what wins here). Stage 7's goal: the entity agent beats both flat PPO
+   and the search baseline.
+5. **Phase 5, wrap-up:** definition-of-done check per game, README per-game table, checkpoints
+   (owner decision: publish or document retraining), a closing "What we learned", PR to `main`.
+
+**Waiting on the owner:** how to publish checkpoints (Phase 5); more recorded human games if the
+human-play analysis is wanted (`experiments/play.py` records them to `runs/human_games/`).
 
 **How the owner likes to work** (please keep to these):
 
 - **Update `writeup.md` and `plan.md` after every experiment**, negative results included, then
-  commit. Commit messages end with a `Co-Authored-By` line for the assistant.
+  commit. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Work through the finishing plan in a self-paced `/loop`; stop and ask at steps marked "owner
+  decision". "Stop here for today": stop runs, record where they are and how to resume, commit.
 - Behaviour analysis asks **conditional strategic questions** ("does it do X when Y arises"), with
   n and standard errors, and names confounds.
-- Report numbers with error bars and paired deals; say plainly when a result is noise or a claim
-  was wrong (two retractions are recorded below).
-- Elo progress should be saved and visible (`runs/elo_ladder*.json`).
-- Runs must be resumable: the owner stops sessions ("stop here for today").
-- Games are original implementations of mechanical skeletons: own name and theme, no art or
-  rulebook text, the designer credited as inspiration in the module docstring.
+- Report numbers with error bars and n; say plainly when a result is noise, negative, or a claim
+  was wrong.
+- Runs must be resumable.
+- Games are original implementations of mechanical skeletons: own name, theme and content; the
+  designer credited as inspiration in the module docstring. The owner supplies rulebooks for
+  review; mechanisms may be adopted, content never.
 
 **Practicalities.**
 
-- OpenSpiel games need the extra: `uv sync --extra openspiel` (a plain `uv sync` removes it).
-- Windows, Git Bash and PowerShell; Python via `uv` (`uv sync`, `uv run pytest`, `uv run ruff check .`
-  and `ruff format`, line length 100, Google docstrings). Configs are dataclasses, not argparse
-  (small `key=value` command-line overrides in experiment scripts).
-- 12 CPU cores, 16 GB; the venv's torch is CPU-only. Use **4 worker processes or torch threads**:
-  the machine overheated on 10-worker runs (2026-10-26).
-- Long runs: launch detached (`Start-Process cmd /c "uv run python -m experiments.<x> >> runs\<x>.log"`),
-  because background shell commands are killed after about an hour. Everything long is resumable
-  from `runs/`.
+- **Always `uv run --extra openspiel ...`.** A plain `uv run` re-syncs the environment and removes
+  OpenSpiel, which breaks any OpenSpiel job running at the time.
+- Windows; Git Bash and PowerShell; Python via `uv` (`uv run --extra openspiel pytest`, `ruff check`
+  and `ruff format`, line length 100, Google docstrings). Configs are dataclasses with small
+  `key=value` overrides in experiment scripts. Write multi-line patches with the Write tool, not
+  heredocs: apostrophes and escaped newlines in heredocs have broken files repeatedly.
+- 12 cores, 16 GB, CPU-only torch. **4 worker processes or threads at most** (the machine
+  overheated on 10). `eval.duplicate.duplicate_match` defaults to 12 workers: pass `workers=4`.
+- Long runs go in the background and are resumable from `runs/`; watch their logs with a monitor
+  and a fallback wakeup. Transformer runs are 3.5–5× slower per PPO iteration than the MLP.
+- **Undertow is asymmetric:** a seat-swapped duplicate score is useless (the stronger side wins
+  both games of a pair), so compare agents per seating (`experiments/undertow.py h2h`).
 - Key code: `src/iirl/games/<game>/` (engines, heuristics), `src/iirl/selfplay/` (PPO, value,
-  expert iteration, ReBeL), `src/iirl/agents/` (rollout, alphazero, rebel, belief, cfr),
-  `src/iirl/eval/` (duplicate matches, exact best response), `experiments/` (one script per
-  experiment, each with its run command in the docstring), `docs/adding-a-game.md`.
+  expert iteration, ReBeL), `src/iirl/agents/` (rollout, alphazero incl. max-n `multiplayer.py`,
+  cfr incl. `deep_cfr.py`, mcts/PIMC), `src/iirl/nn/` (MLP and the entity transformer
+  `entity.py`), `src/iirl/eval/` (duplicate matches, exact best response, `perfect_info.py`),
+  `experiments/` (one script per experiment, run commands in each docstring),
+  `docs/adding-a-game.md`.
 
 ---
-
 
 ## The headline (as of 2026-10-16)
 
@@ -491,6 +472,26 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Undertow: imitating PIMC gives a weak policy with PIMC's defence (2026-11-04)
+
+The first training lever from the warcraftsim recipe (imitation, then RL), aimed at the gap to
+search. `experiments/undertow.py imitate`: 1,000 games of PIMC (8 worlds × 40 simulations) playing
+itself, 58,258 decisions (70 minutes, 4 workers; saved chunk by chunk). The pointer network was
+trained on them: cross-entropy on PIMC's moves plus squared error on the outcome, 15 epochs, the
+last tenth of the games held out.
+
+- **It matches PIMC's move 31.5% of the time** on held-out games (cross-entropy 1.73, from 1.77
+  after one epoch). PIMC's own choices are noisy at this budget (8 sampled worlds, 40
+  simulations), so a much higher match may not be possible.
+- **On its own it is the weakest network** (per-seating head to head, 200 games each, ± about
+  0.025): it scores 0.27 against the MLP, 0.32 against the transformer, 0.24 against the pointer,
+  0.31 against the heuristic and 0.18 against PIMC.
+- **But it learned PIMC's defence:** as the Watch it holds PIMC's Smugglers to 66.5%, better than
+  any other network (71–77%). As the Smugglers it wins 2% against PIMC. What search does as the
+  attacker is not in the moves a network can copy at 31% agreement.
+- Next (running): PPO fine-tuning from this network at learning rate 1e-4, to see whether the
+  start helps RL and keeps the pointer network stable.
 
 ### Undertow: three networks, and search beats them all (2026-11-03)
 
