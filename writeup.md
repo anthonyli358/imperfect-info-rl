@@ -22,7 +22,7 @@ and plan.md and commit. Stop at each step marked "owner decision" and ask.
 Read this section first; it is enough to pick the work up. Everything below it is the detailed
 record (the findings log is newest first). Last updated 2026-11-04.
 
-**The project.** `imperfect-info-rl` (branch `feat/rl-agent-ladder`, about 200 commits ahead of
+**The project.** `imperfect-info-rl` (branch `feat/rl-agent-ladder`, about 180 commits ahead of
 `main`): self-play agents for a ladder of games, built on one game-agnostic `Game`/`State`
 interface (OpenSpiel-style) in `src/iirl/`. The owner's goal is the strongest, least exploitable
 agent per game, built step by step, while expanding to more games and trying more approaches.
