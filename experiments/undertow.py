@@ -305,9 +305,15 @@ def imitate() -> None:
     data_path, net_path = Path("runs/undertow/pimc_data.npz"), Path("runs/undertow/pointer_bc.pt")
     if not data_path.exists():
         t0 = time.perf_counter()
+        chunks = Path("runs/undertow/pimc_data")  # one file per chunk, so a stop loses little
+        chunks.mkdir(parents=True, exist_ok=True)
+        todo = [k for k in range(16) if not (chunks / f"{k}.npz").exists()]
         with mp.get_context("spawn").Pool(4) as pool:
-            parts = pool.map(_record, [(games // 16, 500 + k) for k in range(16)])
-        x, m, a, z = (np.concatenate([p[i] for p in parts]) for i in range(4))
+            jobs = [(games // 16, 500 + k) for k in todo]
+            for k, part in zip(todo, pool.imap(_record, jobs), strict=True):
+                np.savez_compressed(chunks / f"{k}.npz", x=part[0], m=part[1], a=part[2], z=part[3])
+        parts = [np.load(chunks / f"{k}.npz") for k in range(16)]
+        x, m, a, z = (np.concatenate([p[key] for p in parts]) for key in ("x", "m", "a", "z"))
         np.savez_compressed(data_path, x=x, m=m, a=a, z=z)
         print(
             f"{len(x):,} decisions from {games} PIMC games, "
