@@ -726,7 +726,9 @@ inspiration only. The full rules are in the `games/undertow/game.py` docstring. 
   (70 min); the pointer network matches PIMC's move 31.5% on held-out games (cross-entropy 1.73).
   Head to head it is the weakest network (0.18–0.32 against every opponent), though its Watch
   holds PIMC's Smugglers to 66.5%, better than any other network (71–77%)
-- [ ] PPO fine-tune from the imitation network (learning rate 1e-4, `finetune`), running
+- [x] PPO fine-tune from the imitation network (learning rate 1e-4, 2026-11-04): **negative**.
+  Stuck at 1350–1440 Elo, 1293 at iteration 200 (from scratch at 3e-4: 1629 peak, then collapse)
+- [ ] **Owner decision:** further levers for Stage 7, or close it with these findings
 - [ ] Architecture review against warcraftsim (warlock.ai/blog/warcraftsim-1, 2026-11-02). Same
   core idea (piece tokens, all-to-all attention, a privileged value). Gaps, in order:
   1. A real pointer: the 14 regions as tokens (occupancy, capacity left, possible enemy

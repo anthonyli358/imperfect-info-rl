@@ -70,13 +70,11 @@ first three done.
 4. **Phase 4, Stage 7 Undertow, in progress.** Done: the v2 rules (owner-approved; rules in plan.md
    Stage 7), engine and tests, heuristic, balance tool, PIMC baseline, flat PPO, entity
    transformer, region-token pointer (learns fastest, then collapses), per-seating head-to-head,
-   imitation of PIMC. **Running now:** PPO fine-tune from the imitation network at learning rate
-   1e-4 (`experiments/undertow.py finetune`, tag `undertow/pointer_ft`, log
-   `runs/undertow_finetune.log`; resumable: rerun the same command). Then: `h2h` with
-   `ft:runs/undertow/pointer_ft.pt` added, write it up, and decide the next lever (the review's
-   list in plan.md Stage 7: behaviour-memory features, a league, size; or more search-based
-   training, since search is what wins here). Stage 7's goal: the entity agent beats both flat PPO
-   and the search baseline.
+   imitation of PIMC, PPO fine-tune from it (lr 1e-4: a negative result, 1293 Elo at 200).
+   **Next: an owner decision** on how far to take Stage 7 (its goal, an entity agent that beats
+   both flat PPO and PIMC, is not met): further levers (pointer at a middling learning rate;
+   behaviour-memory features; a league; search-based training such as expert iteration with PIMC
+   targets), or close Stage 7 with the findings so far and move to Phase 5.
 5. **Phase 5, wrap-up:** definition-of-done check per game, README per-game table, checkpoints
    (owner decision: publish or document retraining), a closing "What we learned", PR to `main`.
 
@@ -472,6 +470,29 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Undertow: fine-tuning from imitation does not help (2026-11-04)
+
+PPO from the imitation network (previous entry) at learning rate 1e-4, 200 iterations of 1,024
+games (`experiments/undertow.py finetune`, tag `undertow/pointer_ft`; about 5 hours). Elo against
+the heuristic (400 games per point, about ±50), against the pointer network trained from scratch
+at 3e-4:
+
+| Iteration | 25 | 50 | 75 | 100 | 125 | 150 | 175 | 200 |
+|---|---|---|---|---|---|---|---|---|
+| from imitation, lr 1e-4 | 1365 | 1437 | 1365 | 1408 | 1359 | 1402 | 1349 | 1293 |
+| from scratch, lr 3e-4 | 1363 | 1408 | 1553 | 1623 | 1629 | 1510 | 1363 | 1449 |
+
+- **A negative result on both counts.** The imitation start gave no head start (1365 against 1363
+  at iteration 25), and the lower learning rate kept training stable but stuck between 1350 and
+  1440, ending at its lowest (1293). From scratch at 3e-4 the same network reached 1629 before
+  collapsing.
+- Two confounds, not separated here: the start (imitation) and the learning rate changed
+  together. The likely reading is that 1e-4 is simply too slow for this budget, and that the
+  imitation network's habits (31% agreement with noisy search) are not a better place to start
+  than random.
+- So the warcraftsim recipe's first two steps did not transfer at this scale. What does work on
+  Undertow is search itself (PIMC beats every network 0.77–0.85).
 
 ### Undertow: imitating PIMC gives a weak policy with PIMC's defence (2026-11-04)
 
