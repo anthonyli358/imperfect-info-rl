@@ -722,12 +722,11 @@ inspiration only. The full rules are in the `games/undertow/game.py` docstring. 
   iteration 125), then collapsed (1228 at 225; stopped)
 - [x] Head to head per seating (2026-11-03, 200 games each): MLP 0.46 vs transformer, 0.60 vs
   pointer-100; **PIMC beats every network 0.77–0.85**. Non-transitive. Goal not met
-- [ ] Training levers: imitation of PIMC's play (warm start), then PPO at a lower learning rate
-  (1e-4) for the pointer network; compare head to head with PIMC. **Paused 2026-11-03** during
-  the PIMC data recording (it saves only at the end, so it restarts from scratch, ~85 min).
-  Next session, in order: `uv run --extra openspiel python -m experiments.undertow imitate`, then
-  `h2h games=200 nets=mlp:runs/undertow/ppo.pt,entity:runs/undertow/entity.pt,
-  pointer100:runs/undertow/pointer_100.pt,bc:runs/undertow/pointer_bc.pt`, then `finetune`.
+- [x] Imitation of PIMC (2026-11-04): 58,258 decisions from 1,000 PIMC (8 × 40) self-play games
+  (70 min); the pointer network matches PIMC's move 31.5% on held-out games (cross-entropy 1.73).
+  Head to head it is the weakest network (0.18–0.32 against every opponent), though its Watch
+  holds PIMC's Smugglers to 66.5%, better than any other network (71–77%)
+- [ ] PPO fine-tune from the imitation network (learning rate 1e-4, `finetune`), running
 - [ ] Architecture review against warcraftsim (warlock.ai/blog/warcraftsim-1, 2026-11-02). Same
   core idea (piece tokens, all-to-all attention, a privileged value). Gaps, in order:
   1. A real pointer: the 14 regions as tokens (occupancy, capacity left, possible enemy
