@@ -1,8 +1,9 @@
 # Findings — imperfect-info-rl
 
-A living log of what we've learned building and pitting agents against each other. The headline
-summarizes the current state, "The October investigation" tells the latest line of work start to
-finish, and the findings log below has the details, newest first.
+A living log of what we have learned building and pitting agents against each other. The "Closing
+summary" is the conclusion across all games, the card-game headline and "The October
+investigation" tell the Ventures and Camel Stocks work start to finish, and the findings log
+below has the details, newest first.
 Scores are head-to-head score rates (win 1, draw 0.5) over duplicate deals unless noted; Ventures Elo
 is anchored on random = 1000 and the plain heuristic = 1676.
 
@@ -10,17 +11,17 @@ is anchored on random = 1000 and the plain heuristic = 1676.
 > just the scores. A new session (human or agent) should start with "Start here" below.
 
 Project: imperfect-info-rl in c:\Users\Ant\Documents\My Projects\GitHub\imperfect-info-rl
-(branch feat/rl-agent-ladder). Read the "Start here" section at the top of writeup.md (its
-"Where to resume" list says exactly where things stand), then work through plan.md's "Finishing
-plan" from the first step not yet done, in a self-paced loop; after each step update writeup.md
-and plan.md and commit. Stop at each step marked "owner decision" and ask.
+The finishing plan is complete (2026-11-04) and the branch is merged into `main`. To pick
+the work up again, read "Start here" and then "Closing summary"; its "Future work" list is
+the menu. Keep to "How the owner likes to work" below.
 
 ---
 
 ## Start here (handoff for a new session)
 
 Read this section first; it is enough to pick the work up. Everything below it is the detailed
-record (the findings log is newest first). Last updated 2026-11-04.
+record (the findings log is newest first). Last updated 2026-11-04, when the finishing plan was
+completed.
 
 **The project.** `imperfect-info-rl` (branch `feat/rl-agent-ladder`, about 180 commits ahead of
 `main`): self-play agents for a ladder of games, built on one game-agnostic `Game`/`State`
@@ -60,33 +61,28 @@ first three done.
   ones (Hold'em):* Deep CFR is the only method here that runs at all; judge by duplicate deals
   and a local best response.
 
-**Where to resume (Finishing plan, plan.md):**
+**Where things stand (Finishing plan, plan.md): finished.** Every phase is done; what could
+come next is "Future work" in the Closing summary below.
 
 1. ~~Phase 1, Spendthrift~~ closed 2026-10-29 (summary entry "Spendthrift: what we learned about
    training tempo").
 2. ~~Phase 2, loose ends~~ done 2026-10-29 (Liar's Dice bluffing; Tessera search audit;
    net-guided PIMC re-rated). Left: human-games analysis, waiting on the owner recording games.
 3. ~~Phase 3, heads-up limit Hold'em~~ done 2026-10-30 (Deep CFR, LBR).
-4. **Phase 4, Stage 7 Undertow, in progress.** Done: the v2 rules (owner-approved; rules in plan.md
-   Stage 7), engine and tests, heuristic, balance tool, PIMC baseline, flat PPO, entity
-   transformer, region-token pointer (learns fastest, then collapses), per-seating head-to-head,
-   imitation of PIMC, PPO fine-tune from it (lr 1e-4: a negative result, 1293 Elo at 200).
-   **Next: an owner decision** on how far to take Stage 7 (its goal, an entity agent that beats
-   both flat PPO and PIMC, is not met): further levers (pointer at a middling learning rate;
-   behaviour-memory features; a league; search-based training such as expert iteration with PIMC
-   targets), or close Stage 7 with the findings so far and move to Phase 5.
-5. **Phase 5, wrap-up:** definition-of-done check per game, README per-game table, checkpoints
-   (owner decision: publish or document retraining), a closing "What we learned", PR to `main`.
+4. ~~Phase 4, Stage 7 Undertow~~ closed 2026-11-04 (owner's call) with its goal not met: PIMC
+   beats every network. Summary entry "Undertow: what we learned".
+5. ~~Phase 5, wrap-up~~ done 2026-11-04: definition of done checked, README per-game table,
+   retraining documented (no checkpoints published, owner's call), Closing summary, PR to `main`.
 
-**Waiting on the owner:** how to publish checkpoints (Phase 5); more recorded human games if the
-human-play analysis is wanted (`experiments/play.py` records them to `runs/human_games/`).
+**Waiting on the owner:** more recorded human games if the human-play analysis is wanted
+(`experiments/play.py` records them to `runs/human_games/`). Checkpoints are not published: a
+fresh clone retrains them (README, "Retraining the headline agents").
 
 **How the owner likes to work** (please keep to these):
 
 - **Update `writeup.md` and `plan.md` after every experiment**, negative results included, then
   commit. Commit messages end with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Work through the finishing plan in a self-paced `/loop`; stop and ask at steps marked "owner
-  decision". "Stop here for today": stop runs, record where they are and how to resume, commit.
+- Work through a plan in a self-paced `/loop`; stop and ask at steps marked "owner decision". "Stop here for today": stop runs, record where they are and how to resume, commit.
 - Behaviour analysis asks **conditional strategic questions** ("does it do X when Y arises"), with
   n and standard errors, and names confounds.
 - Report numbers with error bars and n; say plainly when a result is noise, negative, or a claim
@@ -119,7 +115,74 @@ human-play analysis is wanted (`experiments/play.py` records them to `runs/human
 
 ---
 
-## The headline (as of 2026-10-16)
+## Closing summary (2026-11-04)
+
+The ladder is finished: nine games, each with a stated best agent, its strength with error bars,
+and the reason it wins (the table in "Start here" above and in the README). This section is the
+project's conclusion; the sections after it are the record of how we got there, newest work in
+the findings log.
+
+### What we learned across the ladder
+
+**Which method wins is decided by two properties of the game:** whether the value of a position
+can be learned (how much luck and hidden information stand between a position and its outcome),
+and how big the game is.
+
+| Kind of game | Games | What wins | What fails, and why |
+|---|---|---|---|
+| Small, imperfect information | Kuhn, Leduc, Liar's Dice, Mini-Ventures | **CFR+**, exactly (0.0001–0.002); ReBeL comes close | PPO and NFSP stay 10–1000× further from equilibrium: self-play cycles instead of converging |
+| Large poker | Heads-up limit Hold'em | **Deep CFR** (level with an equity heuristic) | Nothing exact runs; a local best response still wins 0.30 bb a hand, so it is far from equilibrium |
+| Perfect information (with chance) | Tessera, Spendthrift | **The AlphaGo recipe:** policy priors + PUCT on a value net trained on self-play outcomes | PPO's own critic as the leaf: wrong off its own path. Endgame-only search: gives up more than full search |
+| Heavy luck, hidden hands | Ventures, Camel Stocks | **Nash-seeking PPO + audited, opponent-robust late rollouts** | Any search on a learned value (AlphaZero, ReBeL, belief search): the value is ~10 points off when moves differ by ~1 |
+| Hidden identities, asymmetric sides | Undertow | **PIMC** (sampled worlds + UCT) | Every learned policy (MLP, transformer, pointer, imitation, fine-tune) scores 0.15–0.23 against it |
+
+**General lessons**, from all nine games:
+
+1. **Get ground truth before trusting a yardstick.** Exact solutions (Mini-Ventures, Spendthrift,
+   the OpenSpiel games) calibrated the training recipes and the exploiters, and caught our own
+   wrong claims more than once.
+2. **Search is only as good as its leaf.** Where values are learnable (Tessera, Spendthrift) a
+   value net makes search the best agent; where they are not, search must use rollouts or
+   sampled worlds, and even then only where an audit shows the policy's move is improvable.
+3. **Leaky opponents teach leaks.** The biggest robustness gain on Ventures came from removing an
+   opponent that handed over playable cards.
+4. **Model the opponent more than once.** A search tuned to one opponent model wins against it and
+   can lose to others; requiring a gain under several models made it general.
+5. **Measurement has traps of its own, and each one fooled us once:**
+   - picking the best of many noisy estimates picks noise;
+   - a seat-swapped duplicate score is meaningless in an asymmetric game (Undertow: exactly 0.500);
+   - three-player scores need tie-robust bounds (Spendthrift: three quarters of the per-move loss
+     was ties);
+   - a single Elo anchor misranks non-transitive agents (Undertow's transformer and MLP).
+6. **Architecture was not the bottleneck at our scale.** On Undertow the entity transformer cost
+   3.5–5× the compute of an MLP and drew level with it. Region tokens with a pointer learned
+   fastest, then collapsed under PPO's learning rate. Imitating noisy search (31% agreement) gave
+   a weak start that RL fine-tuning did not improve.
+7. **Exact methods are for small games; learned ones for big ones; the hard part is in between.**
+   ReBeL is exact on Mini-Ventures and loses on Ventures. The algorithm is the same; what changes
+   is whether its value function can be learned.
+
+### Future work
+
+In rough order of expected value:
+
+1. **Undertow, search-based training:** expert iteration with PIMC's visit counts as targets, the
+   lever that goes after the actual gap. Cheaper ones first: the pointer network at a middling
+   learning rate (1.5e-4 to 2e-4), per-piece history features, a league of past selves plus the
+   heuristic.
+2. **Hold'em:** more traversals and advantage training per iteration, and bigger networks, judged
+   by the local best response.
+3. **Tighter exploitability bounds:** full-budget exploiters against the Ventures and Camel Stocks
+   rollout agents (~10 hours a run).
+4. **Human play:** the analysis of recorded games, once there are enough of them.
+5. **New rungs** left out of the ladder: no-limit Hold'em, Hanabi (cooperative), and a fast engine
+   (Rust, batched search) if any of the above needs the speed.
+6. **Publishing checkpoints** (for example as a GitHub release), if a clone should play without
+   retraining.
+
+---
+
+## The card-game headline (as of 2026-10-16)
 
 **The best agents are reactive policies trained by Nash-seeking PPO self-play, plus a narrow
 search late in the game where an audit shows the policy is improvable.** The policy does almost
@@ -470,6 +533,26 @@ strongest agent built, above both the heuristic and plain PIMC.
 ---
 
 ## Findings log
+
+### Undertow: what we learned (Stage 7 closed, 2026-11-04)
+
+The owner closed Stage 7 with its goal, an entity agent that beats both flat PPO and PIMC, not
+met.
+
+- **Best agent: PIMC search** (8 worlds × 40 simulations). Per seating it beats every network
+  0.77–0.85 (200 games each, ± about 0.025) and the heuristic 0.74.
+- **Best network: the flat MLP** from PPO (~1650 Elo against the heuristic's 1500; 0.66 against the
+  heuristic head to head). The entity transformer is level with it head to head (0.54 for the
+  transformer) at 3.5× the compute.
+- **Levers tried that did not close the gap:**
+  - region tokens with a pointer: fastest early learning, then a collapse;
+  - imitation of PIMC: 31.5% agreement; weak alone, though it learned PIMC's defence;
+  - PPO fine-tuning from it at a low learning rate: stuck below 1440.
+- **The reading:** with hidden identities, what wins is lookahead over sampled worlds, as on
+  Ventures. A reactive policy at our budget does not learn what the search finds, whatever the
+  architecture.
+- **Untried**, now future work: expert iteration on PIMC targets, a middling learning rate for the
+  pointer, history features, a league.
 
 ### Undertow: fine-tuning from imitation does not help (2026-11-04)
 
@@ -2736,7 +2819,7 @@ REINFORCE ~1420, PPO ~1340 (peak 1431); both ~0.97–1.00 vs random, 0–5% vs t
 
 ```bash
 uv sync
-uv run pytest                                   # 97 tests
+uv run --extra openspiel pytest                 # 190 tests (always pass --extra openspiel)
 uv run python -m experiments.ventures_tournament   # random < heuristic < PIMC
 uv run python -m experiments.train_ventures        # REINFORCE Elo curve
 uv run python -m experiments.train_ventures_az     # AlphaZero (negative result)
@@ -2750,4 +2833,9 @@ uv run python -m experiments.belief_ventures       # belief quality + belief-sea
 uv run python -m experiments.train_ventures_league # exploiter league (resumable)
 uv run python -m experiments.play                  # play the agents yourself (browser, local)
 uv run python -m experiments.analyze_play          # how the best agents play vs the heuristics
+uv run python -m experiments.alphago_tessera exit  # Tessera: the AlphaZero loop
+uv run python -m experiments.spendthrift solve     # Spendthrift: exact solution (then ppo, value)
+uv run python -m experiments.holdem train          # Hold'em: Deep CFR (then match, lbr)
+uv run python -m experiments.undertow ppo          # Undertow: flat PPO (pimc, h2h, entity, ...)
+uv run python -m experiments.spiel_games crosscheck  # Kuhn, Leduc, Liar's Dice vs OpenSpiel
 ```

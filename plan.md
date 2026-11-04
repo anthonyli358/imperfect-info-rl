@@ -119,25 +119,35 @@ several sessions.
    piece, target head for the region), trained by PPO self-play plus a league, then R-NaD.
 5. Evaluation: Elo against the baselines, the entity-vs-flat encoder ablation, and an exploiter
    (approximate exploitability). Done when the entity agent beats both flat PPO and ISMCTS.
-6. Play page board.
+6. Play page board: not built (future work).
+
+**Closed 2026-11-04 (owner's call):** PIMC search is the best Undertow agent; no network caught
+it. Details in Stage 7 and the writeup.
 
 No-limit Hold'em, Hanabi and the Rust engine (Stage 1b D) become "future work" in the writeup,
 not rungs.
 
-**Phase 5 — wrap-up.** One or two sessions.
-1. The cross-cutting definition of done, checked game by game:
+**Phase 5 — wrap-up.** Done 2026-11-04.
+1. [x] The cross-cutting definition of done, checked game by game (2026-11-04): ruff clean
+   (lint and format, 165 files); 190 tests pass, the conformance suite parametrised over all 13
+   registered games; every game module credits its inspiration (Mini-Ventures through
+   Ventures; Hold'em is public domain); seeds are config fields, and duplicate matches draw
+   each deal from a fixed seed stream:
    - Docstrings and lint: `ruff` already enforces both.
    - The conformance suite runs on every registered game: already true, so confirm it.
    - Seeds recorded for every headline result.
    - Credits in every game module.
-2. README: replace the Ventures-only headline with the per-game table (best agent, strength, why),
+2. [x] README (2026-11-04): replace the Ventures-only headline with the per-game table (best agent, strength, why),
    and give each game a short section (rules in brief, encoding, agent, results).
-3. Checkpoints: `runs/` is git-ignored, so a fresh clone cannot run the play page or reproduce the
+3. [x] Checkpoints (**owner decision**, 2026-11-04: document retraining; publish nothing). The
+   README's "Retraining the headline agents" lists the commands per game. Was: `runs/` is
+   git-ignored, so a fresh clone cannot run the play page or reproduce the
    headline agents. **Owner decision:** publish the handful of headline checkpoints (for example
    as a GitHub release), or document how to retrain them.
-4. Writeup: a closing "What we learned" across all games (when each method wins, and why), and
+4. [x] Writeup (2026-11-04, "Closing summary"): a closing "What we learned" across all games (when each method wins, and why), and
    "Future work".
-5. Merge `feat/rl-agent-ladder` into `main` through a PR (about 150 commits).
+5. [x] Merge `feat/rl-agent-ladder` into `main` through a PR (owner's call, 2026-11-04: open
+   and merge once CI passes).
 
 ---
 
@@ -728,8 +738,10 @@ inspiration only. The full rules are in the `games/undertow/game.py` docstring. 
   holds PIMC's Smugglers to 66.5%, better than any other network (71–77%)
 - [x] PPO fine-tune from the imitation network (learning rate 1e-4, 2026-11-04): **negative**.
   Stuck at 1350–1440 Elo, 1293 at iteration 200 (from scratch at 3e-4: 1629 peak, then collapse)
-- [ ] **Owner decision:** further levers for Stage 7, or close it with these findings
-- [ ] Architecture review against warcraftsim (warlock.ai/blog/warcraftsim-1, 2026-11-02). Same
+- [x] **Owner decision** (2026-11-04): **close Stage 7** with these findings. Its goal (an
+  entity agent that beats both flat PPO and PIMC) is not met; the untried levers are future
+  work (writeup, "Closing summary")
+- [x] Architecture review against warcraftsim (warlock.ai/blog/warcraftsim-1, 2026-11-02). Same
   core idea (piece tokens, all-to-all attention, a privileged value). Gaps, in order:
   1. A real pointer: the 14 regions as tokens (occupancy, capacity left, possible enemy
      identities) and moves scored as piece · region. Ours scores regions with a linear layer
