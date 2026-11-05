@@ -72,7 +72,8 @@ come next is "Future work" in the Closing summary below.
 4. ~~Phase 4, Stage 7 Undertow~~ closed 2026-11-04 (owner's call) with its goal not met: PIMC
    beats every network. Summary entry "Undertow: what we learned".
 5. ~~Phase 5, wrap-up~~ done 2026-11-04: definition of done checked, README per-game table,
-   retraining documented (no checkpoints published, owner's call), Closing summary, PR to `main`.
+   retraining documented (no checkpoints published, owner's call), Closing summary, merged into
+   `main` 2026-11-05 (a fast-forward, no PR).
 
 **Waiting on the owner:** more recorded human games if the human-play analysis is wanted
 (`experiments/play.py` records them to `runs/human_games/`). Checkpoints are not published: a

@@ -146,8 +146,8 @@ not rungs.
    as a GitHub release), or document how to retrain them.
 4. [x] Writeup (2026-11-04, "Closing summary"): a closing "What we learned" across all games (when each method wins, and why), and
    "Future work".
-5. [x] Merge `feat/rl-agent-ladder` into `main` through a PR (owner's call, 2026-11-04: open
-   and merge once CI passes).
+5. [x] Merge `feat/rl-agent-ladder` into `main` (2026-11-05): a fast-forward push, no PR (owner's
+   call; the GitHub CLI is not installed here). CI runs on the push to `main`.
 
 ---
 
